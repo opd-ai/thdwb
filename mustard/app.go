@@ -22,6 +22,11 @@ func (app *App) AddWindow(window *Window) {
 	setWidgetWindow(window.rootFrame, window)
 }
 
+// Windows returns the list of windows managed by this app.
+func (app *App) Windows() []*Window {
+	return app.windows
+}
+
 func (app *App) DestroyWindow(window *Window) {
 	var nWindows []*Window
 
