@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	cascadia "github.com/andybalholm/cascadia"
+	"golang.org/x/net/html"
 )
 
 // NodeDOM "DOM Node Struct definition"
@@ -26,7 +27,8 @@ type NodeDOM struct {
 	NeedsReflow  bool `json:"-"`
 	NeedsRepaint bool `json:"-"`
 
-	Document *Document `json:"-"`
+	Document *Document  `json:"-"`
+	HTMLNode *html.Node `json:"-"` // Reference to original html.Node for CSS selector queries
 }
 
 func (node *NodeDOM) Print(d int) {
@@ -142,4 +144,105 @@ func (node NodeDOM) RequestReflow() {
 	for _, childNode := range node.Children {
 		childNode.RequestReflow()
 	}
+}
+
+// QuerySelector returns the first element that matches the given CSS selector.
+func (node *NodeDOM) QuerySelector(selector string) *NodeDOM {
+	if node.HTMLNode == nil || node.Document == nil || node.Document.HTMLRoot == nil {
+		return nil
+	}
+
+	sel, err := cascadia.Compile(selector)
+	if err != nil {
+		return nil
+	}
+
+	matched := sel.MatchFirst(node.Document.HTMLRoot)
+	if matched == nil {
+		return nil
+	}
+
+	return node.findNodeDOMByHTMLNode(matched)
+}
+
+// QuerySelectorAll returns all elements that match the given CSS selector.
+func (node *NodeDOM) QuerySelectorAll(selector string) []*NodeDOM {
+	if node.HTMLNode == nil || node.Document == nil || node.Document.HTMLRoot == nil {
+		return nil
+	}
+
+	sel, err := cascadia.Compile(selector)
+	if err != nil {
+		return nil
+	}
+
+	matched := sel.MatchAll(node.Document.HTMLRoot)
+	results := make([]*NodeDOM, 0, len(matched))
+	for _, m := range matched {
+		if nd := node.findNodeDOMByHTMLNode(m); nd != nil {
+			results = append(results, nd)
+		}
+	}
+	return results
+}
+
+// GetElementById returns the element with the given ID.
+func (node *NodeDOM) GetElementById(id string) *NodeDOM {
+	return node.QuerySelector("#" + escapeCSSIdentifier(id))
+}
+
+// GetElementsByClassName returns all elements with the given class name.
+func (node *NodeDOM) GetElementsByClassName(className string) []*NodeDOM {
+	return node.QuerySelectorAll("." + escapeCSSIdentifier(className))
+}
+
+// GetElementsByTagName returns all elements with the given tag name.
+func (node *NodeDOM) GetElementsByTagName(tagName string) []*NodeDOM {
+	return node.QuerySelectorAll(tagName)
+}
+
+// findNodeDOMByHTMLNode finds the NodeDOM corresponding to the given html.Node.
+// It searches from the current node's document root.
+func (node *NodeDOM) findNodeDOMByHTMLNode(target *html.Node) *NodeDOM {
+	if node.Document == nil || node.Document.DOM == nil {
+		return nil
+	}
+	return node.Document.DOM.findByHTMLNode(target)
+}
+
+// findByHTMLNode recursively searches for a NodeDOM with the given html.Node.
+func (node *NodeDOM) findByHTMLNode(target *html.Node) *NodeDOM {
+	if node.HTMLNode == target {
+		return node
+	}
+	for _, child := range node.Children {
+		if found := child.findByHTMLNode(target); found != nil {
+			return found
+		}
+	}
+	return nil
+}
+
+// escapeCSSIdentifier escapes a string for use as a CSS identifier.
+func escapeCSSIdentifier(s string) string {
+	var result strings.Builder
+	for i, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == '-' || r >= 0x80 {
+			// First character cannot be a digit or hyphen followed by digit
+			if i == 0 && (r >= '0' && r <= '9') {
+				result.WriteString("\\")
+				result.WriteRune(r)
+			} else if i == 0 && r == '-' && len(s) > 1 && s[1] >= '0' && s[1] <= '9' {
+				result.WriteString("\\")
+				result.WriteRune(r)
+			} else {
+				result.WriteRune(r)
+			}
+		} else {
+			// Escape special characters
+			result.WriteString("\\")
+			result.WriteRune(r)
+		}
+	}
+	return result.String()
 }

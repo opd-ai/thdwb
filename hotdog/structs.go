@@ -6,6 +6,7 @@ import (
 
 	"github.com/danfragoso/thdwb/mustard"
 	profiler "github.com/danfragoso/thdwb/profiler"
+	"golang.org/x/net/html"
 )
 
 type WebBrowser struct {
@@ -28,6 +29,7 @@ type Document struct {
 
 	RawDocument string
 	DOM         *NodeDOM
+	HTMLRoot    *html.Node // Root of the parsed HTML tree for CSS selector queries
 
 	DebugFlag       bool
 	DebugWindow     *mustard.Window

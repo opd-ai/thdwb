@@ -51,7 +51,7 @@ Establish a clean, spec-compliant DOM foundation **per window** with robust tree
 ### Phase 1 Completion Checklist
 - [x] HTML parser replaces ketchup across all test pages
 - [x] Node structure supports full tree traversal
-- [ ] All selector methods working with cascadia
+- [x] All selector methods working with cascadia
 - [ ] Text nodes render correctly with proper whitespace
 - [ ] Each node carries owning WindowContext reference
 - [ ] Cross-origin DOM access correctly blocked

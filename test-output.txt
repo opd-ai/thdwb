@@ -1,0 +1,4 @@
+# github.com/danfragoso/thdwb/hotdog
+hotdog/node.go:9:2: "github.com/andybalholm/cascadia" imported and not used
+FAIL	github.com/danfragoso/thdwb/browser [build failed]
+FAIL

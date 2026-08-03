@@ -66,6 +66,9 @@ func buildKetchupNode(node *html.Node, document *hotdog.Document) *hotdog.NodeDO
 	ketchupNode.Style = mayo.GetElementStylesheet(element, attributes)
 	ketchupNode.RenderBox = &hotdog.RenderBox{}
 
+	// Store reference to original html.Node for CSS selector queries
+	ketchupNode.HTMLNode = node
+
 	return ketchupNode
 }
 
