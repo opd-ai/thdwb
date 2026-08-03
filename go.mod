@@ -16,6 +16,7 @@ require (
 )
 
 require (
+	github.com/andybalholm/cascadia v1.3.4 // indirect
 	github.com/danfragoso/thdwb/mayo v0.0.0-20210411220950-eaec6f13eccb // indirect
 	github.com/danfragoso/thdwb/pages v0.0.0-20210411220950-eaec6f13eccb // indirect
 	github.com/goki/freetype v0.0.0-20181231101311-fa8a33aabaff // indirect
