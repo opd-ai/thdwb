@@ -28,7 +28,9 @@ func copyWidgetToBuffer(widget Widget, src image.Image) {
 func getCoreWidgets(widgets []Widget) []*baseWidget {
 	var coreWidgets []*baseWidget
 	for _, widget := range widgets {
-		coreWidgets = append(coreWidgets, widget.BaseWidget())
+		if widget.BaseWidget().GetVisible() {
+			coreWidgets = append(coreWidgets, widget.BaseWidget())
+		}
 	}
 
 	return coreWidgets
@@ -239,4 +241,21 @@ func (widget *baseWidget) IsPointInside(x, y float64) bool {
 
 	top, left, width, height := widget.GetRect()
 	return x > float64(left) && x < float64(left+width) && y > float64(top) && y < float64(top+height)
+}
+
+// SetVisible sets the visibility of the widget and its children.
+func (widget *baseWidget) SetVisible(visible bool) {
+	if widget.visible != visible {
+		widget.visible = visible
+		widget.needsRepaint = true
+		widget.RequestReflow()
+		for _, child := range widget.widgets {
+			child.BaseWidget().SetVisible(visible)
+		}
+	}
+}
+
+// GetVisible returns the visibility state of the widget.
+func (widget *baseWidget) GetVisible() bool {
+	return widget.visible
 }

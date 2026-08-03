@@ -3,8 +3,8 @@ package main
 import (
 	"fmt"
 
-	gg "github.com/danfragoso/thdwb/gg"
 	bun "github.com/danfragoso/thdwb/bun"
+	gg "github.com/danfragoso/thdwb/gg"
 	hotdog "github.com/danfragoso/thdwb/hotdog"
 	mustard "github.com/danfragoso/thdwb/mustard"
 	profiler "github.com/danfragoso/thdwb/profiler"
@@ -12,14 +12,14 @@ import (
 
 // BrowserShell manages multiple window contexts (tabs) in a single browser instance.
 type BrowserShell struct {
-	app             *mustard.App
-	windowContexts  []*hotdog.WindowContext
-	activeTabIndex  int
-	settings        *hotdog.Settings
-	buildInfo       *hotdog.BuildInfo
-	profiler        *profiler.Profiler
-	tabBar          *mustard.Frame
-	contentArea     *mustard.Frame
+	app            *mustard.App
+	windowContexts []*hotdog.WindowContext
+	activeTabIndex int
+	settings       *hotdog.Settings
+	buildInfo      *hotdog.BuildInfo
+	profiler       *profiler.Profiler
+	tabBar         *mustard.Frame
+	contentArea    *mustard.Frame
 }
 
 // NewBrowserShell creates a new browser shell with tabbed interface.
@@ -45,6 +45,8 @@ func NewBrowserShell(settings *hotdog.Settings, buildInfo *hotdog.BuildInfo, pro
 	shell.NewTab(settings.Homepage)
 
 	return shell
+}
+
 // createMainUI sets up the tab bar and content area in the main window.
 func (shell *BrowserShell) createMainUI(window *mustard.Window) {
 	rootFrame := mustard.CreateFrame(mustard.VerticalFrame)
@@ -82,9 +84,9 @@ func (shell *BrowserShell) NewTab(url string) *hotdog.WindowContext {
 
 	// Set up tab click handler
 	tabIdx := tabIndex
-	tabButton.onClick = func() {
+	window.RegisterButton(tabButton, func() {
 		shell.SwitchTab(tabIdx)
-	}
+	})
 
 	// Create tab content (navigation bar + viewport)
 	shell.createTabContent(windowContext, tabIndex)
@@ -100,7 +102,7 @@ func (shell *BrowserShell) NewTab(url string) *hotdog.WindowContext {
 
 	// Update tab button text with page title
 	if tab := windowContext.ActiveDocument.Title; tab != "" {
-		tabButton.content = tab
+		tabButton.SetContent(tab)
 		tabButton.RequestRepaint()
 	}
 
@@ -200,8 +202,13 @@ func (shell *BrowserShell) createTabContent(windowContext *hotdog.WindowContext,
 			loadDocumentFromUrl(windowContext, statusLabel, urlInput, viewPort)
 		}
 	})
-}
-// Input handling - only process for active tab
+	// Store tab-specific widgets for cleanup
+	windowContext.SetInputState("menuButton", menuButton)
+	windowContext.SetInputState("reloadButton", reloadButton)
+	windowContext.SetInputState("nextButton", nextButton)
+	windowContext.SetInputState("previousButton", previousButton)
+	windowContext.SetInputState("urlInput", urlInput)
+	// Input handling - only process for active tab
 	windowContext.Window.AttachPointerPositionEventListener(func(pointerX, pointerY float64) {
 		if shell.activeTabIndex == tabIndex && viewPort.IsPointInside(pointerX, pointerY) {
 			offset := float64(appBar.GetHeight())
@@ -294,6 +301,7 @@ func (shell *BrowserShell) createTabContent(windowContext *hotdog.WindowContext,
 	windowContext.SetInputState("tabContentFrame", tabContentFrame)
 	windowContext.SetInputState("tabIndex", tabIndex)
 }
+
 // SwitchTab switches to the tab at the given index.
 func (shell *BrowserShell) SwitchTab(index int) {
 	if index < 0 || index >= len(shell.windowContexts) {
@@ -332,6 +340,41 @@ func (shell *BrowserShell) CloseTab(index int) {
 	}
 
 	windowContext := shell.windowContexts[index]
+
+	// Unregister tab-specific buttons and inputs
+	if btn, ok := windowContext.GetInputState("menuButton"); ok {
+		if button, ok := btn.(*mustard.ButtonWidget); ok {
+			windowContext.Window.UnregisterButton(button)
+		}
+	}
+	if btn, ok := windowContext.GetInputState("reloadButton"); ok {
+		if button, ok := btn.(*mustard.ButtonWidget); ok {
+			windowContext.Window.UnregisterButton(button)
+		}
+	}
+	if btn, ok := windowContext.GetInputState("nextButton"); ok {
+		if button, ok := btn.(*mustard.ButtonWidget); ok {
+			windowContext.Window.UnregisterButton(button)
+		}
+	}
+	if btn, ok := windowContext.GetInputState("previousButton"); ok {
+		if button, ok := btn.(*mustard.ButtonWidget); ok {
+			windowContext.Window.UnregisterButton(button)
+		}
+	}
+	if input, ok := windowContext.GetInputState("urlInput"); ok {
+		if inputWidget, ok := input.(*mustard.InputWidget); ok {
+			windowContext.Window.UnregisterInput(inputWidget)
+		}
+	}
+
+	// Detach tab content frame from content area
+	if frame, ok := windowContext.GetInputState("tabContentFrame"); ok {
+		if tabFrame, ok := frame.(*mustard.Frame); ok {
+			shell.contentArea.DetachWidget(tabFrame)
+		}
+	}
+
 	windowContext.Destroy()
 
 	// Remove from slice

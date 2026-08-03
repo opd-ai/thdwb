@@ -332,8 +332,26 @@ func (window *Window) RegisterButton(button *ButtonWidget, callback func()) {
 	window.registeredButtons = append(window.registeredButtons, button)
 }
 
+func (window *Window) UnregisterButton(button *ButtonWidget) {
+	for i, btn := range window.registeredButtons {
+		if btn == button {
+			window.registeredButtons = append(window.registeredButtons[:i], window.registeredButtons[i+1:]...)
+			break
+		}
+	}
+}
+
 func (window *Window) RegisterInput(input *InputWidget) {
 	window.registeredInputs = append(window.registeredInputs, input)
+}
+
+func (window *Window) UnregisterInput(input *InputWidget) {
+	for i, in := range window.registeredInputs {
+		if in == input {
+			window.registeredInputs = append(window.registeredInputs[:i], window.registeredInputs[i+1:]...)
+			break
+		}
+	}
 }
 
 func (window *Window) AttachPointerPositionEventListener(callback func(pointerX, pointerY float64)) {

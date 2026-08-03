@@ -24,15 +24,15 @@ Enable the toolkit to run as multiple independent, non-interfering instances.
 
 ### Phase 0 Completion Checklist
 - [x] State moved from global to `WindowContext` struct with no regressions
-- [ ] Two or more simultaneous windows run without memory interference
-- [ ] Mustard rendering supports multiple viewports (tabbed layout)
-- [ ] Browser shell routes mouse/keyboard input to active window only
-- [ ] Tab creation and destruction leak no memory
-- [ ] Cookie jar partitions by origin across all windows
-- [ ] TLS session cache shared; cookies isolated per origin
-- [ ] Origin parsing handles IPv6, non-standard ports
-- [ ] Tab switching is smooth with no layout artifacts
-- [ ] Inactive windows do not execute JS or recalculate layout
+- [x] Two or more simultaneous windows run without memory interference
+- [x] Mustard rendering supports multiple viewports (tabbed layout)
+- [x] Browser shell routes mouse/keyboard input to active window only
+- [x] Tab creation and destruction leak no memory
+- [x] Cookie jar partitions by origin across all windows
+- [x] TLS session cache shared; cookies isolated per origin
+- [x] Origin parsing handles IPv6, non-standard ports
+- [x] Tab switching is smooth with no layout artifacts
+- [x] Inactive windows do not execute JS or recalculate layout
 
 ---
 
@@ -49,8 +49,8 @@ Establish a clean, spec-compliant DOM foundation **per window** with robust tree
 * **Implement Origin-Aware Node Access:** Prevent JavaScript from one origin accessing DOM nodes from another origin through iframe boundaries.
 
 ### Phase 1 Completion Checklist
-- [ ] HTML parser replaces ketchup across all test pages
-- [ ] Node structure supports full tree traversal
+- [x] HTML parser replaces ketchup across all test pages
+- [x] Node structure supports full tree traversal
 - [ ] All selector methods working with cascadia
 - [ ] Text nodes render correctly with proper whitespace
 - [ ] Each node carries owning WindowContext reference

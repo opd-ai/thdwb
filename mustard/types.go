@@ -159,6 +159,8 @@ type baseWidget struct {
 	focused  bool
 	selected bool
 
+	visible bool
+
 	buffer *image.RGBA
 	window *Window
 }

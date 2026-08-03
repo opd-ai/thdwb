@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	cascadia "github.com/andybalholm/cascadia"
 )
 
 // NodeDOM "DOM Node Struct definition"
@@ -12,11 +14,14 @@ type NodeDOM struct {
 	Element string `json:"element"`
 	Content string `json:"content"`
 
-	Children   []*NodeDOM   `json:"children"`
-	Attributes []*Attribute `json:"attributes"`
-	Style      *Stylesheet  `json:"style"`
-	Parent     *NodeDOM     `json:"-"`
-	RenderBox  *RenderBox   `json:"-"`
+	Children    []*NodeDOM   `json:"children"`
+	Attributes  []*Attribute `json:"attributes"`
+	Style       *Stylesheet  `json:"style"`
+	Parent      *NodeDOM     `json:"-"`
+	FirstChild  *NodeDOM     `json:"-"`
+	NextSibling *NodeDOM     `json:"-"`
+	PrevSibling *NodeDOM     `json:"-"`
+	RenderBox   *RenderBox   `json:"-"`
 
 	NeedsReflow  bool `json:"-"`
 	NeedsRepaint bool `json:"-"`

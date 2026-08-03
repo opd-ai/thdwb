@@ -8,14 +8,61 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 
 	"github.com/danfragoso/thdwb/assets"
 	hotdog "github.com/danfragoso/thdwb/hotdog"
 	pages "github.com/danfragoso/thdwb/pages"
 )
 
+// OriginCookieJar implements http.CookieJar with per-origin cookie partitioning.
+type OriginCookieJar struct {
+	mu      sync.RWMutex
+	cookies map[string][]*http.Cookie // key: origin (scheme://host:port)
+}
+
+func NewOriginCookieJar() *OriginCookieJar {
+	return &OriginCookieJar{
+		cookies: make(map[string][]*http.Cookie),
+	}
+}
+
+func originKey(u *url.URL) string {
+	port := u.Port()
+	if port == "" {
+		if u.Scheme == "https" {
+			port = "443"
+		} else {
+			port = "80"
+		}
+	}
+	return u.Scheme + "://" + u.Hostname() + ":" + port
+}
+
+func (jar *OriginCookieJar) SetCookies(u *url.URL, cookies []*http.Cookie) {
+	jar.mu.Lock()
+	defer jar.mu.Unlock()
+	key := originKey(u)
+	jar.cookies[key] = append(jar.cookies[key], cookies...)
+}
+
+func (jar *OriginCookieJar) Cookies(u *url.URL) []*http.Cookie {
+	jar.mu.RLock()
+	defer jar.mu.RUnlock()
+	key := originKey(u)
+	// Return a copy to avoid race conditions
+	cookies := jar.cookies[key]
+	result := make([]*http.Cookie, len(cookies))
+	copy(result, cookies)
+	return result
+}
+
+// Shared HTTP client with origin-partitioned cookie jar
 var (
-	client     = &http.Client{}
+	cookieJar = NewOriginCookieJar()
+	client    = &http.Client{
+		Jar: cookieJar,
+	}
 	cache      = &hotdog.ResourceCache{}
 	imageCache = &hotdog.ImgCache{}
 )

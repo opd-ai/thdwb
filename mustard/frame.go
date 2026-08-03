@@ -40,9 +40,21 @@ func (frame *Frame) SetHeight(height float64) {
 	frame.RequestReflow()
 }
 
-// SetHeight - Sets the frame height
+// GetHeight returns the frame height
 func (frame *Frame) GetHeight() float64 {
 	return frame.box.height
+}
+
+// SetVisible sets the visibility of the frame and its children.
+func (frame *Frame) SetVisible(visible bool) {
+	frame.baseWidget.SetVisible(visible)
+}
+
+// RemoveWidget removes a widget from the frame at the given index.
+func (frame *Frame) RemoveWidget(index int) {
+	if index >= 0 && index < len(frame.widgets) {
+		frame.DetachWidget(frame.widgets[index])
+	}
 }
 
 func drawRootFrame(window *Window) {
@@ -52,6 +64,9 @@ func drawRootFrame(window *Window) {
 }
 
 func (frame *Frame) draw() {
+	if !frame.GetVisible() {
+		return
+	}
 	top, left, width, height := frame.computedBox.GetCoords()
 	window := frame.window
 	context := window.context

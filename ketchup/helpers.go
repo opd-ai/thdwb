@@ -14,9 +14,18 @@ func buildKetchupNode(node *html.Node, document *hotdog.Document) *hotdog.NodeDO
 	attributes := retrieveAttributes(node)
 
 	children := retrieveChildren(node)
-	for _, child := range children {
+	var prevChild *hotdog.NodeDOM
+	for i, child := range children {
 		ketchupChild := buildKetchupNode(child, document)
 		ketchupChild.Parent = ketchupNode
+		ketchupChild.PrevSibling = prevChild
+		if prevChild != nil {
+			prevChild.NextSibling = ketchupChild
+		}
+		if i == 0 {
+			ketchupNode.FirstChild = ketchupChild
+		}
+		prevChild = ketchupChild
 
 		ketchupNode.Children = append(
 			ketchupNode.Children,
@@ -38,6 +47,10 @@ func buildKetchupNode(node *html.Node, document *hotdog.Document) *hotdog.NodeDO
 
 	case html.RawNode:
 		element = "html:raw"
+
+	case html.CommentNode:
+		element = "html:comment"
+		content = node.Data
 	}
 
 	ketchupNode.Element = element

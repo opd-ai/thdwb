@@ -14,7 +14,6 @@ type Settings struct {
 
 	HiDPI bool `json:"hiDPI"`
 
-	ExperimentalHTML   bool `json:"experimentalHTML"`   // golang stdlib spec compliant html5 parser
 	ExperimentalLayout bool `json:"experimentalLayout"` // spec-ish compliant layout engine
 }
 
@@ -26,7 +25,6 @@ var defaultSettings Settings = Settings{
 
 	HiDPI: true,
 
-	ExperimentalHTML:   false,
 	ExperimentalLayout: false,
 }
 
