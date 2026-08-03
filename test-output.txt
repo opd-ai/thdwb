@@ -1,4 +1,44 @@
-# github.com/danfragoso/thdwb/hotdog
-hotdog/node.go:9:2: "github.com/andybalholm/cascadia" imported and not used
-FAIL	github.com/danfragoso/thdwb/browser [build failed]
+# github.com/danfragoso/thdwb/mustard [github.com/danfragoso/thdwb/mustard.test]
+mustard/mustard_test.go:22:42: not enough arguments in call to CreateNewWindow
+	have (string, number, number)
+	want (string, int, int, bool)
+mustard/mustard_test.go:36:33: cannot use func(ctx *gg.Context) {} (value of type func(ctx *gg.Context)) as func(*CanvasWidget) value in argument to CreateCanvasWidget
+?   	github.com/danfragoso/thdwb/assets	[no test files]
+?   	github.com/danfragoso/thdwb/browser	[no test files]
+# github.com/danfragoso/thdwb/sauce [github.com/danfragoso/thdwb/sauce.test]
+sauce/sauce_test.go:69:12: assignment mismatch: 1 variable but GetImage returns 2 values
+--- FAIL: TestRenderDocument_noBody (0.02s)
+    bun_test.go:28: got unexpected panic: runtime error: invalid memory address or nil pointer dereference. Stack: goroutine 23 [running]:
+        runtime/debug.Stack()
+        	/home/user/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.25.0.linux-amd64/src/runtime/debug/stack.go:26 +0x68
+        github.com/danfragoso/thdwb/bun.TestRenderDocument_noBody.func1()
+        	/home/user/go/src/github.com/danfragoso/thdwb/bun/bun_test.go:27 +0x58
+        panic({0x9c61c0?, 0xddc3d0?})
+        	/home/user/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.25.0.linux-amd64/src/runtime/panic.go:783 +0x132
+        github.com/danfragoso/thdwb/bun.getNodeChildren(...)
+        	/home/user/go/src/github.com/danfragoso/thdwb/bun/bun.go:50
+        github.com/danfragoso/thdwb/bun.layoutDOM(0xc0000ac000, 0x0, 0x0)
+        	/home/user/go/src/github.com/danfragoso/thdwb/bun/bun.go:63 +0x39
+        github.com/danfragoso/thdwb/bun.RenderDocument(0xc0000ac000, 0xc0002041c0, 0x0)
+        	/home/user/go/src/github.com/danfragoso/thdwb/bun/bun.go:20 +0x54e
+        github.com/danfragoso/thdwb/bun.TestRenderDocument_noBody(0xc000103180)
+        	/home/user/go/src/github.com/danfragoso/thdwb/bun/bun_test.go:32 +0x1e5
+        testing.tRunner(0xc000103180, 0xa57a90)
+        	/home/user/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.25.0.linux-amd64/src/testing/testing.go:1934 +0x21d
+        created by testing.(*T).Run in goroutine 1
+        	/home/user/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.25.0.linux-amd64/src/testing/testing.go:1997 +0x9d3
+FAIL
+FAIL	github.com/danfragoso/thdwb/bun	0.036s
+flag provided but not defined: -test.paniconexit0
+Usage of /tmp/go-build149320390/b245/gg.test:
+  -save
+    	save PNG output for each test case
+FAIL	github.com/danfragoso/thdwb/gg	0.014s
+?   	github.com/danfragoso/thdwb/hotdog	[no test files]
+?   	github.com/danfragoso/thdwb/ketchup	[no test files]
+ok  	github.com/danfragoso/thdwb/mayo	1.017s
+FAIL	github.com/danfragoso/thdwb/mustard [build failed]
+?   	github.com/danfragoso/thdwb/pages	[no test files]
+ok  	github.com/danfragoso/thdwb/profiler	3.016s
+FAIL	github.com/danfragoso/thdwb/sauce [build failed]
 FAIL
