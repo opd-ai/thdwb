@@ -6,7 +6,7 @@ import (
 	mustard "github.com/danfragoso/thdwb/mustard"
 )
 
-func createMainBar(window *mustard.Window, browser *hotdog.WebBrowser) (*mustard.Frame, *mustard.LabelWidget, *mustard.ButtonWidget, *mustard.ButtonWidget, *mustard.ButtonWidget, *mustard.ButtonWidget, *mustard.InputWidget) {
+func createMainBar(window *mustard.Window, windowContext *hotdog.WindowContext) (*mustard.Frame, *mustard.LabelWidget, *mustard.ButtonWidget, *mustard.ButtonWidget, *mustard.ButtonWidget, *mustard.ButtonWidget, *mustard.InputWidget) {
 	appBar := mustard.CreateFrame(mustard.HorizontalFrame)
 	appBar.SetHeight(62)
 

@@ -27,33 +27,29 @@ func main() {
 
 	settings := hotdog.LoadSettings(*settingsPath)
 
-	browser := &hotdog.WebBrowser{
-		ActiveDocument: &hotdog.Document{},
-
-		History:  &hotdog.History{},
-		Profiler: profiler.CreateProfiler(),
-		Settings: settings,
-
-		BuildInfo: &hotdog.BuildInfo{
-			GitRevision: gitRevision,
-			GitBranch:   gitBranch,
-			HostInfo:    hostInfo,
-			BuildTime:   buildTime,
-		},
+	profilerInstance := profiler.CreateProfiler()
+	buildInfo := &hotdog.BuildInfo{
+		GitRevision: gitRevision,
+		GitBranch:   gitBranch,
+		HostInfo:    hostInfo,
+		BuildTime:   buildTime,
 	}
+
+	// Create a new window context for this tab/window
+	windowContext := hotdog.NewWindowContext(settings, buildInfo, profilerInstance)
 
 	app := mustard.CreateNewApp("THDWB")
 	window := mustard.CreateNewWindow("THDWB", settings.WindowWidth, settings.WindowHeight, settings.HiDPI)
 	window.EnableContextMenus()
-	browser.Window = window
+	windowContext.Window = window
 
 	rootFrame := mustard.CreateFrame(mustard.HorizontalFrame)
 
-	appBar, statusLabel, menuButton, nextButton, previousButton, reloadButton, urlInput := createMainBar(window, browser)
+	appBar, statusLabel, menuButton, nextButton, previousButton, reloadButton, urlInput := createMainBar(window, windowContext)
 	rootFrame.AttachWidget(appBar)
 
-	loadDocument(browser, settings.Homepage)
-	urlInput.SetValue(browser.ActiveDocument.URL.String())
+	loadDocument(windowContext, settings.Homepage)
+	urlInput.SetValue(windowContext.ActiveDocument.URL.String())
 
 	scrollBar := mustard.CreateScrollBarWidget(mustard.VerticalScrollBar)
 	scrollBar.SetTrackColor("#ccc")
@@ -62,26 +58,26 @@ func main() {
 
 	viewPort := mustard.CreateCanvasWidget(func(canvas *mustard.CanvasWidget) {
 		go func() {
-			browser.Profiler.Start("render")
+			windowContext.Profiler.Start("render")
 			ctxBounds := canvas.GetContext().Image().Bounds()
 			drawingContext := gg.NewContext(ctxBounds.Max.X, ctxBounds.Max.Y)
 
-			err := bun.RenderDocument(drawingContext, browser.ActiveDocument, settings.ExperimentalLayout)
+			err := bun.RenderDocument(drawingContext, windowContext.ActiveDocument, settings.ExperimentalLayout)
 			if err != nil {
 				hotdog.Log("render", "Can't render page: "+err.Error())
 			}
 
 			canvas.SetContext(drawingContext)
 			canvas.RequestRepaint()
-			browser.Profiler.Stop("render")
+			windowContext.Profiler.Stop("render")
 
-			statusLabel.SetContent(createStatusLabel(browser.Profiler))
+			statusLabel.SetContent(createStatusLabel(windowContext.Profiler))
 			statusLabel.RequestRepaint()
 			canvas.RequestRepaint()
 
 			scrollBar.SetScrollerOffset(0)
 
-			body, err := browser.ActiveDocument.DOM.FindChildByName("body")
+			body, err := windowContext.ActiveDocument.DOM.FindChildByName("body")
 			if err != nil {
 				hotdog.Log("render", "can't find body element: "+err.Error())
 				return
@@ -92,76 +88,76 @@ func main() {
 		}()
 	})
 
-	browser.Viewport = viewPort
-	browser.StatusLabel = statusLabel
+	windowContext.Viewport = viewPort
+	windowContext.StatusLabel = statusLabel
 
 	urlInput.SetReturnCallback(func() {
-		loadDocumentFromUrl(browser, statusLabel, urlInput, viewPort)
+		loadDocumentFromUrl(windowContext, statusLabel, urlInput, viewPort)
 	})
 
 	window.RegisterButton(menuButton, func() {
 		window.AddContextMenuEntry("Home", func() {
 			urlInput.SetValue("thdwb://homepage/")
-			loadDocumentFromUrl(browser, statusLabel, urlInput, viewPort)
+			loadDocumentFromUrl(windowContext, statusLabel, urlInput, viewPort)
 		})
 
 		window.AddContextMenuEntry("History", func() {
 			urlInput.SetValue("thdwb://history/")
-			loadDocumentFromUrl(browser, statusLabel, urlInput, viewPort)
+			loadDocumentFromUrl(windowContext, statusLabel, urlInput, viewPort)
 		})
 
 		window.AddContextMenuEntry("About", func() {
 			urlInput.SetValue("thdwb://about/")
-			loadDocumentFromUrl(browser, statusLabel, urlInput, viewPort)
+			loadDocumentFromUrl(windowContext, statusLabel, urlInput, viewPort)
 		})
 
-		if browser.ActiveDocument.DebugFlag {
+		if windowContext.ActiveDocument.DebugFlag {
 			window.AddContextMenuEntry("Disable debug mode", func() {
-				browser.Window.RemoveStaticOverlay("debugOverlay")
-				browser.ActiveDocument.DebugFlag = false
+				windowContext.Window.RemoveStaticOverlay("debugOverlay")
+				windowContext.ActiveDocument.DebugFlag = false
 
-				if browser.ActiveDocument.DebugWindow != nil {
-					app.DestroyWindow(browser.ActiveDocument.DebugWindow)
-					browser.ActiveDocument.DebugWindow = nil
-					browser.ActiveDocument.DebugTree = nil
+				if windowContext.ActiveDocument.DebugWindow != nil {
+					app.DestroyWindow(windowContext.ActiveDocument.DebugWindow)
+					windowContext.ActiveDocument.DebugWindow = nil
+					windowContext.ActiveDocument.DebugTree = nil
 				}
 			})
 		} else {
 			window.AddContextMenuEntry("Enable debug mode", func() {
-				browser.ActiveDocument.DebugFlag = true
+				windowContext.ActiveDocument.DebugFlag = true
 			})
 		}
 
-		if browser.ActiveDocument.DebugFlag {
-			if browser.ActiveDocument.DebugWindow != nil {
+		if windowContext.ActiveDocument.DebugFlag {
+			if windowContext.ActiveDocument.DebugWindow != nil {
 				window.AddContextMenuEntry("Hide Tree", func() {
-					app.DestroyWindow(browser.ActiveDocument.DebugWindow)
-					browser.ActiveDocument.DebugWindow = nil
-					browser.ActiveDocument.DebugTree = nil
+					app.DestroyWindow(windowContext.ActiveDocument.DebugWindow)
+					windowContext.ActiveDocument.DebugWindow = nil
+					windowContext.ActiveDocument.DebugTree = nil
 				})
 			} else {
 				window.AddContextMenuEntry("Show Tree", func() {
 					tree := mustard.CreateTreeWidget()
 
-					browser.ActiveDocument.DebugWindow = mustard.CreateNewWindow("HTML tree view", 600, 800, true)
-					browser.ActiveDocument.DebugTree = tree
+					windowContext.ActiveDocument.DebugWindow = mustard.CreateNewWindow("HTML tree view", 600, 800, true)
+					windowContext.ActiveDocument.DebugTree = tree
 
 					rFrame := mustard.CreateFrame(mustard.HorizontalFrame)
 					tree.SetFontSize(14)
 					rFrame.AttachWidget(tree)
 
-					browser.ActiveDocument.DebugWindow.RegisterTree(tree)
-					browser.ActiveDocument.DebugWindow.SetRootFrame(rFrame)
-					browser.ActiveDocument.DebugWindow.Show()
+					windowContext.ActiveDocument.DebugWindow.RegisterTree(tree)
+					windowContext.ActiveDocument.DebugWindow.SetRootFrame(rFrame)
+					windowContext.ActiveDocument.DebugWindow.Show()
 
-					app.AddWindow(browser.ActiveDocument.DebugWindow)
+					app.AddWindow(windowContext.ActiveDocument.DebugWindow)
 
-					treeNodeDOM := treeNodeFromDOM(browser.ActiveDocument.DOM)
+					treeNodeDOM := treeNodeFromDOM(windowContext.ActiveDocument.DOM)
 					tree.SetSelectCallback(func(selectedNode *mustard.TreeWidgetNode) {
-						if browser.ActiveDocument.DebugFlag {
-							child, _ := browser.ActiveDocument.DOM.FindByXPath(selectedNode.Value)
-							browser.ActiveDocument.SelectedElement = child
-							showDebugOverlay(browser)
+						if windowContext.ActiveDocument.DebugFlag {
+							child, _ := windowContext.ActiveDocument.DOM.FindByXPath(selectedNode.Value)
+							windowContext.ActiveDocument.SelectedElement = child
+							showDebugOverlay(windowContext)
 						}
 					})
 
@@ -176,38 +172,38 @@ func main() {
 	})
 
 	window.RegisterButton(reloadButton, func() {
-		loadDocumentFromUrl(browser, statusLabel, urlInput, viewPort)
+		loadDocumentFromUrl(windowContext, statusLabel, urlInput, viewPort)
 	})
 
 	window.RegisterButton(nextButton, func() {
-		if len(browser.History.NextPages()) > 0 {
-			browser.History.PopNext()
-			urlInput.SetValue(browser.History.Last().String())
-			loadDocumentFromUrl(browser, statusLabel, urlInput, viewPort)
+		if len(windowContext.History.NextPages()) > 0 {
+			windowContext.History.PopNext()
+			urlInput.SetValue(windowContext.History.Last().String())
+			loadDocumentFromUrl(windowContext, statusLabel, urlInput, viewPort)
 		}
 	})
 
 	window.RegisterButton(previousButton, func() {
-		if browser.History.PageCount() > 1 {
-			browser.History.Pop()
-			urlInput.SetValue(browser.History.Last().String())
-			loadDocumentFromUrl(browser, statusLabel, urlInput, viewPort)
+		if windowContext.History.PageCount() > 1 {
+			windowContext.History.Pop()
+			urlInput.SetValue(windowContext.History.Last().String())
+			loadDocumentFromUrl(windowContext, statusLabel, urlInput, viewPort)
 		}
 	})
 
 	window.AttachPointerPositionEventListener(func(pointerX, pointerY float64) {
 		if viewPort.IsPointInside(pointerX, pointerY) {
 			offset := float64(appBar.GetHeight())
-			processPointerPositionEvent(browser, pointerX, pointerY-offset)
+			processPointerPositionEvent(windowContext, pointerX, pointerY-offset)
 		} else {
-			browser.ActiveDocument.SelectedElement = nil
+			windowContext.ActiveDocument.SelectedElement = nil
 		}
 	})
 
 	window.AttachScrollEventListener(func(direction int) {
 		scrollStep := 20
 
-		body, err := browser.ActiveDocument.DOM.FindChildByName("body")
+		body, err := windowContext.ActiveDocument.DOM.FindChildByName("body")
 		if err != nil {
 			hotdog.Log("render", "Can't find body element: "+err.Error())
 			return
@@ -229,37 +225,37 @@ func main() {
 		scrollBar.SetScrollerSize(body.RenderBox.Height)
 		scrollBar.RequestReflow()
 
-		browser.Viewport.SetDrawingRepaint(false)
+		windowContext.Viewport.SetDrawingRepaint(false)
 		viewPort.RequestRepaint()
 
-		browser.Window.RemoveStaticOverlay("debugOverlay")
+		windowContext.Window.RemoveStaticOverlay("debugOverlay")
 	})
 
 	window.AttachClickEventListener(func(key mustard.MustardKey) {
 		if viewPort.IsPointInside(window.GetCursorPosition()) {
 			if key == mustard.MouseLeft {
-				if browser.ActiveDocument.SelectedElement != nil {
-					if browser.ActiveDocument.SelectedElement.Element == "a" {
-						href := browser.ActiveDocument.SelectedElement.Attr("href")
+				if windowContext.ActiveDocument.SelectedElement != nil {
+					if windowContext.ActiveDocument.SelectedElement.Element == "a" {
+						href := windowContext.ActiveDocument.SelectedElement.Attr("href")
 						urlInput.SetValue(href)
-						loadDocumentFromUrl(browser, statusLabel, urlInput, viewPort)
+						loadDocumentFromUrl(windowContext, statusLabel, urlInput, viewPort)
 					}
 				}
 			} else {
-				if browser.ActiveDocument.SelectedElement != nil {
+				if windowContext.ActiveDocument.SelectedElement != nil {
 					window.AddContextMenuEntry("Back", func() {
 						previousButton.Click()
 					})
 					window.AddContextMenuEntry("Reload", func() {
-						loadDocumentFromUrl(browser, statusLabel, urlInput, viewPort)
+						loadDocumentFromUrl(windowContext, statusLabel, urlInput, viewPort)
 					})
 					window.AddContextMenuEntry("History", func() {
 						urlInput.SetValue("thdwb://history")
-						loadDocumentFromUrl(browser, statusLabel, urlInput, viewPort)
+						loadDocumentFromUrl(windowContext, statusLabel, urlInput, viewPort)
 					})
 					window.AddContextMenuEntry("Home", func() {
 						urlInput.SetValue("thdwb://homepage")
-						loadDocumentFromUrl(browser, statusLabel, urlInput, viewPort)
+						loadDocumentFromUrl(windowContext, statusLabel, urlInput, viewPort)
 					})
 
 					window.DrawContextMenu()

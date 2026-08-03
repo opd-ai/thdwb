@@ -3,7 +3,6 @@ package hotdog
 import (
 	"net/url"
 
-	gg "github.com/danfragoso/thdwb/gg"
 	mustard "github.com/danfragoso/thdwb/mustard"
 	profiler "github.com/danfragoso/thdwb/profiler"
 )

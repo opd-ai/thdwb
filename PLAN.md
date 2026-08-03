@@ -23,7 +23,7 @@ Enable the toolkit to run as multiple independent, non-interfering instances.
 * **Implement Origin Tracking:** Parse and store origin (scheme + domain + port) on each window at load time; use origin to partition cookies and enforce SOP on all resource loads.
 
 ### Phase 0 Completion Checklist
-- [ ] State moved from global to `WindowContext` struct with no regressions
+- [x] State moved from global to `WindowContext` struct with no regressions
 - [ ] Two or more simultaneous windows run without memory interference
 - [ ] Mustard rendering supports multiple viewports (tabbed layout)
 - [ ] Browser shell routes mouse/keyboard input to active window only

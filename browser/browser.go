@@ -15,7 +15,7 @@ import (
 	sauce "github.com/danfragoso/thdwb/sauce"
 )
 
-func loadDocument(browser *hotdog.WebBrowser, link string) {
+func loadDocument(windowContext *hotdog.WindowContext, link string) {
 	URL := sauce.ParseURL(link)
 
 	if URL.Scheme == "" && URL.Host == "" {
@@ -23,50 +23,50 @@ func loadDocument(browser *hotdog.WebBrowser, link string) {
 			URL.Path = "/" + URL.Path
 		}
 
-		if strings.HasSuffix(browser.ActiveDocument.URL.String(), "/") {
-			URL.Path = strings.TrimSuffix(browser.ActiveDocument.URL.Path, "/") + URL.Path
+		if strings.HasSuffix(windowContext.ActiveDocument.URL.String(), "/") {
+			URL.Path = strings.TrimSuffix(windowContext.ActiveDocument.URL.Path, "/") + URL.Path
 		}
 
-		URL = sauce.ParseURL(browser.ActiveDocument.URL.Scheme + "://" + browser.ActiveDocument.URL.Host + URL.Path)
+		URL = sauce.ParseURL(windowContext.ActiveDocument.URL.Scheme + "://" + windowContext.ActiveDocument.URL.Host + URL.Path)
 	}
 
-	resource := sauce.GetResource(URL, browser)
+	resource := sauce.GetResource(URL, windowContext)
 	rawDocument := string(resource.Body)
 
 	switch strings.Split(resource.ContentType, ";")[0] {
 	case "text/plain", "text/xml", "application/json":
-		browser.ActiveDocument = ketchup.ParsePlainText(rawDocument)
+		windowContext.ActiveDocument = ketchup.ParsePlainText(rawDocument)
 	default:
-		if browser.Settings.ExperimentalHTML {
-			browser.ActiveDocument = ketchup.ParseHTMLDocument(rawDocument)
+		if windowContext.Settings.ExperimentalHTML {
+			windowContext.ActiveDocument = ketchup.ParseHTMLDocument(rawDocument)
 		} else {
-			browser.ActiveDocument = ketchup.ParseHTML(rawDocument)
+			windowContext.ActiveDocument = ketchup.ParseHTML(rawDocument)
 		}
 
 	}
 
-	browser.ActiveDocument.URL = resource.URL
-	browser.ActiveDocument.ContentType = resource.ContentType
+	windowContext.ActiveDocument.URL = resource.URL
+	windowContext.ActiveDocument.ContentType = resource.ContentType
 
-	browser.ActiveDocument.Title = bun.GetPageTitle(browser.ActiveDocument.DOM) + " - THDWB"
-	browser.Window.SetTitle(browser.ActiveDocument.Title)
+	windowContext.ActiveDocument.Title = bun.GetPageTitle(windowContext.ActiveDocument.DOM) + " - THDWB"
+	windowContext.Window.SetTitle(windowContext.ActiveDocument.Title)
 
-	browser.Window.RemoveStaticOverlay("debugOverlay")
+	windowContext.Window.RemoveStaticOverlay("debugOverlay")
 
-	if browser.History.PageCount() == 0 || browser.History.Last().String() != resource.URL.String() {
-		browser.History.Push(resource.URL)
+	if windowContext.History.PageCount() == 0 || windowContext.History.Last().String() != resource.URL.String() {
+		windowContext.History.Push(resource.URL)
 	}
 }
 
-func loadDocumentFromUrl(browser *hotdog.WebBrowser, statusLabel *mustard.LabelWidget, urlInput *mustard.InputWidget, viewPort *mustard.CanvasWidget) {
+func loadDocumentFromUrl(windowContext *hotdog.WindowContext, statusLabel *mustard.LabelWidget, urlInput *mustard.InputWidget, viewPort *mustard.CanvasWidget) {
 	statusLabel.SetContent("Loading: " + urlInput.GetValue())
 	statusLabel.RequestRepaint()
 
-	loadDocument(browser, urlInput.GetValue())
+	loadDocument(windowContext, urlInput.GetValue())
 	viewPort.SetOffset(0)
 	viewPort.SetDrawingRepaint(true)
 	viewPort.RequestRepaint()
-	urlInput.SetValue(browser.ActiveDocument.URL.String())
+	urlInput.SetValue(windowContext.ActiveDocument.URL.String())
 }
 
 func treeNodeFromDOM(node *hotdog.NodeDOM) *mustard.TreeWidgetNode {
@@ -85,34 +85,34 @@ func createStatusLabel(perf *profiler.Profiler) string {
 		"Render took: " + perf.GetProfile("render").GetElapsedTime().String() + "; "
 }
 
-func processPointerPositionEvent(browser *hotdog.WebBrowser, x, y float64) {
-	y -= float64(browser.Viewport.GetOffset())
-	selectedElement := browser.ActiveDocument.DOM.CalcPointIntersection(x, y)
+func processPointerPositionEvent(windowContext *hotdog.WindowContext, x, y float64) {
+	y -= float64(windowContext.Viewport.GetOffset())
+	selectedElement := windowContext.ActiveDocument.DOM.CalcPointIntersection(x, y)
 
-	if browser.ActiveDocument.SelectedElement != selectedElement {
-		browser.ActiveDocument.SelectedElement = selectedElement
+	if windowContext.ActiveDocument.SelectedElement != selectedElement {
+		windowContext.ActiveDocument.SelectedElement = selectedElement
 
-		if browser.ActiveDocument.SelectedElement != nil && browser.ActiveDocument.SelectedElement.Element == "a" {
-			browser.Window.SetCursor(mustard.PointerCursor)
-			browser.StatusLabel.SetContent(browser.ActiveDocument.SelectedElement.Attr("href"))
+		if windowContext.ActiveDocument.SelectedElement != nil && windowContext.ActiveDocument.SelectedElement.Element == "a" {
+			windowContext.Window.SetCursor(mustard.PointerCursor)
+			windowContext.StatusLabel.SetContent(windowContext.ActiveDocument.SelectedElement.Attr("href"))
 		} else {
-			browser.Window.SetCursor(mustard.DefaultCursor)
-			browser.StatusLabel.SetContent(createStatusLabel(browser.Profiler))
+			windowContext.Window.SetCursor(mustard.DefaultCursor)
+			windowContext.StatusLabel.SetContent(createStatusLabel(windowContext.Profiler))
 		}
 
-		if browser.ActiveDocument.DebugFlag &&
-			browser.ActiveDocument.SelectedElement != nil &&
-			browser.ActiveDocument.SelectedElement.Element != "html" {
+		if windowContext.ActiveDocument.DebugFlag &&
+			windowContext.ActiveDocument.SelectedElement != nil &&
+			windowContext.ActiveDocument.SelectedElement.Element != "html" {
 
-			if browser.ActiveDocument.DebugWindow != nil {
-				browser.ActiveDocument.DebugTree.SelectNodeByValue(browser.ActiveDocument.SelectedElement.GetXPath())
-				browser.ActiveDocument.DebugTree.RequestRepaint()
+			if windowContext.ActiveDocument.DebugWindow != nil {
+				windowContext.ActiveDocument.DebugTree.SelectNodeByValue(windowContext.ActiveDocument.SelectedElement.GetXPath())
+				windowContext.ActiveDocument.DebugTree.RequestRepaint()
 			}
 
-			showDebugOverlay(browser)
+			showDebugOverlay(windowContext)
 		}
 
-		browser.StatusLabel.RequestRepaint()
+		windowContext.StatusLabel.RequestRepaint()
 	}
 }
 
@@ -121,19 +121,19 @@ func printNodeDebug(node *hotdog.NodeDOM) {
 	fmt.Printf("%s [\n %s\n]\n\n", node.Element, rect)
 }
 
-func showDebugOverlay(browser *hotdog.WebBrowser) {
-	browser.Window.RemoveStaticOverlay("debugOverlay")
+func showDebugOverlay(windowContext *hotdog.WindowContext) {
+	windowContext.Window.RemoveStaticOverlay("debugOverlay")
 
-	debugEl := browser.ActiveDocument.SelectedElement
+	debugEl := windowContext.ActiveDocument.SelectedElement
 	top, left, _, height := debugEl.RenderBox.GetRect()
-	ctx := gg.NewContext(int(browser.ActiveDocument.DOM.RenderBox.Width), int(height+20))
+	ctx := gg.NewContext(int(windowContext.ActiveDocument.DOM.RenderBox.Width), int(height+20))
 	paintDebugRect(ctx, debugEl)
 
 	overlay := mustard.CreateStaticOverlay("debugOverlay", ctx, image.Point{
-		int(left), int(top+browser.Viewport.GetTop()) + browser.Viewport.GetOffset(),
+		int(left), int(top+windowContext.Viewport.GetTop()) + windowContext.Viewport.GetOffset(),
 	})
 
-	browser.Window.AddStaticOverlay(overlay)
+	windowContext.Window.AddStaticOverlay(overlay)
 }
 
 func paintDebugRect(ctx *gg.Context, node *hotdog.NodeDOM) {

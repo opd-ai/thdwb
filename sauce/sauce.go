@@ -21,10 +21,10 @@ var (
 )
 
 // GetResource - Makes an http request and returns a resource struct
-func GetResource(URL *url.URL, browser *hotdog.WebBrowser) *hotdog.Resource {
+func GetResource(URL *url.URL, windowContext *hotdog.WindowContext) *hotdog.Resource {
 	switch URL.Scheme {
 	case "thdwb":
-		return fetchInternalPage(URL, browser)
+		return fetchInternalPage(URL, windowContext)
 	case "file":
 		return &hotdog.Resource{Body: pages.RenderFileBrowser(URL.Path), URL: URL}
 	case "":
@@ -35,7 +35,7 @@ func GetResource(URL *url.URL, browser *hotdog.WebBrowser) *hotdog.Resource {
 	return fetchExternalPage(URL)
 }
 
-func fetchInternalPage(URL *url.URL, browser *hotdog.WebBrowser) *hotdog.Resource {
+func fetchInternalPage(URL *url.URL, windowContext *hotdog.WindowContext) *hotdog.Resource {
 	switch URL.Host {
 	case "homepage":
 		return &hotdog.Resource{
@@ -45,12 +45,12 @@ func fetchInternalPage(URL *url.URL, browser *hotdog.WebBrowser) *hotdog.Resourc
 
 	case "history":
 		return &hotdog.Resource{
-			Body: buildHistoryPage(browser.History),
+			Body: buildHistoryPage(windowContext.History),
 			URL:  URL,
 		}
 	case "about":
 		return &hotdog.Resource{
-			Body: pages.RenderAboutPage(browser.BuildInfo),
+			Body: pages.RenderAboutPage(windowContext.BuildInfo),
 			URL:  URL,
 		}
 	default:
