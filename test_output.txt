@@ -1,0 +1,19 @@
+# ./sauce
+main module (github.com/danfragoso/thdwb) does not contain package github.com/danfragoso/thdwb/sauce
+FAIL	./sauce [setup failed]
+# ./bun
+main module (github.com/danfragoso/thdwb) does not contain package github.com/danfragoso/thdwb/bun
+FAIL	./bun [setup failed]
+# ./profiler
+main module (github.com/danfragoso/thdwb) does not contain package github.com/danfragoso/thdwb/profiler
+FAIL	./profiler [setup failed]
+# ./mayo
+main module (github.com/danfragoso/thdwb) does not contain package github.com/danfragoso/thdwb/mayo
+FAIL	./mayo [setup failed]
+# ./gg
+main module (github.com/danfragoso/thdwb) does not contain package github.com/danfragoso/thdwb/gg
+FAIL	./gg [setup failed]
+# ./mustard
+main module (github.com/danfragoso/thdwb) does not contain package github.com/danfragoso/thdwb/mustard
+FAIL	./mustard [setup failed]
+FAIL

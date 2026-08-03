@@ -1,0 +1,24 @@
+?   	github.com/danfragoso/thdwb/assets	[no test files]
+# github.com/danfragoso/thdwb/browser
+browser/main.go:194:37: windowContext.ActiveDocument.History undefined (type *hotdog.Document has no field or method History)
+browser/main.go:195:53: windowContext.ActiveDocument.History undefined (type *hotdog.Document has no field or method History)
+browser/main.go:201:37: windowContext.ActiveDocument.History undefined (type *hotdog.Document has no field or method History)
+browser/main.go:202:53: windowContext.ActiveDocument.History undefined (type *hotdog.Document has no field or method History)
+browser/main.go:208:11: window.SetIcon undefined (type *mustard.Window has no field or method SetIcon)
+browser/main.go:209:11: window.SetSizeChangedCallback undefined (type *mustard.Window has no field or method SetSizeChangedCallback)
+browser/main.go:210:19: windowContext.WindowWidth undefined (type *hotdog.WindowContext has no field or method WindowWidth)
+browser/main.go:211:19: windowContext.WindowHeight undefined (type *hotdog.WindowContext has no field or method WindowHeight)
+browser/main.go:212:19: windowContext.NeedsRelayout undefined (type *hotdog.WindowContext has no field or method NeedsRelayout)
+browser/main.go:215:11: window.SetCloseCallback undefined (type *mustard.Window has no field or method SetCloseCallback)
+browser/main.go:215:11: too many errors
+FAIL	github.com/danfragoso/thdwb/browser [build failed]
+ok  	github.com/danfragoso/thdwb/bun	1.065s
+ok  	github.com/danfragoso/thdwb/gg	1.354s
+?   	github.com/danfragoso/thdwb/hotdog	[no test files]
+?   	github.com/danfragoso/thdwb/ketchup	[no test files]
+ok  	github.com/danfragoso/thdwb/mayo	1.024s
+?   	github.com/danfragoso/thdwb/mustard	[no test files]
+?   	github.com/danfragoso/thdwb/pages	[no test files]
+ok  	github.com/danfragoso/thdwb/profiler	3.021s
+ok  	github.com/danfragoso/thdwb/sauce	1.027s
+FAIL
