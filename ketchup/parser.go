@@ -18,6 +18,6 @@ func ParseHTMLDocument(document string) *hotdog.Document {
 	HTMLDocument.RawDocument = document
 	HTMLDocument.HTMLRoot = parsedDoc
 
-	HTMLDocument.DOM = buildKetchupNode(parsedDoc, HTMLDocument)
+	HTMLDocument.DOM = buildNodeDOMFromHTML(parsedDoc, HTMLDocument)
 	return HTMLDocument
 }

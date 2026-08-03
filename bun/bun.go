@@ -9,7 +9,11 @@ import (
 
 func RenderDocument(ctx *gg.Context, document *hotdog.Document, experimentalLayout bool) error {
 	if !experimentalLayout {
-		body, _ := document.DOM.FindChildByName("body")
+		body, err := document.DOM.FindChildByName("body")
+		if err != nil || body == nil {
+			// No explicit body element, use the document root (html) as fallback
+			body = document.DOM
+		}
 
 		document.DOM.RenderBox.Width = float64(ctx.Width())
 		document.DOM.RenderBox.Height = float64(ctx.Height())

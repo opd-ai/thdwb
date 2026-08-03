@@ -7,29 +7,29 @@ import (
 	"golang.org/x/net/html"
 )
 
-func buildKetchupNode(node *html.Node, document *hotdog.Document) *hotdog.NodeDOM {
+func buildNodeDOMFromHTML(node *html.Node, document *hotdog.Document) *hotdog.NodeDOM {
 	var element, content string
 
-	ketchupNode := &hotdog.NodeDOM{}
+	nodeDOM := &hotdog.NodeDOM{}
 	attributes := retrieveAttributes(node)
 
 	children := retrieveChildren(node)
 	var prevChild *hotdog.NodeDOM
 	for i, child := range children {
-		ketchupChild := buildKetchupNode(child, document)
-		ketchupChild.Parent = ketchupNode
-		ketchupChild.PrevSibling = prevChild
+		childDOM := buildNodeDOMFromHTML(child, document)
+		childDOM.Parent = nodeDOM
+		childDOM.PrevSibling = prevChild
 		if prevChild != nil {
-			prevChild.NextSibling = ketchupChild
+			prevChild.NextSibling = childDOM
 		}
 		if i == 0 {
-			ketchupNode.FirstChild = ketchupChild
+			nodeDOM.FirstChild = childDOM
 		}
-		prevChild = ketchupChild
+		prevChild = childDOM
 
-		ketchupNode.Children = append(
-			ketchupNode.Children,
-			ketchupChild,
+		nodeDOM.Children = append(
+			nodeDOM.Children,
+			childDOM,
 		)
 	}
 
@@ -37,39 +37,28 @@ func buildKetchupNode(node *html.Node, document *hotdog.Document) *hotdog.NodeDO
 	case html.TextNode:
 		element = "html:text"
 		content = node.Data
-		break
-
 	case html.ElementNode:
 		element = node.Data
-
 	case html.DoctypeNode:
 		element = "html:doctype"
-
 	case html.RawNode:
 		element = "html:raw"
-
 	case html.CommentNode:
 		element = "html:comment"
 		content = node.Data
 	}
 
-	ketchupNode.Element = element
-	ketchupNode.Content = content
+	nodeDOM.Element = element
+	nodeDOM.Content = content
+	nodeDOM.Attributes = attributes
+	nodeDOM.Document = document
+	nodeDOM.NeedsReflow = true
+	nodeDOM.NeedsRepaint = true
+	nodeDOM.Style = mayo.GetElementStylesheet(element, attributes)
+	nodeDOM.RenderBox = &hotdog.RenderBox{}
+	nodeDOM.HTMLNode = node
 
-	ketchupNode.Attributes = attributes
-
-	ketchupNode.Document = document
-
-	ketchupNode.NeedsReflow = true
-	ketchupNode.NeedsRepaint = true
-
-	ketchupNode.Style = mayo.GetElementStylesheet(element, attributes)
-	ketchupNode.RenderBox = &hotdog.RenderBox{}
-
-	// Store reference to original html.Node for CSS selector queries
-	ketchupNode.HTMLNode = node
-
-	return ketchupNode
+	return nodeDOM
 }
 
 func retrieveChildren(node *html.Node) []*html.Node {

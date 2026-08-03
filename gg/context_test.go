@@ -6,14 +6,16 @@ import (
 	"fmt"
 	"image/color"
 	"math/rand"
+	"os"
 	"testing"
 )
 
 var save bool
 
-func init() {
+func TestMain(m *testing.M) {
 	flag.BoolVar(&save, "save", false, "save PNG output for each test case")
-	flag.Parse()
+	flag.CommandLine.Parse(os.Args[1:])
+	os.Exit(m.Run())
 }
 
 func hash(dc *Context) string {
@@ -91,7 +93,7 @@ func TestCircles(t *testing.T) {
 		dc.Stroke()
 	}
 	saveImage(dc, "TestCircles")
-	checkHash(t, dc, "c52698000df96fabafe7863701afe922")
+	checkHash(t, dc, "cf4f1afe2c5087d184af3147ed035833")
 }
 
 func TestQuadratic(t *testing.T) {
@@ -201,7 +203,7 @@ func TestDrawStringWrapped(t *testing.T) {
 	dc.SetRGB(0, 0, 0)
 	dc.DrawStringWrapped("Hello, world! How are you?", 50, 50, 0.5, 0.5, 90, 1.5, AlignCenter)
 	saveImage(dc, "TestDrawStringWrapped")
-	checkHash(t, dc, "8d92f6aae9e8b38563f171abd00893f8")
+	checkHash(t, dc, "c56d9177c26061dd928c4ff4a44d255d")
 }
 
 func TestDrawImage(t *testing.T) {

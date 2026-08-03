@@ -66,7 +66,7 @@ func TestGetImage(t *testing.T) {
 			var data []byte
 
 			assert.NotPanics(t, func() {
-				data = GetImage(u)
+				data, _ = GetImage(u)
 			})
 
 			assert.Len(t, data, tc.expectLen)
