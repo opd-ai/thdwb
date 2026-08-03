@@ -8,12 +8,14 @@ import (
 	mayo "github.com/danfragoso/thdwb/mayo"
 )
 
-var xmlTag = regexp.MustCompile(`(\<.+?\>)|(\<//?\w+\>\\?)`)
-var clTag = regexp.MustCompile(`\<\/\w+\>`)
-var selfClosingTag = regexp.MustCompile(`\<.+\/\>`)
-var tagContent = regexp.MustCompile(`(.+?)\<\/`)
-var tagName = regexp.MustCompile(`(\<\w+)`)
-var attr = regexp.MustCompile(`\w+=".+?"`)
+var (
+	xmlTag         = regexp.MustCompile(`(\<.+?\>)|(\<//?\w+\>\\?)`)
+	clTag          = regexp.MustCompile(`\<\/\w+\>`)
+	selfClosingTag = regexp.MustCompile(`\<.+\/\>`)
+	tagContent     = regexp.MustCompile(`(.+?)\<\/`)
+	tagName        = regexp.MustCompile(`(\<\w+)`)
+	attr           = regexp.MustCompile(`\w+=".+?"`)
+)
 
 func extractAttributes(tag string) []*hotdog.Attribute {
 	rawAttrArray := attr.FindAllString(tag, -1)
@@ -99,11 +101,12 @@ func ParsePlainText(document string) *hotdog.Document {
 
 	textDocument.DOM.Document = textDocument
 	textDocument.DOM.Children = []*hotdog.NodeDOM{
-		&hotdog.NodeDOM{Element: "head", Document: textDocument,
+		{
+			Element: "head", Document: textDocument,
 			Style:     mayo.GetElementStylesheet("head", []*hotdog.Attribute{}),
 			RenderBox: &hotdog.RenderBox{}, Parent: textDocument.DOM,
 		},
-		&hotdog.NodeDOM{
+		{
 			Element: "body", NeedsReflow: true, NeedsRepaint: true,
 			Style:     mayo.GetElementStylesheet("body", []*hotdog.Attribute{}),
 			RenderBox: &hotdog.RenderBox{}, Document: textDocument,

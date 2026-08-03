@@ -19,7 +19,7 @@ func SetGLFWHints() {
 	glfw.WindowHint(glfw.OpenGLForwardCompatible, glfw.True)
 }
 
-func CreateNewWindow(title string, width int, height int, hiDPI bool) *Window {
+func CreateNewWindow(title string, width, height int, hiDPI bool) *Window {
 	glw, err := glfw.CreateWindow(width, height, title, nil, nil)
 	if err != nil {
 		log.Fatal(err)
@@ -81,19 +81,19 @@ func (window *Window) destroy() {
 	window = nil
 }
 
-//Show - Show the window
+// Show - Show the window
 func (window *Window) Show() {
 	window.needsReflow = true
 	window.visible = true
 	window.glw.Show()
 }
 
-//SetRootFrame - Sets the window root frame
+// SetRootFrame - Sets the window root frame
 func (window *Window) SetRootFrame(frame *Frame) {
 	window.rootFrame = frame
 }
 
-//SetRootFrame - Sets the window root frame
+// SetRootFrame - Sets the window root frame
 func (window *Window) GetSize() (int, int) {
 	return window.width, window.height
 }
@@ -149,7 +149,7 @@ func (window *Window) addEvents() {
 
 		window.width, window.height = swidth, sheight
 		window.RecreateContext()
-		//window.RecreateOverlayContext()
+		// window.RecreateOverlayContext()
 		window.needsReflow = true
 	})
 
@@ -317,7 +317,6 @@ func (window *Window) generateTexture() {
 		int32(window.frameBuffer.Rect.Size().X), int32(window.frameBuffer.Rect.Size().Y),
 		0, gl.RGBA, gl.UNSIGNED_BYTE, gl.Ptr(window.frameBuffer.Pix),
 	)
-
 }
 
 func (window *Window) GetCursorPosition() (float64, float64) {

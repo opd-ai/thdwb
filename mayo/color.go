@@ -9,7 +9,6 @@ import (
 
 func hexToFloatInRange(hex string) float64 {
 	number, err := strconv.ParseInt(hex, 16, 0)
-
 	if err != nil {
 		panic(err)
 	}

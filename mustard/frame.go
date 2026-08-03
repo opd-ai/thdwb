@@ -1,6 +1,6 @@
 package mustard
 
-//CreateFrame - Creates and returns a new Frame
+// CreateFrame - Creates and returns a new Frame
 func CreateFrame(orientation FrameOrientation) *Frame {
 	var widgets []Widget
 
@@ -11,13 +11,14 @@ func CreateFrame(orientation FrameOrientation) *Frame {
 			needsRepaint: true,
 			widgets:      widgets,
 
-			backgroundColor: "#fff"},
+			backgroundColor: "#fff",
+		},
 
 		orientation: orientation,
 	}
 }
 
-//SetBackgroundColor - Sets the frame background color
+// SetBackgroundColor - Sets the frame background color
 func (frame *Frame) SetBackgroundColor(backgroundColor string) {
 	if len(backgroundColor) > 0 && string(backgroundColor[0]) == "#" {
 		frame.backgroundColor = backgroundColor
@@ -25,21 +26,21 @@ func (frame *Frame) SetBackgroundColor(backgroundColor string) {
 	}
 }
 
-//SetWidth - Sets the frame width
+// SetWidth - Sets the frame width
 func (frame *Frame) SetWidth(width float64) {
 	frame.box.width = width
 	frame.fixedWidth = true
 	frame.RequestReflow()
 }
 
-//SetHeight - Sets the frame height
+// SetHeight - Sets the frame height
 func (frame *Frame) SetHeight(height float64) {
 	frame.box.height = height
 	frame.fixedHeight = true
 	frame.RequestReflow()
 }
 
-//SetHeight - Sets the frame height
+// SetHeight - Sets the frame height
 func (frame *Frame) GetHeight() float64 {
 	return frame.box.height
 }

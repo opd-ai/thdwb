@@ -1,3 +1,4 @@
+//go:build bundleAssets
 // +build bundleAssets
 
 package main
@@ -30,12 +31,12 @@ func main() {
 				}
 			}
 
-			ioutil.WriteFile(rootPath+rootFile.Name()+".go", []byte(fileString), 0644)
+			ioutil.WriteFile(rootPath+rootFile.Name()+".go", []byte(fileString), 0o644)
 		}
 	}
 }
 
-func createFileFunction(folderName string, fileName string, fileContent []byte) string {
+func createFileFunction(folderName, fileName string, fileContent []byte) string {
 	fileTitle := strings.Split(fileName, ".")[0]
 
 	embedStr := "\n//go:embed " + filepath.Join(folderName, fileName) + "\n"

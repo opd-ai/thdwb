@@ -107,7 +107,7 @@ func parseHexColor(x string) (r, g, b, a int) {
 		format := "%02x%02x%02x%02x"
 		fmt.Sscanf(x, format, &r, &g, &b, &a)
 	}
-	return
+	return r, g, b, a
 }
 
 func fixp(x, y float64) fixed.Point26_6 {

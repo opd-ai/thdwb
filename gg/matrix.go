@@ -62,13 +62,13 @@ func (a Matrix) Multiply(b Matrix) Matrix {
 func (a Matrix) TransformVector(x, y float64) (tx, ty float64) {
 	tx = a.XX*x + a.XY*y
 	ty = a.YX*x + a.YY*y
-	return
+	return tx, ty
 }
 
 func (a Matrix) TransformPoint(x, y float64) (tx, ty float64) {
 	tx = a.XX*x + a.XY*y + a.X0
 	ty = a.YX*x + a.YY*y + a.Y0
-	return
+	return tx, ty
 }
 
 func (a Matrix) Translate(x, y float64) Matrix {

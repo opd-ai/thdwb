@@ -14,9 +14,11 @@ import (
 	pages "github.com/danfragoso/thdwb/pages"
 )
 
-var client = &http.Client{}
-var cache = &hotdog.ResourceCache{}
-var imageCache = &hotdog.ImgCache{}
+var (
+	client     = &http.Client{}
+	cache      = &hotdog.ResourceCache{}
+	imageCache = &hotdog.ImgCache{}
+)
 
 // GetResource - Makes an http request and returns a resource struct
 func GetResource(URL *url.URL, browser *hotdog.WebBrowser) *hotdog.Resource {

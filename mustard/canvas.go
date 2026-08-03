@@ -6,7 +6,7 @@ import (
 	"github.com/go-gl/glfw/v3.3/glfw"
 )
 
-//CreateImageWidget - Creates and returns a new Image Widget
+// CreateImageWidget - Creates and returns a new Image Widget
 func CreateCanvasWidget(renderer func(*CanvasWidget)) *CanvasWidget {
 	var widgets []Widget
 
@@ -29,14 +29,14 @@ func CreateCanvasWidget(renderer func(*CanvasWidget)) *CanvasWidget {
 	}
 }
 
-//SetWidth - Sets the label width
+// SetWidth - Sets the label width
 func (canvas *CanvasWidget) SetWidth(width float64) {
 	canvas.box.width = width
 	canvas.fixedWidth = true
 	canvas.RequestReflow()
 }
 
-//SetHeight - Sets the label height
+// SetHeight - Sets the label height
 func (canvas *CanvasWidget) SetHeight(height float64) {
 	canvas.box.height = height
 	canvas.fixedHeight = true
@@ -97,17 +97,17 @@ func createCtxScrollBar(ctx *CanvasWidget) {
 	top, _, width, height := ctx.computedBox.GetCoords()
 	context := ctx.window.context
 
-	//Scroll Track
+	// Scroll Track
 	context.SetHexColor("#c1c1c1")
 	context.DrawRectangle(float64(width-12), float64(top), 12, float64(height))
 	context.Fill()
 
-	//Scroll Arrow
+	// Scroll Arrow
 	context.SetHexColor("#ff0000")
 	context.DrawRectangle(float64(width-12), 30, 10, 10)
 	context.Fill()
 
-	//Scroll Thumb
+	// Scroll Thumb
 	context.SetHexColor("#565656")
 	context.DrawRectangle(float64(width-12), float64(top), 12, 200)
 	context.Fill()

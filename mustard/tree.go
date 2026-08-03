@@ -8,7 +8,7 @@ import (
 	"github.com/goki/freetype/truetype"
 )
 
-//CreateTreeWidget - Creates and returns a new Tree Widget
+// CreateTreeWidget - Creates and returns a new Tree Widget
 func CreateTreeWidget() *TreeWidget {
 	var widgets []Widget
 	font, _ := truetype.Parse(assets.OpenSans(400))
@@ -18,7 +18,6 @@ func CreateTreeWidget() *TreeWidget {
 
 	return &TreeWidget{
 		baseWidget: baseWidget{
-
 			needsRepaint: true,
 			widgets:      widgets,
 
@@ -132,27 +131,27 @@ func getIntersectedNode(nodes []*TreeWidgetNode, x, y float64) *TreeWidgetNode {
 	return intersectedNode
 }
 
-//SetWidth - Sets the tree width
+// SetWidth - Sets the tree width
 func (tree *TreeWidget) SetWidth(width float64) {
 	tree.box.width = width
 	tree.fixedWidth = true
 	tree.RequestReflow()
 }
 
-//SetHeight - Sets the tree height
+// SetHeight - Sets the tree height
 func (tree *TreeWidget) SetHeight(height float64) {
 	tree.box.height = height
 	tree.fixedHeight = true
 	tree.RequestReflow()
 }
 
-//SetFontSize - Sets the tree font size
+// SetFontSize - Sets the tree font size
 func (tree *TreeWidget) SetFontSize(fontSize float64) {
 	tree.fontSize = fontSize
 	tree.needsRepaint = true
 }
 
-//SetFontColor - Sets the tree font color
+// SetFontColor - Sets the tree font color
 func (tree *TreeWidget) SetFontColor(fontColor string) {
 	if len(fontColor) > 0 && string(fontColor[0]) == "#" {
 		tree.fontColor = fontColor
@@ -160,7 +159,7 @@ func (tree *TreeWidget) SetFontColor(fontColor string) {
 	}
 }
 
-//SetBackgroundColor - Sets the tree background color
+// SetBackgroundColor - Sets the tree background color
 func (tree *TreeWidget) SetBackgroundColor(backgroundColor string) {
 	if len(backgroundColor) > 0 && string(backgroundColor[0]) == "#" {
 		tree.backgroundColor = backgroundColor
@@ -210,7 +209,6 @@ func flowNode(context *gg.Context, node *TreeWidgetNode, tree *TreeWidget, level
 			node.box.height += childNode.box.height
 		}
 	}
-
 }
 
 func drawNode(context *gg.Context, node *TreeWidgetNode, tree *TreeWidget, level int) {
@@ -246,5 +244,4 @@ func drawNode(context *gg.Context, node *TreeWidgetNode, tree *TreeWidget, level
 			context.Pop()
 		}
 	}
-
 }

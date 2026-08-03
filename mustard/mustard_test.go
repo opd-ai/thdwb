@@ -56,6 +56,6 @@ func TestMustard(t *testing.T) {
 	app.Run(func() {
 		frameEvents++
 		statusLabel.SetContent("Processed Events: " + strconv.Itoa(frameEvents) + "; Resolution: " + strconv.Itoa(window.width) + "X" + strconv.Itoa(window.height))
-		//window.RequestRepaint()
+		// window.RequestRepaint()
 	})
 }

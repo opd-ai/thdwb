@@ -1,9 +1,10 @@
 package mustard
 
 import (
+	"image"
+
 	assets "github.com/danfragoso/thdwb/assets"
 	gg "github.com/danfragoso/thdwb/gg"
-	"image"
 
 	"github.com/goki/freetype/truetype"
 )

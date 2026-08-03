@@ -1,8 +1,9 @@
 package ketchup
 
 import (
-	hotdog "github.com/danfragoso/thdwb/hotdog"
 	"strings"
+
+	hotdog "github.com/danfragoso/thdwb/hotdog"
 
 	"golang.org/x/net/html"
 )

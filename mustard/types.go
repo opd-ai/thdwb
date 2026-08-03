@@ -166,9 +166,9 @@ type baseWidget struct {
 type cursorType int
 
 const (
-	//DefaultCursor - Default arrow cursor
+	// DefaultCursor - Default arrow cursor
 	DefaultCursor cursorType = iota
-	//PointerCursor - Pointer cursor
+	// PointerCursor - Pointer cursor
 	PointerCursor
 )
 
@@ -196,10 +196,10 @@ const (
 type FrameOrientation int
 
 const (
-	//VerticalFrame - Vertical frame orientation
+	// VerticalFrame - Vertical frame orientation
 	VerticalFrame FrameOrientation = iota
 
-	//HorizontalFrame - Horizontal frame orientation
+	// HorizontalFrame - Horizontal frame orientation
 	HorizontalFrame
 )
 
@@ -210,7 +210,7 @@ const (
 	MouseRight
 )
 
-//Frame - Layout frame type
+// Frame - Layout frame type
 type Frame struct {
 	baseWidget
 
@@ -276,8 +276,8 @@ func (node *TreeWidgetNode) Toggle() {
 
 func (node *TreeWidgetNode) Close() {
 	node.isOpen = false
-
 }
+
 func (node *TreeWidgetNode) Open() {
 	node.isOpen = true
 }

@@ -1,0 +1,160 @@
+package hotdog
+
+import (
+	"net/url"
+
+	gg "github.com/danfragoso/thdwb/gg"
+	mustard "github.com/danfragoso/thdwb/mustard"
+	profiler "github.com/danfragoso/thdwb/profiler"
+)
+
+// WindowContext holds all state for a single browser window/tab instance.
+// This enables multiple independent windows to run without memory interference.
+type WindowContext struct {
+	// DOM and document state
+	ActiveDocument *Document
+	Documents      []*Document
+
+	// Rendering and viewport
+	Viewport    *mustard.CanvasWidget
+	StatusLabel *mustard.LabelWidget
+
+	// Navigation history
+	History *History
+
+	// Mustard window reference
+	Window *mustard.Window
+
+	// Profiling
+	Profiler *profiler.Profiler
+
+	// Settings and build info (shared reference)
+	Settings  *Settings
+	BuildInfo *BuildInfo
+
+	// Origin tracking for cookie partitioning and SOP
+	Origin *url.URL
+
+	// Layout cache
+	layoutCache map[string]interface{}
+
+	// Focus and input state
+	focusedElement *NodeDOM
+	inputState     map[string]interface{}
+
+	// Event registry for this window
+	eventRegistry map[string][]func(interface{})
+
+	// JS runtime (Goja VM) - per window isolation
+	// jsRuntime *goja.Runtime // TODO: Initialize when Goja is integrated
+
+	// Debug state
+	DebugFlag   bool
+	DebugWindow *mustard.Window
+	DebugTree   *mustard.TreeWidget
+}
+
+// NewWindowContext creates a new isolated window context.
+func NewWindowContext(settings *Settings, buildInfo *BuildInfo, profiler *profiler.Profiler) *WindowContext {
+	return &WindowContext{
+		ActiveDocument: &Document{},
+		Documents:      make([]*Document, 0),
+		History:        &History{},
+		Profiler:       profiler,
+		Settings:       settings,
+		BuildInfo:      buildInfo,
+		layoutCache:    make(map[string]interface{}),
+		inputState:     make(map[string]interface{}),
+		eventRegistry:  make(map[string][]func(interface{})),
+	}
+}
+
+// SetOrigin sets the origin for this window context (scheme + host + port).
+func (wc *WindowContext) SetOrigin(rawURL string) error {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return err
+	}
+	wc.Origin = &url.URL{
+		Scheme: parsed.Scheme,
+		Host:   parsed.Host,
+	}
+	return nil
+}
+
+// GetOrigin returns the origin for this window context.
+func (wc *WindowContext) GetOrigin() *url.URL {
+	if wc.Origin == nil {
+		return &url.URL{}
+	}
+	return wc.Origin
+}
+
+// RegisterEvent registers an event handler for this window context.
+func (wc *WindowContext) RegisterEvent(eventName string, handler func(interface{})) {
+	wc.eventRegistry[eventName] = append(wc.eventRegistry[eventName], handler)
+}
+
+// EmitEvent emits an event to all registered handlers for this window context.
+func (wc *WindowContext) EmitEvent(eventName string, data interface{}) {
+	if handlers, ok := wc.eventRegistry[eventName]; ok {
+		for _, handler := range handlers {
+			handler(data)
+		}
+	}
+}
+
+// GetLayoutCache retrieves a cached layout value.
+func (wc *WindowContext) GetLayoutCache(key string) (interface{}, bool) {
+	val, ok := wc.layoutCache[key]
+	return val, ok
+}
+
+// SetLayoutCache stores a layout value in the cache.
+func (wc *WindowContext) SetLayoutCache(key string, value interface{}) {
+	wc.layoutCache[key] = value
+}
+
+// ClearLayoutCache clears the layout cache.
+func (wc *WindowContext) ClearLayoutCache() {
+	wc.layoutCache = make(map[string]interface{})
+}
+
+// SetFocusedElement sets the currently focused DOM element.
+func (wc *WindowContext) SetFocusedElement(el *NodeDOM) {
+	wc.focusedElement = el
+}
+
+// GetFocusedElement returns the currently focused DOM element.
+func (wc *WindowContext) GetFocusedElement() *NodeDOM {
+	return wc.focusedElement
+}
+
+// SetInputState sets a value in the input state map.
+func (wc *WindowContext) SetInputState(key string, value interface{}) {
+	wc.inputState[key] = value
+}
+
+// GetInputState retrieves a value from the input state map.
+func (wc *WindowContext) GetInputState(key string) (interface{}, bool) {
+	val, ok := wc.inputState[key]
+	return val, ok
+}
+
+// Destroy cleans up the window context resources.
+func (wc *WindowContext) Destroy() {
+	wc.ActiveDocument = nil
+	wc.Documents = nil
+	wc.Viewport = nil
+	wc.StatusLabel = nil
+	wc.History = nil
+	wc.Window = nil
+	wc.Profiler = nil
+	wc.Origin = nil
+	wc.ClearLayoutCache()
+	wc.inputState = nil
+	wc.eventRegistry = nil
+	wc.focusedElement = nil
+	wc.DebugWindow = nil
+	wc.DebugTree = nil
+}

@@ -6,8 +6,10 @@ import (
 	hotdog "github.com/danfragoso/thdwb/hotdog"
 )
 
-var rgba = regexp.MustCompile(`rgba?\([\.?\d?\.?\d?%?\s?,?]+\)`)
-var rgbaParams = regexp.MustCompile(`\([\.?\d?\.?\d?%?\s?,?]+\)`)
+var (
+	rgba       = regexp.MustCompile(`rgba?\([\.?\d?\.?\d?%?\s?,?]+\)`)
+	rgbaParams = regexp.MustCompile(`\([\.?\d?\.?\d?%?\s?,?]+\)`)
+)
 
 var colorTable = map[string]*hotdog.ColorRGBA{
 	"maroon":         {R: 0.5, G: 0.0, B: 0.0, A: 1.0},

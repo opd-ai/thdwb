@@ -8,7 +8,7 @@ import (
 	"github.com/go-gl/glfw/v3.3/glfw"
 )
 
-//CreateImageWidget - Creates and returns a new Image Widget
+// CreateImageWidget - Creates and returns a new Image Widget
 func CreateImageWidget(path []byte) *ImageWidget {
 	var widgets []Widget
 
@@ -19,7 +19,6 @@ func CreateImageWidget(path []byte) *ImageWidget {
 
 	return &ImageWidget{
 		baseWidget: baseWidget{
-
 			needsRepaint: true,
 			widgets:      widgets,
 
@@ -30,19 +29,19 @@ func CreateImageWidget(path []byte) *ImageWidget {
 			backgroundColor: "#fff",
 		},
 
-		//path: path,
+		// path: path,
 		img: img,
 	}
 }
 
-//SetWidth - Sets the label width
+// SetWidth - Sets the label width
 func (label *ImageWidget) SetWidth(width float64) {
 	label.box.width = width
 	label.fixedWidth = true
 	label.RequestReflow()
 }
 
-//SetHeight - Sets the label height
+// SetHeight - Sets the label height
 func (label *ImageWidget) SetHeight(height float64) {
 	label.box.height = height
 	label.fixedHeight = true

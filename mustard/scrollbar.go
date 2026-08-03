@@ -7,14 +7,13 @@ import (
 	"github.com/goki/freetype/truetype"
 )
 
-//CreateScrollBarWidget - Creates and returns a new ScrollBar Widget
+// CreateScrollBarWidget - Creates and returns a new ScrollBar Widget
 func CreateScrollBarWidget(orientation ScrollBarOrientation) *ScrollBarWidget {
 	var widgets []Widget
 	font, _ := truetype.Parse(assets.OpenSans(400))
 
 	return &ScrollBarWidget{
 		baseWidget: baseWidget{
-
 			needsRepaint: true,
 			widgets:      widgets,
 
@@ -30,21 +29,21 @@ func CreateScrollBarWidget(orientation ScrollBarOrientation) *ScrollBarWidget {
 	}
 }
 
-//SetWidth - Sets the scrollBar width
+// SetWidth - Sets the scrollBar width
 func (scrollBar *ScrollBarWidget) SetWidth(width float64) {
 	scrollBar.box.width = width
 	scrollBar.fixedWidth = true
 	scrollBar.RequestReflow()
 }
 
-//SetHeight - Sets the scrollBar height
+// SetHeight - Sets the scrollBar height
 func (scrollBar *ScrollBarWidget) SetHeight(height float64) {
 	scrollBar.box.height = height
 	scrollBar.fixedHeight = true
 	scrollBar.RequestReflow()
 }
 
-//SetBackgroundColor - Sets the scrollBar background color
+// SetBackgroundColor - Sets the scrollBar background color
 func (scrollBar *ScrollBarWidget) SetTrackColor(backgroundColor string) {
 	if len(backgroundColor) > 0 && string(backgroundColor[0]) == "#" {
 		scrollBar.backgroundColor = backgroundColor

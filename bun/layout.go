@@ -30,9 +30,7 @@ func createRenderTree(root *hotdog.NodeDOM) *hotdog.NodeDOM {
 }
 
 func layoutNode(ctx *gg.Context, node *hotdog.NodeDOM) {
-
 }
 
 func paintText(ctx *gg.Context, node *hotdog.NodeDOM) {
-
 }

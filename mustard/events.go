@@ -204,7 +204,6 @@ func (window *Window) ProcessContextMenu() {
 					break
 				}
 			}
-
 		} else {
 			window.DeselectEntries()
 		}

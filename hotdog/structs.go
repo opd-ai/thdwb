@@ -2,9 +2,10 @@ package hotdog
 
 import (
 	"fmt"
+	"net/url"
+
 	"github.com/danfragoso/thdwb/mustard"
 	profiler "github.com/danfragoso/thdwb/profiler"
-	"net/url"
 )
 
 type WebBrowser struct {
@@ -113,7 +114,7 @@ func (e NoSuchElementError) Error() string {
 	return fmt.Sprintf("no such element: %q", string(e))
 }
 
-//Resource "HTTP resource struct definition"
+// Resource "HTTP resource struct definition"
 type Resource struct {
 	Body        string
 	ContentType string
@@ -122,13 +123,13 @@ type Resource struct {
 	Key         string
 }
 
-//Attribute "Generic key:value attribute definition"
+// Attribute "Generic key:value attribute definition"
 type Attribute struct {
 	Name  string
 	Value string
 }
 
-//Stylesheet "Stylesheet definition for DOM Nodes"
+// Stylesheet "Stylesheet definition for DOM Nodes"
 type Stylesheet struct {
 	Color           *ColorRGBA
 	BackgroundColor *ColorRGBA
@@ -145,13 +146,13 @@ type Stylesheet struct {
 	Left   float64
 }
 
-//StyleElement "hmtl <style> element"
+// StyleElement "hmtl <style> element"
 type StyleElement struct {
 	Selector string
 	Style    *Stylesheet
 }
 
-//ColorRGBA "RGBA color model"
+// ColorRGBA "RGBA color model"
 type ColorRGBA struct {
 	R float64
 	G float64

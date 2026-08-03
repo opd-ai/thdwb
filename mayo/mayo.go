@@ -39,7 +39,6 @@ func mapSizeValue(sizeValue string) float64 {
 	re := regexp.MustCompile("[0-9]+")
 	valueString := re.FindString(sizeValue)
 	value, err := strconv.ParseInt(valueString, 10, 0)
-
 	if err != nil {
 		return float64(14)
 	}

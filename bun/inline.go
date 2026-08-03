@@ -3,11 +3,12 @@ package bun
 import (
 	"bytes"
 	"fmt"
+	"image"
+
 	"github.com/danfragoso/thdwb/assets"
 	gg "github.com/danfragoso/thdwb/gg"
 	hotdog "github.com/danfragoso/thdwb/hotdog"
 	"github.com/danfragoso/thdwb/sauce"
-	"image"
 )
 
 func paintInlineElement(ctx *gg.Context, node *hotdog.NodeDOM) {
@@ -19,7 +20,6 @@ func paintInlineElement(ctx *gg.Context, node *hotdog.NodeDOM) {
 		// We should not download the image again, as we already have this saved.
 		// We could save the image on the node or have it cached on the
 		im, err := fetchNodeImage(node)
-
 		if err != nil {
 			fmt.Println(err)
 			// Use the stand-in error image.
@@ -48,7 +48,6 @@ func fetchNodeImage(node *hotdog.NodeDOM) (image.Image, error) {
 		return nil, err
 	}
 	im, _, err := image.Decode(bytes.NewReader(data))
-
 	if err != nil {
 		return nil, err
 	}

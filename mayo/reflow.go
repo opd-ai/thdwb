@@ -4,7 +4,7 @@ import (
 	hotdog "github.com/danfragoso/thdwb/hotdog"
 )
 
-func ReflowNode(node *hotdog.NodeDOM, prev *hotdog.NodeDOM, siblingsOffset float64) float64 {
+func ReflowNode(node, prev *hotdog.NodeDOM, siblingsOffset float64) float64 {
 	for i := 0; i < len(node.Children); i++ {
 		siblingsOffset += ReflowNode(node.Children[i], node.Children[i], siblingsOffset)
 	}
