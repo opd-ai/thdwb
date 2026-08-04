@@ -4,6 +4,9 @@ import (
 	"io/ioutil"
 	"testing"
 
+	"golang.org/x/net/html"
+
+	cascadia "github.com/andybalholm/cascadia"
 	hotdog "github.com/danfragoso/thdwb/hotdog"
 
 	"github.com/stretchr/testify/assert"
@@ -228,4 +231,276 @@ func TestCSSInheritanceOverride(t *testing.T) {
 	assert.Equal(t, 1.0, span.Style.Color.B)
 	assert.Equal(t, "Arial", span.Style.FontFamily)
 	assert.Equal(t, 16.0, span.Style.FontSize)
+}
+
+func TestCSSSpecificity(t *testing.T) {
+	// Test that specificity is calculated correctly for different selector types
+	// Note: cascadia's specificity calculation may differ from standard CSS specificity
+	// for pseudo-classes and pseudo-elements
+	tests := []struct {
+		selector     string
+		expectedSpec cascadia.Specificity
+		description  string
+		usePseudo    bool // whether to use ParseWithPseudoElement
+	}{
+		{"div", cascadia.Specificity{0, 0, 1}, "element selector", false},
+		{".class", cascadia.Specificity{0, 1, 0}, "class selector", false},
+		{"#id", cascadia.Specificity{1, 0, 0}, "ID selector", false},
+		{"div.class", cascadia.Specificity{0, 1, 1}, "element + class", false},
+		{"#id.class", cascadia.Specificity{1, 1, 0}, "ID + class", false},
+		{"div#id.class", cascadia.Specificity{1, 1, 1}, "element + ID + class", false},
+		{"div .class", cascadia.Specificity{0, 1, 1}, "descendant element + class", false},
+		{"div > .class", cascadia.Specificity{0, 1, 1}, "child element + class", false},
+		{"div + .class", cascadia.Specificity{0, 1, 1}, "adjacent sibling element + class", false},
+		{"div ~ .class", cascadia.Specificity{0, 1, 1}, "general sibling element + class", false},
+		{".class1.class2", cascadia.Specificity{0, 2, 0}, "two classes", false},
+		{"#id1 #id2", cascadia.Specificity{2, 0, 0}, "two IDs", false},
+		{"div:hover", cascadia.Specificity{0, 0, 1}, "element + pseudo-class (cascadia treats as element)", false},
+		{"::before", cascadia.Specificity{0, 0, 1}, "pseudo-element", true},
+		{"div::before", cascadia.Specificity{0, 0, 2}, "element + pseudo-element", true},
+	}
+
+	for _, tc := range tests {
+		var sel cascadia.Sel
+		var err error
+		if tc.usePseudo {
+			sel, err = cascadia.ParseWithPseudoElement(tc.selector)
+		} else {
+			sel, err = cascadia.Parse(tc.selector)
+		}
+		assert.NoError(t, err, "Failed to parse selector: %s", tc.selector)
+		assert.Equal(t, tc.expectedSpec, sel.Specificity(), tc.description)
+	}
+}
+
+func TestCascadeSpecificityOrder(t *testing.T) {
+	// Test that higher specificity selectors override lower specificity ones
+	css := `
+		div { color: red; }
+		.class { color: blue; }
+		#id { color: lime; }
+	`
+
+	doc := &hotdog.Document{
+		StyleSheets: ParseStylesheet(css),
+	}
+
+	// Build DOM: <div id="id" class="class">Test</div>
+	root := &hotdog.NodeDOM{
+		Element: "html",
+		Style:   &hotdog.Stylesheet{},
+		Children: []*hotdog.NodeDOM{
+			{
+				Element: "body",
+				Style:   &hotdog.Stylesheet{},
+				Children: []*hotdog.NodeDOM{
+					{
+						Element: "div",
+						Style:   &hotdog.Stylesheet{},
+						Attributes: []*hotdog.Attribute{
+							{Name: "id", Value: "id"},
+							{Name: "class", Value: "class"},
+						},
+					},
+				},
+			},
+		},
+	}
+	doc.DOM = root
+
+	// Create a minimal HTML tree for cascadia matching
+	htmlRoot := &html.Node{
+		Type: html.ElementNode,
+		Data: "html",
+		FirstChild: &html.Node{
+			Type: html.ElementNode,
+			Data: "body",
+			FirstChild: &html.Node{
+				Type: html.ElementNode,
+				Data: "div",
+				Attr: []html.Attribute{
+					{Key: "id", Val: "id"},
+					{Key: "class", Val: "class"},
+				},
+			},
+		},
+	}
+	doc.HTMLRoot = htmlRoot
+
+	// Link DOM nodes to HTML nodes
+	root.HTMLNode = htmlRoot
+	root.Children[0].HTMLNode = htmlRoot.FirstChild
+	root.Children[0].Children[0].HTMLNode = htmlRoot.FirstChild.FirstChild
+
+	ApplyStylesheets(doc)
+
+	// The div has id="id" and class="class", so #id selector (specificity 1,0,0) should win
+	// over .class (0,1,0) and div (0,0,1)
+	// lime color is {R: 0.0, G: 1.0, B: 0.0, A: 1.0}
+	divNode := root.Children[0].Children[0]
+	assert.NotNil(t, divNode.Style.Color)
+	assert.Equal(t, 0.0, divNode.Style.Color.R) // lime
+	assert.Equal(t, 1.0, divNode.Style.Color.G)
+	assert.Equal(t, 0.0, divNode.Style.Color.B)
+}
+
+func TestCascadeSourceOrder(t *testing.T) {
+	// Test that later rules with same specificity override earlier ones
+	css := `
+		.class1 { color: red; }
+		.class2 { color: blue; }
+	`
+
+	doc := &hotdog.Document{
+		StyleSheets: ParseStylesheet(css),
+	}
+
+	// Build DOM: <div class="class1 class2">Test</div>
+	root := &hotdog.NodeDOM{
+		Element: "html",
+		Style:   &hotdog.Stylesheet{},
+		Children: []*hotdog.NodeDOM{
+			{
+				Element: "body",
+				Style:   &hotdog.Stylesheet{},
+				Children: []*hotdog.NodeDOM{
+					{
+						Element: "div",
+						Style:   &hotdog.Stylesheet{},
+						Attributes: []*hotdog.Attribute{
+							{Name: "class", Value: "class1 class2"},
+						},
+					},
+				},
+			},
+		},
+	}
+	doc.DOM = root
+
+	htmlRoot := &html.Node{
+		Type: html.ElementNode,
+		Data: "html",
+		FirstChild: &html.Node{
+			Type: html.ElementNode,
+			Data: "body",
+			FirstChild: &html.Node{
+				Type: html.ElementNode,
+				Data: "div",
+				Attr: []html.Attribute{
+					{Key: "class", Val: "class1 class2"},
+				},
+			},
+		},
+	}
+	doc.HTMLRoot = htmlRoot
+
+	root.HTMLNode = htmlRoot
+	root.Children[0].HTMLNode = htmlRoot.FirstChild
+	root.Children[0].Children[0].HTMLNode = htmlRoot.FirstChild.FirstChild
+
+	ApplyStylesheets(doc)
+
+	// Both selectors have same specificity (0,1,0), so later rule (.class2) should win
+	divNode := root.Children[0].Children[0]
+	assert.NotNil(t, divNode.Style.Color)
+	assert.Equal(t, 0.0, divNode.Style.Color.R) // blue
+	assert.Equal(t, 0.0, divNode.Style.Color.G)
+	assert.Equal(t, 1.0, divNode.Style.Color.B)
+}
+
+func TestCascadeOriginPriority(t *testing.T) {
+	// Test that author styles override user-agent styles
+	// (We simulate this by manually setting origins)
+	css := `
+		div { color: red; }
+	`
+
+	styleSheets := ParseStylesheet(css)
+	// Simulate user-agent stylesheet by changing origin
+	if len(styleSheets) > 0 {
+		styleSheets[0].Origin = "user-agent"
+	}
+
+	// Add author stylesheet
+	authorCSS := `
+		div { color: blue; }
+	`
+	authorSheets := ParseStylesheet(authorCSS)
+	styleSheets = append(styleSheets, authorSheets...)
+
+	doc := &hotdog.Document{
+		StyleSheets: styleSheets,
+	}
+
+	root := &hotdog.NodeDOM{
+		Element: "html",
+		Style:   &hotdog.Stylesheet{},
+		Children: []*hotdog.NodeDOM{
+			{
+				Element: "body",
+				Style:   &hotdog.Stylesheet{},
+				Children: []*hotdog.NodeDOM{
+					{
+						Element: "div",
+						Style:   &hotdog.Stylesheet{},
+					},
+				},
+			},
+		},
+	}
+	doc.DOM = root
+
+	htmlRoot := &html.Node{
+		Type: html.ElementNode,
+		Data: "html",
+		FirstChild: &html.Node{
+			Type: html.ElementNode,
+			Data: "body",
+			FirstChild: &html.Node{
+				Type: html.ElementNode,
+				Data: "div",
+			},
+		},
+	}
+	doc.HTMLRoot = htmlRoot
+
+	root.HTMLNode = htmlRoot
+	root.Children[0].HTMLNode = htmlRoot.FirstChild
+	root.Children[0].Children[0].HTMLNode = htmlRoot.FirstChild.FirstChild
+
+	ApplyStylesheets(doc)
+
+	// Author stylesheet should win over user-agent
+	divNode := root.Children[0].Children[0]
+	assert.NotNil(t, divNode.Style.Color)
+	assert.Equal(t, 0.0, divNode.Style.Color.R) // blue
+	assert.Equal(t, 0.0, divNode.Style.Color.G)
+	assert.Equal(t, 1.0, divNode.Style.Color.B)
+}
+
+func TestParseStylesheetSpecificity(t *testing.T) {
+	// Test that ParseStylesheet correctly populates specificity
+	css := `
+		div { color: red; }
+		.class { color: blue; }
+		#id { color: green; }
+	`
+
+	sheets := ParseStylesheet(css)
+	assert.Len(t, sheets, 3)
+
+	// Check specificity values
+	assert.Equal(t, cascadia.Specificity{0, 0, 1}, sheets[0].Specificity) // div
+	assert.Equal(t, cascadia.Specificity{0, 1, 0}, sheets[1].Specificity) // .class
+	assert.Equal(t, cascadia.Specificity{1, 0, 0}, sheets[2].Specificity) // #id
+
+	// Check origin is set to "author"
+	for _, s := range sheets {
+		assert.Equal(t, "author", s.Origin)
+	}
+
+	// Check index is set correctly
+	assert.Equal(t, 0, sheets[0].Index)
+	assert.Equal(t, 1, sheets[1].Index)
+	assert.Equal(t, 2, sheets[2].Index)
 }

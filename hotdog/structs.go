@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 
+	cascadia "github.com/andybalholm/cascadia"
 	"github.com/danfragoso/thdwb/mustard"
 	profiler "github.com/danfragoso/thdwb/profiler"
 	"golang.org/x/net/html"
@@ -204,8 +205,11 @@ type Stylesheet struct {
 
 // StyleElement "hmtl <style> element"
 type StyleElement struct {
-	Selector string
-	Style    *Stylesheet
+	Selector    string
+	Style       *Stylesheet
+	Specificity cascadia.Specificity // CSS selector specificity for cascade resolution
+	Origin      string               // Origin: "user-agent", "user", "author"
+	Index       int                  // Order index for stable sorting
 }
 
 // ColorRGBA "RGBA color model"

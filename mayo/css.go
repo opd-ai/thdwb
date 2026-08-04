@@ -4,6 +4,7 @@ import (
 	"regexp"
 	"strings"
 
+	cascadia "github.com/andybalholm/cascadia"
 	hotdog "github.com/danfragoso/thdwb/hotdog"
 )
 
@@ -18,7 +19,7 @@ func ParseStylesheet(cssString string) []*hotdog.StyleElement {
 	ruleRegex := regexp.MustCompile(`([^{]+)\{([^}]+)\}`)
 	matches := ruleRegex.FindAllStringSubmatch(cssString, -1)
 
-	for _, match := range matches {
+	for idx, match := range matches {
 		if len(match) < 3 {
 			continue
 		}
@@ -26,9 +27,19 @@ func ParseStylesheet(cssString string) []*hotdog.StyleElement {
 		selector := strings.TrimSpace(match[1])
 		declarations := strings.TrimSpace(match[2])
 
+		// Parse selector to get specificity
+		sel, err := cascadia.Parse(selector)
+		var specificity cascadia.Specificity
+		if err == nil {
+			specificity = sel.Specificity()
+		}
+
 		styleElement := &hotdog.StyleElement{
-			Selector: selector,
-			Style:    &hotdog.Stylesheet{},
+			Selector:    selector,
+			Style:       &hotdog.Stylesheet{},
+			Specificity: specificity,
+			Origin:      "author",
+			Index:       idx,
 		}
 
 		// Parse declarations

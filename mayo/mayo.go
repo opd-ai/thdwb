@@ -2,10 +2,11 @@ package mayo
 
 import (
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
-	"github.com/andybalholm/cascadia"
+	cascadia "github.com/andybalholm/cascadia"
 	hotdog "github.com/danfragoso/thdwb/hotdog"
 	"golang.org/x/net/html"
 )
@@ -358,20 +359,56 @@ func parsePadding(value string, sheet *hotdog.Stylesheet) {
 
 // ApplyStylesheets applies all parsed stylesheets in a document to matching DOM elements.
 // It uses cascadia for CSS selector matching against the HTML parse tree.
+// Stylesheets are applied in cascade order: origin, specificity, then source order.
 func ApplyStylesheets(document *hotdog.Document) {
 	if document == nil || document.DOM == nil || document.HTMLRoot == nil {
 		return
 	}
 
+	// Create a copy of stylesheets for sorting by cascade order
+	type styleEntry struct {
+		element  *hotdog.StyleElement
+		selector cascadia.Selector
+	}
+
+	var entries []styleEntry
 	for _, styleElement := range document.StyleSheets {
 		if styleElement == nil || styleElement.Style == nil || styleElement.Selector == "" {
 			continue
 		}
-
 		sel, err := cascadia.Compile(styleElement.Selector)
 		if err != nil {
 			continue
 		}
+		entries = append(entries, styleEntry{element: styleElement, selector: sel})
+	}
+
+	// Sort by cascade order: origin priority, then specificity, then source order
+	sort.Slice(entries, func(i, j int) bool {
+		a := entries[i].element
+		b := entries[j].element
+
+		// Origin priority: user-agent < user < author
+		originPriority := map[string]int{"user-agent": 0, "user": 1, "author": 2}
+		aPriority := originPriority[a.Origin]
+		bPriority := originPriority[b.Origin]
+		if aPriority != bPriority {
+			return aPriority < bPriority
+		}
+
+		// Higher specificity wins
+		if a.Specificity != b.Specificity {
+			return a.Specificity.Less(b.Specificity)
+		}
+
+		// Later rules win (higher index)
+		return a.Index < b.Index
+	})
+
+	// Apply stylesheets in cascade order
+	for _, entry := range entries {
+		styleElement := entry.element
+		sel := entry.selector
 
 		matchedNodes := sel.MatchAll(document.HTMLRoot)
 		for _, htmlNode := range matchedNodes {

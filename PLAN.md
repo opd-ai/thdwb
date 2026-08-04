@@ -42,7 +42,7 @@ Separate style parsing from layout calculation using a mature flexbox solver.
 - [x] Every DOM element has live flexbox node
 - [x] Style translation produces correct flex node configurations
 - [x] CSS inheritance rules apply correctly
-- [ ] Cascade and specificity tests pass
+- [x] Cascade and specificity tests pass
 - [x] Layout solver produces identical output to existing mayo
 - [ ] Complex nested flexbox layouts render without regression
 
