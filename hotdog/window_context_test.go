@@ -4,12 +4,13 @@ import (
 	"testing"
 
 	profiler "github.com/danfragoso/thdwb/profiler"
+	"github.com/dop251/goja"
 )
 
 func TestWindowContextJSRuntimeIsolation(t *testing.T) {
 	settings := &Settings{}
 	buildInfo := &BuildInfo{}
-	prof := profiler.NewProfiler()
+	prof := profiler.CreateProfiler()
 
 	// Create two separate window contexts
 	wc1 := NewWindowContext(settings, buildInfo, prof)
@@ -36,7 +37,7 @@ func TestWindowContextJSRuntimeIsolation(t *testing.T) {
 
 	// Verify runtime2 doesn't have that variable
 	val := runtime2.Get("testVar")
-	if val != nil && !val.IsUndefined() {
+	if val != nil && !goja.IsUndefined(val) {
 		t.Fatalf("wc2 should not have access to wc1's variables, got: %v", val)
 	}
 
@@ -48,7 +49,7 @@ func TestWindowContextJSRuntimeIsolation(t *testing.T) {
 func TestWindowContextJSRuntimeBasicExecution(t *testing.T) {
 	settings := &Settings{}
 	buildInfo := &BuildInfo{}
-	prof := profiler.NewProfiler()
+	prof := profiler.CreateProfiler()
 
 	wc := NewWindowContext(settings, buildInfo, prof)
 	runtime := wc.GetJSRuntime()
