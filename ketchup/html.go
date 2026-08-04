@@ -61,56 +61,81 @@ func isVoidElement(tagName string) bool {
 	return isVoid
 }
 
-func CreateHTMLBase() *hotdog.NodeDOM {
+func CreateHTMLBase(windowCtx *hotdog.WindowContext) *hotdog.NodeDOM {
 	html := &hotdog.NodeDOM{
-		Element: "html", NeedsReflow: true, NeedsRepaint: true,
-		Style:     mayo.GetElementStylesheet("html", []*hotdog.Attribute{}),
-		RenderBox: &hotdog.RenderBox{},
+		Element:      "html",
+		Type:         hotdog.NodeTypeElement,
+		NeedsReflow:  true,
+		NeedsRepaint: true,
+		Style:        mayo.GetElementStylesheet("html", []*hotdog.Attribute{}),
+		RenderBox:    &hotdog.RenderBox{},
+		WindowCtx:    windowCtx,
 	}
 
 	head := &hotdog.NodeDOM{
-		Element: "head", NeedsReflow: true, NeedsRepaint: true,
-		Style:     mayo.GetElementStylesheet("head", []*hotdog.Attribute{}),
-		RenderBox: &hotdog.RenderBox{},
-		Parent:    html,
+		Element:      "head",
+		Type:         hotdog.NodeTypeElement,
+		NeedsReflow:  true,
+		NeedsRepaint: true,
+		Style:        mayo.GetElementStylesheet("head", []*hotdog.Attribute{}),
+		RenderBox:    &hotdog.RenderBox{},
+		Parent:       html,
+		WindowCtx:    windowCtx,
 	}
 
 	body := &hotdog.NodeDOM{
-		Element: "body", NeedsReflow: true, NeedsRepaint: true,
-		Style:     mayo.GetElementStylesheet("body", []*hotdog.Attribute{}),
-		RenderBox: &hotdog.RenderBox{},
-		Parent:    html,
+		Element:      "body",
+		Type:         hotdog.NodeTypeElement,
+		NeedsReflow:  true,
+		NeedsRepaint: true,
+		Style:        mayo.GetElementStylesheet("body", []*hotdog.Attribute{}),
+		RenderBox:    &hotdog.RenderBox{},
+		Parent:       html,
+		WindowCtx:    windowCtx,
 	}
 
 	html.Children = append(html.Children, head, body)
 	return html
 }
 
-func ParsePlainText(document string) *hotdog.Document {
+func ParsePlainText(document string, windowCtx *hotdog.WindowContext) *hotdog.Document {
 	documentTitle := "Text Document"
 	textDocument := &hotdog.Document{
 		Title: documentTitle,
 
 		RawDocument: document,
 		DOM: &hotdog.NodeDOM{
-			Element: "html", NeedsReflow: true, NeedsRepaint: true,
-			Style:     mayo.GetElementStylesheet("html", []*hotdog.Attribute{}),
-			RenderBox: &hotdog.RenderBox{},
+			Element:      "html",
+			Type:         hotdog.NodeTypeElement,
+			NeedsReflow:  true,
+			NeedsRepaint: true,
+			Style:        mayo.GetElementStylesheet("html", []*hotdog.Attribute{}),
+			RenderBox:    &hotdog.RenderBox{},
+			WindowCtx:    windowCtx,
 		},
 	}
 
 	textDocument.DOM.Document = textDocument
 	textDocument.DOM.Children = []*hotdog.NodeDOM{
 		{
-			Element: "head", Document: textDocument,
+			Element:   "head",
+			Type:      hotdog.NodeTypeElement,
+			Document:  textDocument,
 			Style:     mayo.GetElementStylesheet("head", []*hotdog.Attribute{}),
-			RenderBox: &hotdog.RenderBox{}, Parent: textDocument.DOM,
+			RenderBox: &hotdog.RenderBox{},
+			Parent:    textDocument.DOM,
+			WindowCtx: windowCtx,
 		},
 		{
-			Element: "body", NeedsReflow: true, NeedsRepaint: true,
-			Style:     mayo.GetElementStylesheet("body", []*hotdog.Attribute{}),
-			RenderBox: &hotdog.RenderBox{}, Document: textDocument,
-			Parent: textDocument.DOM,
+			Element:      "body",
+			Type:         hotdog.NodeTypeElement,
+			NeedsReflow:  true,
+			NeedsRepaint: true,
+			Style:        mayo.GetElementStylesheet("body", []*hotdog.Attribute{}),
+			RenderBox:    &hotdog.RenderBox{},
+			Document:     textDocument,
+			Parent:       textDocument.DOM,
+			WindowCtx:    windowCtx,
 		},
 	}
 
@@ -118,16 +143,20 @@ func ParsePlainText(document string) *hotdog.Document {
 	body, _ := textDocument.DOM.FindChildByName("body")
 	for _, line := range documentLines {
 		body.Children = append(body.Children, &hotdog.NodeDOM{
-			Element: "p", Content: line, RenderBox: &hotdog.RenderBox{},
-			Style:  mayo.GetElementStylesheet("p", []*hotdog.Attribute{}),
-			Parent: body,
+			Element:   "p",
+			Type:      hotdog.NodeTypeElement,
+			Content:   line,
+			RenderBox: &hotdog.RenderBox{},
+			Style:     mayo.GetElementStylesheet("p", []*hotdog.Attribute{}),
+			Parent:    body,
+			WindowCtx: windowCtx,
 		})
 	}
 
 	return textDocument
 }
 
-func ParseHTML(document string) *hotdog.Document {
+func ParseHTML(document string, windowCtx *hotdog.WindowContext) *hotdog.Document {
 	HTMLDocument := &hotdog.Document{}
 
 	HTMLDocument.RawDocument = document
@@ -170,12 +199,13 @@ func ParseHTML(document string) *hotdog.Document {
 				elementStylesheet := mayo.GetElementStylesheet(currentTagName, extractedAttributes)
 
 				if lastNode == nil {
-					HTMLDocument.DOM = CreateHTMLBase()
+					HTMLDocument.DOM = CreateHTMLBase(windowCtx)
 					lastNode = HTMLDocument.DOM.Children[1]
 				}
 
 				currentNode = &hotdog.NodeDOM{
 					Element:    currentTagName,
+					Type:       hotdog.NodeTypeElement,
 					Content:    "",
 					Children:   []*hotdog.NodeDOM{},
 					Attributes: extractedAttributes,
@@ -186,7 +216,8 @@ func ParseHTML(document string) *hotdog.Document {
 					NeedsRepaint: true,
 					RenderBox:    &hotdog.RenderBox{},
 
-					Document: HTMLDocument,
+					Document:  HTMLDocument,
+					WindowCtx: windowCtx,
 				}
 
 				if currentTagName == "html" {

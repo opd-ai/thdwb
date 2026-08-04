@@ -12,6 +12,16 @@ import (
 )
 
 func paintInlineElement(ctx *gg.Context, node *hotdog.NodeDOM) {
+	// Text nodes don't have backgrounds or borders, just render their content
+	if node.Type == hotdog.NodeTypeText {
+		ctx.SetRGBA(node.Style.Color.R, node.Style.Color.G, node.Style.Color.B, node.Style.Color.A)
+		ctx.SetFont(sansSerif[node.Style.FontWeight], node.Style.FontSize)
+		textContent := node.GetTextContent()
+		ctx.DrawStringWrapped(textContent, node.RenderBox.Left, node.RenderBox.Top, 0, 0, node.RenderBox.Width, 1, gg.AlignLeft)
+		ctx.Fill()
+		return
+	}
+
 	ctx.DrawRectangle(node.RenderBox.Left, node.RenderBox.Top, node.RenderBox.Width, node.RenderBox.Height)
 	ctx.SetRGBA(node.Style.BackgroundColor.R, node.Style.BackgroundColor.G, node.Style.BackgroundColor.B, node.Style.BackgroundColor.A)
 	ctx.Fill()
@@ -69,6 +79,20 @@ func calculateInlineLayout(ctx *gg.Context, node *hotdog.NodeDOM, childIdx int) 
 	} else {
 		node.RenderBox.Top = node.Parent.RenderBox.Top
 		node.RenderBox.Left = node.Parent.RenderBox.Left
+	}
+
+	if node.Type == hotdog.NodeTypeText {
+		textContent := node.GetTextContent()
+		if node.RenderBox.Width == 0 {
+			node.RenderBox.Width = node.Parent.RenderBox.Width
+		}
+		node.RenderBox.Height = ctx.MeasureStringWrapped(textContent, node.RenderBox.Width, 1)
+		mW, _ := ctx.MeasureString(textContent)
+		if mW < node.RenderBox.Width {
+			node.RenderBox.Width = mW
+		}
+		node.RenderBox.Height++
+		return
 	}
 
 	if node.Element == "img" {

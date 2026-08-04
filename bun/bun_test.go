@@ -6,7 +6,9 @@ import (
 	"testing"
 
 	gg "github.com/danfragoso/thdwb/gg"
+	"github.com/danfragoso/thdwb/hotdog"
 	"github.com/danfragoso/thdwb/ketchup"
+	profiler "github.com/danfragoso/thdwb/profiler"
 )
 
 func TestRenderDocument_noBody(t *testing.T) {
@@ -15,7 +17,12 @@ func TestRenderDocument_noBody(t *testing.T) {
 		t.Fatalf("got unexpected error: %s", err)
 	}
 
-	doc := ketchup.ParseHTML(string(html))
+	settings := &hotdog.Settings{}
+	buildInfo := &hotdog.BuildInfo{}
+	prof := profiler.CreateProfiler()
+	windowCtx := hotdog.NewWindowContext(settings, buildInfo, prof)
+
+	doc := ketchup.ParseHTML(string(html), windowCtx)
 	if doc == nil {
 		t.Fatal("got nil document")
 	}

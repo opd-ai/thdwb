@@ -8,7 +8,7 @@ import (
 	"golang.org/x/net/html"
 )
 
-func ParseHTMLDocument(document string) *hotdog.Document {
+func ParseHTMLDocument(document string, windowCtx *hotdog.WindowContext) *hotdog.Document {
 	parsedDoc, err := html.Parse(strings.NewReader(document))
 	if err != nil {
 		panic(err)
@@ -18,6 +18,6 @@ func ParseHTMLDocument(document string) *hotdog.Document {
 	HTMLDocument.RawDocument = document
 	HTMLDocument.HTMLRoot = parsedDoc
 
-	HTMLDocument.DOM = buildNodeDOMFromHTML(parsedDoc, HTMLDocument)
+	HTMLDocument.DOM = buildNodeDOMFromHTML(parsedDoc, HTMLDocument, windowCtx)
 	return HTMLDocument
 }

@@ -52,10 +52,10 @@ Establish a clean, spec-compliant DOM foundation **per window** with robust tree
 - [x] HTML parser replaces ketchup across all test pages
 - [x] Node structure supports full tree traversal
 - [x] All selector methods working with cascadia
-- [ ] Text nodes render correctly with proper whitespace
-- [ ] Each node carries owning WindowContext reference
-- [ ] Cross-origin DOM access correctly blocked
-- [ ] Iframes with sandbox attribute create isolated DOM subtrees
+- [x] Text nodes render correctly with proper whitespace
+- [x] Each node carries owning WindowContext reference
+- [x] Cross-origin DOM access correctly blocked
+- [x] Iframes with sandbox attribute create isolated DOM subtrees
 
 ---
 

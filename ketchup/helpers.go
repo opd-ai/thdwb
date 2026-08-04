@@ -7,16 +7,32 @@ import (
 	"golang.org/x/net/html"
 )
 
-func buildNodeDOMFromHTML(node *html.Node, document *hotdog.Document) *hotdog.NodeDOM {
+func buildNodeDOMFromHTML(node *html.Node, document *hotdog.Document, windowCtx *hotdog.WindowContext) *hotdog.NodeDOM {
 	var element, content string
+	var nodeType hotdog.NodeType
 
 	nodeDOM := &hotdog.NodeDOM{}
 	attributes := retrieveAttributes(node)
 
+	// Extract iframe-specific attributes before processing children
+	var iframeSrc string
+	var sandboxFlags hotdog.SandboxFlags
+	if node.Type == html.ElementNode && node.Data == "iframe" {
+		for _, attr := range attributes {
+			if attr.Name == "src" {
+				iframeSrc = attr.Value
+			} else if attr.Name == "sandbox" {
+				sandboxFlags = hotdog.ParseSandboxAttribute(attr.Value)
+			}
+		}
+		nodeDOM.IframeSrc = iframeSrc
+		nodeDOM.SandboxFlags = sandboxFlags
+	}
+
 	children := retrieveChildren(node)
 	var prevChild *hotdog.NodeDOM
 	for i, child := range children {
-		childDOM := buildNodeDOMFromHTML(child, document)
+		childDOM := buildNodeDOMFromHTML(child, document, windowCtx)
 		childDOM.Parent = nodeDOM
 		childDOM.PrevSibling = prevChild
 		if prevChild != nil {
@@ -35,23 +51,30 @@ func buildNodeDOMFromHTML(node *html.Node, document *hotdog.Document) *hotdog.No
 
 	switch node.Type {
 	case html.TextNode:
+		nodeType = hotdog.NodeTypeText
 		element = "html:text"
 		content = node.Data
 	case html.ElementNode:
+		nodeType = hotdog.NodeTypeElement
 		element = node.Data
 	case html.DoctypeNode:
+		nodeType = hotdog.NodeTypeDoctype
 		element = "html:doctype"
 	case html.RawNode:
+		nodeType = hotdog.NodeTypeRaw
 		element = "html:raw"
 	case html.CommentNode:
+		nodeType = hotdog.NodeTypeComment
 		element = "html:comment"
 		content = node.Data
 	}
 
+	nodeDOM.Type = nodeType
 	nodeDOM.Element = element
 	nodeDOM.Content = content
 	nodeDOM.Attributes = attributes
 	nodeDOM.Document = document
+	nodeDOM.WindowCtx = windowCtx
 	nodeDOM.NeedsReflow = true
 	nodeDOM.NeedsRepaint = true
 	nodeDOM.Style = mayo.GetElementStylesheet(element, attributes)

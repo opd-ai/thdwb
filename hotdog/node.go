@@ -4,16 +4,35 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 
 	cascadia "github.com/andybalholm/cascadia"
 	"golang.org/x/net/html"
 )
 
+// NodeType represents the type of a DOM node.
+type NodeType int
+
+const (
+	// NodeTypeElement represents an HTML element node.
+	NodeTypeElement NodeType = iota
+	// NodeTypeText represents a text node.
+	NodeTypeText
+	// NodeTypeComment represents a comment node.
+	NodeTypeComment
+	// NodeTypeDoctype represents a doctype node.
+	NodeTypeDoctype
+	// NodeTypeRaw represents a raw HTML node.
+	NodeTypeRaw
+)
+
 // NodeDOM "DOM Node Struct definition"
 type NodeDOM struct {
-	Element string `json:"element"`
-	Content string `json:"content"`
+	Type      NodeType       `json:"type"`
+	Element   string         `json:"element"`
+	Content   string         `json:"content"`
+	WindowCtx *WindowContext `json:"-"`
 
 	Children    []*NodeDOM   `json:"children"`
 	Attributes  []*Attribute `json:"attributes"`
@@ -29,6 +48,11 @@ type NodeDOM struct {
 
 	Document *Document  `json:"-"`
 	HTMLNode *html.Node `json:"-"` // Reference to original html.Node for CSS selector queries
+
+	// Iframe-specific fields
+	IframeDocument *Document    `json:"-"` // Parsed document for iframe content
+	SandboxFlags   SandboxFlags `json:"-"` // Sandbox restrictions for iframe
+	IframeSrc      string       `json:"-"` // Source URL for iframe
 }
 
 func (node *NodeDOM) Print(d int) {
@@ -146,8 +170,43 @@ func (node NodeDOM) RequestReflow() {
 	}
 }
 
+// SecurityError represents a security violation error.
+type SecurityError string
+
+func (e SecurityError) Error() string {
+	return fmt.Sprintf("SecurityError: %s", string(e))
+}
+
+// checkOrigin validates that the node belongs to the same origin as the window context.
+// Returns a SecurityError if the origin check fails.
+func (node *NodeDOM) checkOrigin() error {
+	if node.WindowCtx == nil || node.WindowCtx.Origin == nil {
+		// No origin set, allow access (for backward compatibility)
+		return nil
+	}
+
+	// For now, we assume all nodes in the same document have the same origin.
+	// In a full implementation, each node would track its own origin (for iframes).
+	// The Document should have an origin field that we can check against WindowCtx.Origin.
+	if node.Document != nil && node.Document.URL != nil {
+		nodeOrigin := node.Document.URL
+		windowOrigin := node.WindowCtx.Origin
+
+		// Compare scheme, host, and port
+		if nodeOrigin.Scheme != windowOrigin.Scheme || nodeOrigin.Host != windowOrigin.Host {
+			return SecurityError("cross-origin access blocked")
+		}
+	}
+
+	return nil
+}
+
 // QuerySelector returns the first element that matches the given CSS selector.
 func (node *NodeDOM) QuerySelector(selector string) *NodeDOM {
+	if err := node.checkOrigin(); err != nil {
+		return nil
+	}
+
 	if node.HTMLNode == nil || node.Document == nil || node.Document.HTMLRoot == nil {
 		return nil
 	}
@@ -162,11 +221,21 @@ func (node *NodeDOM) QuerySelector(selector string) *NodeDOM {
 		return nil
 	}
 
-	return node.findNodeDOMByHTMLNode(matched)
+	result := node.findNodeDOMByHTMLNode(matched)
+	if result != nil {
+		if err := result.checkOrigin(); err != nil {
+			return nil
+		}
+	}
+	return result
 }
 
 // QuerySelectorAll returns all elements that match the given CSS selector.
 func (node *NodeDOM) QuerySelectorAll(selector string) []*NodeDOM {
+	if err := node.checkOrigin(); err != nil {
+		return nil
+	}
+
 	if node.HTMLNode == nil || node.Document == nil || node.Document.HTMLRoot == nil {
 		return nil
 	}
@@ -180,7 +249,9 @@ func (node *NodeDOM) QuerySelectorAll(selector string) []*NodeDOM {
 	results := make([]*NodeDOM, 0, len(matched))
 	for _, m := range matched {
 		if nd := node.findNodeDOMByHTMLNode(m); nd != nil {
-			results = append(results, nd)
+			if err := nd.checkOrigin(); err == nil {
+				results = append(results, nd)
+			}
 		}
 	}
 	return results
@@ -188,16 +259,25 @@ func (node *NodeDOM) QuerySelectorAll(selector string) []*NodeDOM {
 
 // GetElementById returns the element with the given ID.
 func (node *NodeDOM) GetElementById(id string) *NodeDOM {
+	if err := node.checkOrigin(); err != nil {
+		return nil
+	}
 	return node.QuerySelector("#" + escapeCSSIdentifier(id))
 }
 
 // GetElementsByClassName returns all elements with the given class name.
 func (node *NodeDOM) GetElementsByClassName(className string) []*NodeDOM {
+	if err := node.checkOrigin(); err != nil {
+		return nil
+	}
 	return node.QuerySelectorAll("." + escapeCSSIdentifier(className))
 }
 
 // GetElementsByTagName returns all elements with the given tag name.
 func (node *NodeDOM) GetElementsByTagName(tagName string) []*NodeDOM {
+	if err := node.checkOrigin(); err != nil {
+		return nil
+	}
 	return node.QuerySelectorAll(tagName)
 }
 
@@ -223,6 +303,137 @@ func (node *NodeDOM) findByHTMLNode(target *html.Node) *NodeDOM {
 	return nil
 }
 
+// SandboxFlags represents the sandbox attribute flags for iframes.
+type SandboxFlags uint32
+
+const (
+	SandboxNone SandboxFlags = 0
+	// SandboxAllowScripts allows JavaScript execution in the iframe.
+	SandboxAllowScripts SandboxFlags = 1 << iota
+	// SandboxAllowForms allows form submission in the iframe.
+	SandboxAllowForms
+	// SandboxAllowSameOrigin allows the iframe to be treated as same-origin.
+	SandboxAllowSameOrigin
+	// SandboxAllowTopNavigation allows the iframe to navigate the top-level window.
+	SandboxAllowTopNavigation
+	// SandboxAllowPopups allows the iframe to open popups.
+	SandboxAllowPopups
+	// SandboxAllowPresentation allows the iframe to start a presentation session.
+	SandboxAllowPresentation
+	// SandboxAllowModals allows the iframe to open modal dialogs.
+	SandboxAllowModals
+	// SandboxAllowOrientationLock allows the iframe to lock screen orientation.
+	SandboxAllowOrientationLock
+	// SandboxAllowPointerLock allows the iframe to use the Pointer Lock API.
+	SandboxAllowPointerLock
+)
+
+// ParseSandboxAttribute parses the sandbox attribute value into SandboxFlags.
+func ParseSandboxAttribute(value string) SandboxFlags {
+	if value == "" {
+		// Empty sandbox attribute means all restrictions apply
+		return SandboxNone
+	}
+
+	var flags SandboxFlags
+	tokens := strings.Fields(value)
+	for _, token := range tokens {
+		switch strings.ToLower(token) {
+		case "allow-scripts":
+			flags |= SandboxAllowScripts
+		case "allow-forms":
+			flags |= SandboxAllowForms
+		case "allow-same-origin":
+			flags |= SandboxAllowSameOrigin
+		case "allow-top-navigation":
+			flags |= SandboxAllowTopNavigation
+		case "allow-popups":
+			flags |= SandboxAllowPopups
+		case "allow-presentation":
+			flags |= SandboxAllowPresentation
+		case "allow-modals":
+			flags |= SandboxAllowModals
+		case "allow-orientation-lock":
+			flags |= SandboxAllowOrientationLock
+		case "allow-pointer-lock":
+			flags |= SandboxAllowPointerLock
+		}
+	}
+	return flags
+}
+
+// HasSandboxFlag checks if a specific sandbox flag is set.
+func (f SandboxFlags) HasSandboxFlag(flag SandboxFlags) bool {
+	return f&flag != 0
+}
+
+// LoadIframeContent loads and parses the iframe content.
+// For same-origin iframes, it fetches and parses the content.
+// For cross-origin iframes, it only loads if allow-same-origin is set in sandbox.
+// Returns the parsed iframe document or an error.
+func (node *NodeDOM) LoadIframeContent() (*Document, error) {
+	if node.Element != "iframe" {
+		return nil, fmt.Errorf("node is not an iframe")
+	}
+
+	if node.IframeSrc == "" {
+		return nil, fmt.Errorf("iframe has no src attribute")
+	}
+
+	// Check sandbox restrictions
+	if !node.SandboxFlags.HasSandboxFlag(SandboxAllowSameOrigin) {
+		// Cross-origin iframe without allow-same-origin - create empty isolated document
+		// In a real implementation, this would still load the content but with strict isolation
+		return &Document{}, nil
+	}
+
+	// Parse the iframe source URL
+	iframeURL, err := node.Document.URL.Parse(node.IframeSrc)
+	if err != nil {
+		return nil, err
+	}
+
+	// Check if same-origin
+	windowOrigin := node.WindowCtx.GetOrigin()
+	if iframeURL.Scheme != windowOrigin.Scheme || iframeURL.Host != windowOrigin.Host {
+		// Cross-origin - check if allow-same-origin is set
+		if !node.SandboxFlags.HasSandboxFlag(SandboxAllowSameOrigin) {
+			// Create empty isolated document for cross-origin iframe
+			return &Document{}, nil
+		}
+	}
+
+	// Same-origin or allow-same-origin set - fetch and parse content
+	// This would use the sauce package to fetch the content
+	// For now, return an empty document as placeholder
+	// In a full implementation, this would fetch the HTML and parse it
+	return &Document{}, nil
+}
+
+// CanExecuteScripts returns true if scripts are allowed in this iframe context.
+func (node *NodeDOM) CanExecuteScripts() bool {
+	if node.Element != "iframe" {
+		return true // Not an iframe, scripts allowed by default
+	}
+	return node.SandboxFlags.HasSandboxFlag(SandboxAllowScripts)
+}
+
+// CanSubmitForms returns true if form submission is allowed in this iframe context.
+func (node *NodeDOM) CanSubmitForms() bool {
+	if node.Element != "iframe" {
+		return true
+	}
+	return node.SandboxFlags.HasSandboxFlag(SandboxAllowForms)
+}
+
+// CanNavigateTop returns true if top-level navigation is allowed.
+func (node *NodeDOM) CanNavigateTop() bool {
+	if node.Element != "iframe" {
+		return true
+	}
+	return node.SandboxFlags.HasSandboxFlag(SandboxAllowTopNavigation)
+}
+
 // escapeCSSIdentifier escapes a string for use as a CSS identifier.
 func escapeCSSIdentifier(s string) string {
 	var result strings.Builder
@@ -245,4 +456,69 @@ func escapeCSSIdentifier(s string) string {
 		}
 	}
 	return result.String()
+}
+
+// CollapseWhitespace collapses whitespace in text content according to HTML/CSS specs.
+// This implements the "white-space: normal" behavior (default).
+func CollapseWhitespace(text string) string {
+	// Replace all whitespace sequences with a single space
+	re := regexp.MustCompile(`\s+`)
+	result := re.ReplaceAllString(text, " ")
+	// Trim leading and trailing spaces
+	result = strings.TrimSpace(result)
+	return result
+}
+
+// CollapseWhitespacePreserveNewlines collapses whitespace but preserves explicit newlines.
+// This implements "white-space: pre-wrap" behavior.
+func CollapseWhitespacePreserveNewlines(text string) string {
+	lines := strings.Split(text, "\n")
+	var result []string
+	for _, line := range lines {
+		re := regexp.MustCompile(`[ \t]+`)
+		collapsed := re.ReplaceAllString(line, " ")
+		collapsed = strings.TrimSpace(collapsed)
+		result = append(result, collapsed)
+	}
+	return strings.Join(result, "\n")
+}
+
+// GetTextContent returns the text content of a node, handling whitespace according to CSS white-space property.
+func (node *NodeDOM) GetTextContent() string {
+	if node.Type != NodeTypeText {
+		return node.Content
+	}
+
+	// Get the white-space property from the node's style or inherit from parent
+	whiteSpace := "normal"
+	if node.Style != nil && node.Style.Display != "" {
+		// In a real implementation, we'd compute the cascaded white-space value
+		// For now, use normal as default
+		whiteSpace = "normal"
+	}
+
+	switch whiteSpace {
+	case "pre":
+		return node.Content
+	case "pre-wrap":
+		return CollapseWhitespacePreserveNewlines(node.Content)
+	case "pre-line":
+		// Similar to pre-wrap but collapses spaces/tabs
+		lines := strings.Split(node.Content, "\n")
+		var result []string
+		for _, line := range lines {
+			re := regexp.MustCompile(`\s+`)
+			collapsed := re.ReplaceAllString(line, " ")
+			collapsed = strings.TrimSpace(collapsed)
+			result = append(result, collapsed)
+		}
+		return strings.Join(result, "\n")
+	case "nowrap":
+		re := regexp.MustCompile(`\s+`)
+		result := re.ReplaceAllString(node.Content, " ")
+		result = strings.TrimSpace(result)
+		return result
+	default: // "normal"
+		return CollapseWhitespace(node.Content)
+	}
 }

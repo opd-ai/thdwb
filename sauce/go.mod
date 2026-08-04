@@ -3,7 +3,7 @@ module github.com/danfragoso/thdwb/sauce
 go 1.25.0
 
 require (
-	github.com/danfragoso/thdwb/assets v0.0.0-20210411220950-eaec6f13eccb
+	github.com/danfragoso/thdwb/assets v0.0.0-20210612223625-beb2b4a85bbb
 	github.com/danfragoso/thdwb/hotdog v0.0.0-20210411220950-eaec6f13eccb
 	github.com/danfragoso/thdwb/pages v0.0.0-20210411220950-eaec6f13eccb
 	github.com/stretchr/testify v1.11.1
