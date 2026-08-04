@@ -24,27 +24,9 @@ Establish a clean, spec-compliant DOM foundation **per window** with robust tree
 
 ---
 
-## Phase 2: Decouple CSS Parsing from Layout and Integrate Flexbox
+## Phase 2: Decouple CSS Parsing from Layout and Integrate Flexbox COMPLETE
 
 Separate style parsing from layout calculation using a mature flexbox solver.
-
-* **Retain Mayo CSS Parser:** Keep string parsing and style extraction from `<style>` blocks and `style` attributes.
-* **Standardize Style Representation:** Unified Go struct for CSS properties (display, position, flexbox, sizing, margins, padding, borders, colors, fonts).
-* **Initialize Flexbox Nodes:** Every DOM element allocates reference to flexbox node; use `kjk/flex` (pure Go Yoga port) as solver.
-* **Build Style-to-Layout Translator:** Convert parsed mayo CSS values into flexbox node setter calls.
-* **Implement Cascade and Inheritance:** Support CSS inheritance rules, specificity calculation, author/user/browser stylesheet priority.
-* **Handle Computed Styles:** Resolve final computed styles after cascade application.
-* **Replace Layout Calculation:** Invoke `flex.CalculateLayout()` on root node to compute all descendant positions in single pass.
-* **Add Layout Validation:** Verify solved layouts conform to flexbox spec.
-
-### Phase 2 Completion Checklist
-- [x] Mayo parser outputs clean style structs with no regressions
-- [x] Every DOM element has live flexbox node
-- [x] Style translation produces correct flex node configurations
-- [x] CSS inheritance rules apply correctly
-- [x] Cascade and specificity tests pass
-- [x] Layout solver produces identical output to existing mayo
-- [x] Complex nested flexbox layouts render without regression
 
 ---
 
@@ -65,7 +47,7 @@ Introduce interactive scripting with per-window Goja isolation and security sand
 * **Prevent Dangerous APIs:** Block `eval()`, `Function()` constructor unless permitted by CSP `script-src 'unsafe-eval'`.
 
 ### Phase 3 Completion Checklist
-- [ ] Each window has isolated Goja VM with no memory leaks
+- [x] Each window has isolated Goja VM with no memory leaks
 - [ ] Cross-window runtime variable access impossible
 - [ ] DOM operations from JS mutate Go DOM nodes within same origin
 - [ ] Cross-origin DOM access attempts throw SecurityError

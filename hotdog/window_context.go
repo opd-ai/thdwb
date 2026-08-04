@@ -5,6 +5,7 @@ import (
 
 	mustard "github.com/danfragoso/thdwb/mustard"
 	profiler "github.com/danfragoso/thdwb/profiler"
+	goja "github.com/dop251/goja"
 )
 
 // WindowContext holds all state for a single browser window/tab instance.
@@ -45,7 +46,7 @@ type WindowContext struct {
 	eventRegistry map[string][]func(interface{})
 
 	// JS runtime (Goja VM) - per window isolation
-	// jsRuntime *goja.Runtime // TODO: Initialize when Goja is integrated
+	jsRuntime *goja.Runtime
 
 	// Debug state
 	DebugFlag   bool
@@ -55,7 +56,7 @@ type WindowContext struct {
 
 // NewWindowContext creates a new isolated window context.
 func NewWindowContext(settings *Settings, buildInfo *BuildInfo, profiler *profiler.Profiler) *WindowContext {
-	return &WindowContext{
+	wc := &WindowContext{
 		ActiveDocument: &Document{},
 		Documents:      make([]*Document, 0),
 		History:        &History{},
@@ -66,6 +67,11 @@ func NewWindowContext(settings *Settings, buildInfo *BuildInfo, profiler *profil
 		inputState:     make(map[string]interface{}),
 		eventRegistry:  make(map[string][]func(interface{})),
 	}
+
+	// Initialize per-window Goja VM for JavaScript execution
+	wc.jsRuntime = goja.New()
+
+	return wc
 }
 
 // SetOrigin sets the origin for this window context (scheme + host + port).
@@ -119,6 +125,12 @@ func (wc *WindowContext) ClearLayoutCache() {
 	wc.layoutCache = make(map[string]interface{})
 }
 
+// GetJSRuntime returns the Goja runtime for this window context.
+// This allows controlled access to the JS runtime for DOM bindings.
+func (wc *WindowContext) GetJSRuntime() *goja.Runtime {
+	return wc.jsRuntime
+}
+
 // SetFocusedElement sets the currently focused DOM element.
 func (wc *WindowContext) SetFocusedElement(el *NodeDOM) {
 	wc.focusedElement = el
@@ -154,6 +166,7 @@ func (wc *WindowContext) Destroy() {
 	wc.inputState = nil
 	wc.eventRegistry = nil
 	wc.focusedElement = nil
+	wc.jsRuntime = nil // Allow Goja VM to be garbage collected
 	wc.DebugWindow = nil
 	wc.DebugTree = nil
 }
