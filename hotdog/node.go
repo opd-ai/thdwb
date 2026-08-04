@@ -43,6 +43,10 @@ type NodeDOM struct {
 	PrevSibling *NodeDOM     `json:"-"`
 	RenderBox   *RenderBox   `json:"-"`
 
+	// FlexNode holds a reference to the flexbox layout node (kjk/flex)
+	// Used by the layout engine for flexbox calculations
+	FlexNode interface{} `json:"-"`
+
 	NeedsReflow  bool `json:"-"`
 	NeedsRepaint bool `json:"-"`
 

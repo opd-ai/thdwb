@@ -39,11 +39,11 @@ Separate style parsing from layout calculation using a mature flexbox solver.
 
 ### Phase 2 Completion Checklist
 - [x] Mayo parser outputs clean style structs with no regressions
-- [ ] Every DOM element has live flexbox node
-- [ ] Style translation produces correct flex node configurations
+- [x] Every DOM element has live flexbox node
+- [x] Style translation produces correct flex node configurations
 - [ ] CSS inheritance rules apply correctly
 - [ ] Cascade and specificity tests pass
-- [ ] Layout solver produces identical output to existing mayo
+- [x] Layout solver produces identical output to existing mayo
 - [ ] Complex nested flexbox layouts render without regression
 
 ---

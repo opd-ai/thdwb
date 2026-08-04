@@ -28,13 +28,21 @@ func RenderDocument(ctx *gg.Context, document *hotdog.Document, experimentalLayo
 			return err
 		}
 
+		// Create flex nodes for the original DOM
+		createFlexNodes(html)
+
 		renderTree := createRenderTree(html)
+		if renderTree == nil {
+			return nil
+		}
 		renderTree.RenderBox.Width = float64(ctx.Width())
 		renderTree.RenderBox.Height = float64(ctx.Height())
 
+		ctx.SetRGB(1, 1, 1)
+		ctx.Clear()
+
 		layoutNode(ctx, renderTree)
 		paintNode(ctx, renderTree)
-		paintText(ctx, renderTree)
 
 		renderTree.Print(0)
 	}

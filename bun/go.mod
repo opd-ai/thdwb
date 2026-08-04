@@ -5,7 +5,7 @@ go 1.25.0
 require (
 	github.com/danfragoso/thdwb/assets v0.0.0-20210612223625-beb2b4a85bbb
 	github.com/danfragoso/thdwb/gg v0.0.0-20210612223625-beb2b4a85bbb
-	github.com/danfragoso/thdwb/hotdog v0.0.0-20210411220950-eaec6f13eccb
+	github.com/danfragoso/thdwb/hotdog v0.0.0-20210612223625-beb2b4a85bbb
 	github.com/danfragoso/thdwb/ketchup v0.0.0-20210612223625-beb2b4a85bbb
 	github.com/danfragoso/thdwb/profiler v0.0.0-20210612223625-beb2b4a85bbb
 	github.com/danfragoso/thdwb/sauce v0.0.0-20210411220950-eaec6f13eccb
@@ -19,6 +19,7 @@ require (
 	github.com/danfragoso/thdwb/pages v0.0.0-20210411220950-eaec6f13eccb // indirect
 	github.com/go-gl/gl v0.0.0-20260331235117-4566fea9a276 // indirect
 	github.com/go-gl/glfw/v3.3/glfw v0.0.0-20260802143932-8fa725040a18 // indirect
+	github.com/kjk/flex v0.0.0-20171203210503-ed34d6b6a425 // indirect
 	golang.org/x/image v0.15.0 // indirect
 	golang.org/x/net v0.57.0 // indirect
 )
