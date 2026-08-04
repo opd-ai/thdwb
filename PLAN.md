@@ -44,7 +44,7 @@ Separate style parsing from layout calculation using a mature flexbox solver.
 - [x] CSS inheritance rules apply correctly
 - [x] Cascade and specificity tests pass
 - [x] Layout solver produces identical output to existing mayo
-- [ ] Complex nested flexbox layouts render without regression
+- [x] Complex nested flexbox layouts render without regression
 
 ---
 

@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8">
+<title>Complex Nested Flexbox Test</title>
+<style>
+  /* Root flex container */
+  .root-container {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 400px;
+    padding: 20px;
+    gap: 20px;
+  }
+  
+  /* Nested flex container - horizontal */
+  .horizontal-container {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: stretch;
+    flex: 1;
+    gap: 10px;
+    padding: 10px;
+    background-color: #f0f0f0;
+  }
+  
+  /* Nested flex container - vertical */
+  .vertical-container {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    align-items: stretch;
+    flex: 1;
+    gap: 10px;
+    padding: 10px;
+    background-color: #e0e0e0;
+  }
+  
+  /* Deep nested container */
+  .deep-nested {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    gap: 5px;
+    padding: 10px;
+    background-color: #d0d0d0;
+  }
+  
+  /* Flex items with various configurations */
+  .flex-item {
+    background-color: #3498db;
+    color: white;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-family: Arial, sans-serif;
+    font-size: 12px;
+  }
+  
+  .item-fixed {
+    width: 80px;
+    height: 60px;
+    flex-shrink: 0;
+  }
+  
+  .item-flex-grow {
+    flex: 1;
+    min-height: 60px;
+  }
+  
+  .item-flex-shrink {
+    flex: 0 1 100px;
+    height: 60px;
+  }
+  
+  .item-auto {
+    flex: 1 1 auto;
+    min-height: 40px;
+  }
+  
+  /* Mixed content items */
+  .mixed-item {
+    background-color: #2ecc71;
+    height: 50px;
+  }
+  
+  /* Absolute positioned item within relative container */
+  .relative-container {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+  }
+  
+  .absolute-item {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 60px;
+    height: 60px;
+    background-color: #e74c3c;
+    color: white;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+</style>
+<body>
+  <div class="root-container">
+    <!-- First level: horizontal container with 3 items -->
+    <div class="horizontal-container">
+      <div class="flex-item item-fixed">Fixed 80px</div>
+      <div class="flex-item item-flex-grow">Grow 1</div>
+      <div class="flex-item item-flex-shrink">Shrink 100px</div>
+    </div>
+    
+    <!-- Second level: vertical container with nested horizontal -->
+    <div class="vertical-container">
+      <div class="flex-item item-auto">Auto Item 1</div>
+      <div class="horizontal-container">
+        <div class="flex-item item-fixed">Nested Fixed</div>
+        <div class="flex-item item-flex-grow">Nested Grow</div>
+        <div class="deep-nested">
+          <div class="mixed-item">Deep 1</div>
+          <div class="mixed-item">Deep 2</div>
+          <div class="mixed-item">Deep 3</div>
+          <div class="mixed-item">Deep 4</div>
+        </div>
+      </div>
+      <div class="flex-item item-auto">Auto Item 2</div>
+    </div>
+    
+    <!-- Third level: relative container with absolute positioning -->
+    <div class="relative-container">
+      <div class="flex-item item-flex-grow">Relative Container</div>
+      <div class="absolute-item">Abs</div>
+    </div>
+  </div>
+</body>
+</html>

@@ -21,6 +21,9 @@ func ParseHTMLDocument(document string, windowCtx *hotdog.WindowContext) *hotdog
 
 	HTMLDocument.DOM = buildNodeDOMFromHTML(parsedDoc, HTMLDocument, windowCtx)
 
+	// Apply all stylesheets after the DOM tree is fully built
+	mayo.ApplyStylesheets(HTMLDocument)
+
 	// Apply CSS inheritance after all stylesheets are processed
 	mayo.ApplyInheritance(HTMLDocument.DOM)
 
