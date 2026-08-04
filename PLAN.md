@@ -12,50 +12,15 @@ A **browser shell** manages the tabbed UI, tab switching, and resource sharing a
 
 ---
 
-## Phase 0: Refactor for Multiple Window Instances
+## Phase 0: Refactor for Multiple Window Instances COMPLETE
 
 Enable the toolkit to run as multiple independent, non-interfering instances.
 
-* **Extract Window Context:** Move all state (DOM root, Goja VM, layout cache, event registry, viewport dimensions, focus state) into a `WindowContext` struct. Currently global state becomes instance fields.
-* **Decouple Rendering Backend:** Abstract mustard rendering so multiple windows can render to different display regions (tabbed UI) or even separate OS windows.
-* **Shared Network Layer:** Create a global HTTP client with origin-keyed cookie jar, TLS session cache, and connection pooling; all windows share this, but cookies are partitioned by origin.
-* **Build Browser Shell:** Create a top-level coordinator that spawns/destroys `WindowContext` instances on tab create/close, routes input to active tab only, manages tab switching and viewport layout.
-* **Implement Origin Tracking:** Parse and store origin (scheme + domain + port) on each window at load time; use origin to partition cookies and enforce SOP on all resource loads.
-
-### Phase 0 Completion Checklist
-- [x] State moved from global to `WindowContext` struct with no regressions
-- [x] Two or more simultaneous windows run without memory interference
-- [x] Mustard rendering supports multiple viewports (tabbed layout)
-- [x] Browser shell routes mouse/keyboard input to active window only
-- [x] Tab creation and destruction leak no memory
-- [x] Cookie jar partitions by origin across all windows
-- [x] TLS session cache shared; cookies isolated per origin
-- [x] Origin parsing handles IPv6, non-standard ports
-- [x] Tab switching is smooth with no layout artifacts
-- [x] Inactive windows do not execute JS or recalculate layout
-
 ---
 
-## Phase 1: Isolate and Refactor the DOM and Tree Structure
+## Phase 1: Isolate and Refactor the DOM and Tree Structure COMPLETE
 
 Establish a clean, spec-compliant DOM foundation **per window** with robust tree traversal and mutation support.
-
-* **Replace HTML Parser:** Complete removal of custom `ketchup` parser; integrate `golang.org/x/net/html` for W3C-compliant HTML5 parsing.
-* **Define Core Node Structure:** Create unified node type supporting parent, first-child, next-sibling, previous-sibling pointers. Support element nodes, text nodes, comment nodes, document fragments. **Each node includes reference to owning `WindowContext`.**
-* **Implement Standard DOM Methods:** Expose `appendChild()`, `removeChild()`, `insertBefore()`, `cloneNode()`, `replaceChild()`. **Add origin validation to prevent cross-origin DOM injection.**
-* **Integrate CSS Selector Engine:** Embed `andybalholm/cascadia` for `querySelector()`, `querySelectorAll()`, `getElementById()`, `getElementsByClassName()`, `getElementsByTagName()`.
-* **Define Text Node Handling:** Separate text node type with proper whitespace handling.
-* **Add DOM Query Caching:** Implement memoization for selector results; invalidate on origin boundary changes.
-* **Implement Origin-Aware Node Access:** Prevent JavaScript from one origin accessing DOM nodes from another origin through iframe boundaries.
-
-### Phase 1 Completion Checklist
-- [x] HTML parser replaces ketchup across all test pages
-- [x] Node structure supports full tree traversal
-- [x] All selector methods working with cascadia
-- [x] Text nodes render correctly with proper whitespace
-- [x] Each node carries owning WindowContext reference
-- [x] Cross-origin DOM access correctly blocked
-- [x] Iframes with sandbox attribute create isolated DOM subtrees
 
 ---
 
