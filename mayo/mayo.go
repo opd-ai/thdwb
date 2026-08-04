@@ -10,6 +10,28 @@ import (
 	"golang.org/x/net/html"
 )
 
+// Inheritable properties - CSS properties that inherit by default
+var inheritableProperties = map[string]bool{
+	"color":          true,
+	"font-family":    true,
+	"font-size":      true,
+	"font-weight":    true,
+	"font-style":     true,
+	"line-height":    true,
+	"letter-spacing": true,
+	"text-align":     true,
+	"text-indent":    true,
+	"text-transform": true,
+	"visibility":     true,
+	"white-space":    true,
+	"word-spacing":   true,
+	"list-style":     true,
+	"cursor":         true,
+	"direction":      true,
+	"unicode-bidi":   true,
+	"opacity":        true,
+}
+
 func getDefaultElementDisplay(element string) string {
 	displayType := "block"
 
@@ -374,6 +396,90 @@ func findNodeDOMByHTMLNode(root *hotdog.NodeDOM, target *html.Node) *hotdog.Node
 	}
 
 	return nil
+}
+
+// ApplyInheritance applies CSS inheritance rules to the DOM tree.
+// Inheritable properties that are not explicitly set on an element
+// will inherit their computed value from the parent element.
+func ApplyInheritance(root *hotdog.NodeDOM) {
+	if root == nil {
+		return
+	}
+
+	// Start inheritance from root with no parent styles
+	applyInheritanceRecursive(root, nil)
+}
+
+// applyInheritanceRecursive walks the DOM tree and applies inherited styles.
+func applyInheritanceRecursive(node *hotdog.NodeDOM, parentStyle *hotdog.Stylesheet) {
+	if node == nil || node.Style == nil {
+		return
+	}
+
+	// For each inheritable property, if not explicitly set on this node,
+	// inherit from parent
+	if parentStyle != nil {
+		inheritFromParent(node.Style, parentStyle)
+	}
+
+	// Recurse to children with this node's style as parent
+	for _, child := range node.Children {
+		applyInheritanceRecursive(child, node.Style)
+	}
+}
+
+// inheritFromParent copies inheritable properties from parent to child
+// if they are not explicitly set on the child.
+func inheritFromParent(childStyle, parentStyle *hotdog.Stylesheet) {
+	if childStyle == nil || parentStyle == nil {
+		return
+	}
+
+	// Color properties
+	if childStyle.Color == nil && parentStyle.Color != nil {
+		childStyle.Color = parentStyle.Color
+	}
+
+	// Font properties
+	if childStyle.FontFamily == "" && parentStyle.FontFamily != "" {
+		childStyle.FontFamily = parentStyle.FontFamily
+	}
+	if childStyle.FontSize == 0 && parentStyle.FontSize != 0 {
+		childStyle.FontSize = parentStyle.FontSize
+	}
+	if childStyle.FontWeight == 0 && parentStyle.FontWeight != 0 {
+		childStyle.FontWeight = parentStyle.FontWeight
+	}
+	if childStyle.FontStyle == "" && parentStyle.FontStyle != "" {
+		childStyle.FontStyle = parentStyle.FontStyle
+	}
+	if childStyle.LineHeight == 0 && parentStyle.LineHeight != 0 {
+		childStyle.LineHeight = parentStyle.LineHeight
+	}
+	if childStyle.LetterSpacing == 0 && parentStyle.LetterSpacing != 0 {
+		childStyle.LetterSpacing = parentStyle.LetterSpacing
+	}
+
+	// Text properties
+	if childStyle.TextAlign == "" && parentStyle.TextAlign != "" {
+		childStyle.TextAlign = parentStyle.TextAlign
+	}
+	if childStyle.TextDecoration == "" && parentStyle.TextDecoration != "" {
+		childStyle.TextDecoration = parentStyle.TextDecoration
+	}
+	if childStyle.WhiteSpace == "" && parentStyle.WhiteSpace != "" {
+		childStyle.WhiteSpace = parentStyle.WhiteSpace
+	}
+
+	// Visibility
+	if childStyle.Visibility == "" && parentStyle.Visibility != "" {
+		childStyle.Visibility = parentStyle.Visibility
+	}
+
+	// Opacity
+	if childStyle.Opacity == 0 && parentStyle.Opacity != 0 {
+		childStyle.Opacity = parentStyle.Opacity
+	}
 }
 
 // mergeStylesheet merges source stylesheet into destination, overwriting non-zero values.

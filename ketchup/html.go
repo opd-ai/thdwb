@@ -240,5 +240,8 @@ func ParseHTML(document string, windowCtx *hotdog.WindowContext) *hotdog.Documen
 		}
 	}
 
+	// Apply CSS inheritance after all stylesheets are processed
+	mayo.ApplyInheritance(HTMLDocument.DOM)
+
 	return HTMLDocument
 }
