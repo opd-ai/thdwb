@@ -139,6 +139,64 @@ func (node *NodeDOM) Attr(attrName string) string {
 	return ""
 }
 
+// InnerHTML returns the HTML content of the node's children.
+func (node *NodeDOM) InnerHTML() string {
+	if node.Type == NodeTypeText {
+		return node.Content
+	}
+
+	var result strings.Builder
+	for _, child := range node.Children {
+		result.WriteString(child.toHTML())
+	}
+	return result.String()
+}
+
+// toHTML converts a NodeDOM to its HTML string representation.
+func (node *NodeDOM) toHTML() string {
+	switch node.Type {
+	case NodeTypeText:
+		return escapeHTML(node.Content)
+	case NodeTypeComment:
+		return "<!--" + node.Content + "-->"
+	case NodeTypeDoctype:
+		return "<!DOCTYPE " + node.Content + ">"
+	case NodeTypeRaw:
+		return node.Content
+	case NodeTypeElement:
+		var result strings.Builder
+		result.WriteString("<")
+		result.WriteString(node.Element)
+		for _, attr := range node.Attributes {
+			result.WriteString(" ")
+			result.WriteString(attr.Name)
+			result.WriteString("=\"")
+			result.WriteString(escapeHTML(attr.Value))
+			result.WriteString("\"")
+		}
+		result.WriteString(">")
+		for _, child := range node.Children {
+			result.WriteString(child.toHTML())
+		}
+		result.WriteString("</")
+		result.WriteString(node.Element)
+		result.WriteString(">")
+		return result.String()
+	default:
+		return ""
+	}
+}
+
+// escapeHTML escapes special HTML characters.
+func escapeHTML(s string) string {
+	s = strings.ReplaceAll(s, "&", "&")
+	s = strings.ReplaceAll(s, "<", "<")
+	s = strings.ReplaceAll(s, ">", ">")
+	s = strings.ReplaceAll(s, "\"", """)
+	s = strings.ReplaceAll(s, "'", "'")
+	return s
+}
+
 func (node *NodeDOM) CalcPointIntersection(x, y float64) *NodeDOM {
 	var intersectedNode *NodeDOM
 	if x > float64(node.RenderBox.Left) &&
@@ -525,4 +583,49 @@ func (node *NodeDOM) GetTextContent() string {
 	default: // "normal"
 		return CollapseWhitespace(node.Content)
 	}
+}
+
+// CreateElement creates a new element node and returns it.
+// The element is not automatically added to the DOM tree.
+func (doc *Document) CreateElement(tagName string) *NodeDOM {
+	element := &NodeDOM{
+		Type:       NodeTypeElement,
+		Element:    tagName,
+		Children:   make([]*NodeDOM, 0),
+		Attributes: make([]*Attribute, 0),
+		Document:   doc,
+	}
+	return element
+}
+
+// CreateTextNode creates a new text node and returns it.
+// The text node is not automatically added to the DOM tree.
+func (doc *Document) CreateTextNode(data string) *NodeDOM {
+	textNode := &NodeDOM{
+		Type:     NodeTypeText,
+		Content:  data,
+		Document: doc,
+	}
+	return textNode
+}
+
+// GetBody returns the body element of the document.
+func (doc *Document) GetBody() *NodeDOM {
+	if doc.DOM == nil {
+		return nil
+	}
+	return doc.DOM.QuerySelector("body")
+}
+
+// GetDocumentElement returns the root element of the document (html).
+func (doc *Document) GetDocumentElement() *NodeDOM {
+	if doc.DOM == nil {
+		return nil
+	}
+	return doc.DOM.QuerySelector("html")
+}
+
+// GetTitle returns the document title.
+func (doc *Document) GetTitle() string {
+	return doc.Title
 }
