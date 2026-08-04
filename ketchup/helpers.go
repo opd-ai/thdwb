@@ -81,7 +81,30 @@ func buildNodeDOMFromHTML(node *html.Node, document *hotdog.Document, windowCtx 
 	nodeDOM.RenderBox = &hotdog.RenderBox{}
 	nodeDOM.HTMLNode = node
 
+	// Handle <style> elements - extract and parse CSS
+	if node.Type == html.ElementNode && node.Data == "style" {
+		cssContent := extractStyleContent(node)
+		if cssContent != "" {
+			styleElements := mayo.ParseStylesheet(cssContent)
+			document.StyleSheets = append(document.StyleSheets, styleElements...)
+			// Apply styles to matching elements
+			applyStylesheets(document)
+		}
+		// Style elements don't render
+		nodeDOM.Style.Display = "none"
+	}
+
 	return nodeDOM
+}
+
+func extractStyleContent(node *html.Node) string {
+	var content string
+	for child := node.FirstChild; child != nil; child = child.NextSibling {
+		if child.Type == html.TextNode {
+			content += child.Data
+		}
+	}
+	return content
 }
 
 func retrieveChildren(node *html.Node) []*html.Node {

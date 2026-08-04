@@ -31,6 +31,8 @@ type Document struct {
 	DOM         *NodeDOM
 	HTMLRoot    *html.Node // Root of the parsed HTML tree for CSS selector queries
 
+	StyleSheets []*StyleElement // Parsed CSS stylesheets from <style> elements
+
 	DebugFlag       bool
 	DebugWindow     *mustard.Window
 	DebugTree       *mustard.TreeWidget
@@ -136,16 +138,68 @@ type Stylesheet struct {
 	Color           *ColorRGBA
 	BackgroundColor *ColorRGBA
 
-	FontSize   float64
-	FontWeight int
+	FontSize       float64
+	FontWeight     int
+	FontFamily     string
+	FontStyle      string
+	LineHeight     float64
+	LetterSpacing  float64
+	TextAlign      string
+	TextDecoration string
+	WhiteSpace     string
 
-	Display  string
-	Position string
+	Display        string
+	Position       string
+	FlexDirection  string
+	FlexWrap       string
+	JustifyContent string
+	AlignItems     string
+	AlignContent   string
+	FlexGrow       float64
+	FlexShrink     float64
+	FlexBasis      string
+	Order          int
+	AlignSelf      string
 
-	Width  float64
-	Height float64
-	Top    float64
-	Left   float64
+	Width     float64
+	Height    float64
+	MinWidth  float64
+	MinHeight float64
+	MaxWidth  float64
+	MaxHeight float64
+	Top       float64
+	Right     float64
+	Bottom    float64
+	Left      float64
+	ZIndex    int
+
+	MarginTop    float64
+	MarginRight  float64
+	MarginBottom float64
+	MarginLeft   float64
+
+	PaddingTop    float64
+	PaddingRight  float64
+	PaddingBottom float64
+	PaddingLeft   float64
+
+	BorderTopWidth    float64
+	BorderRightWidth  float64
+	BorderBottomWidth float64
+	BorderLeftWidth   float64
+	BorderTopStyle    string
+	BorderRightStyle  string
+	BorderBottomStyle string
+	BorderLeftStyle   string
+	BorderTopColor    *ColorRGBA
+	BorderRightColor  *ColorRGBA
+	BorderBottomColor *ColorRGBA
+	BorderLeftColor   *ColorRGBA
+
+	OverflowX  string
+	OverflowY  string
+	Visibility string
+	Opacity    float64
 }
 
 // StyleElement "hmtl <style> element"
