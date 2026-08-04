@@ -88,7 +88,7 @@ func buildNodeDOMFromHTML(node *html.Node, document *hotdog.Document, windowCtx 
 			styleElements := mayo.ParseStylesheet(cssContent)
 			document.StyleSheets = append(document.StyleSheets, styleElements...)
 			// Apply styles to matching elements
-			applyStylesheets(document)
+			mayo.ApplyStylesheets(document)
 		}
 		// Style elements don't render
 		nodeDOM.Style.Display = "none"

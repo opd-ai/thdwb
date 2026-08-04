@@ -5,7 +5,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/andybalholm/cascadia"
 	hotdog "github.com/danfragoso/thdwb/hotdog"
+	"golang.org/x/net/html"
 )
 
 func getDefaultElementDisplay(element string) string {
@@ -232,7 +234,7 @@ func hasInlineStyle(attributes []*hotdog.Attribute) bool {
 
 func GetElementStylesheet(elementName string, attributes []*hotdog.Attribute) *hotdog.Stylesheet {
 	elementStylesheet := &hotdog.Stylesheet{
-		BackgroundColor: &hotdog.ColorRGBA{1, 1, 1, 0},
+		BackgroundColor: &hotdog.ColorRGBA{R: 1, G: 1, B: 1, A: 0},
 		FontSize:        0,
 		Display:         "",
 		Position:        "Normal",
@@ -259,7 +261,7 @@ func GetElementStylesheet(elementName string, attributes []*hotdog.Attribute) *h
 		if color != nil {
 			elementStylesheet.Color = color
 		} else {
-			elementStylesheet.Color = &hotdog.ColorRGBA{0, 0, 0, 1}
+			elementStylesheet.Color = &hotdog.ColorRGBA{R: 0, G: 0, B: 0, A: 1}
 		}
 	}
 
@@ -329,5 +331,250 @@ func parsePadding(value string, sheet *hotdog.Stylesheet) {
 		sheet.PaddingRight = mapSizeValue(values[1])
 		sheet.PaddingBottom = mapSizeValue(values[2])
 		sheet.PaddingLeft = mapSizeValue(values[3])
+	}
+}
+
+// ApplyStylesheets applies all parsed stylesheets in a document to matching DOM elements.
+// It uses cascadia for CSS selector matching against the HTML parse tree.
+func ApplyStylesheets(document *hotdog.Document) {
+	if document == nil || document.DOM == nil || document.HTMLRoot == nil {
+		return
+	}
+
+	for _, styleElement := range document.StyleSheets {
+		if styleElement == nil || styleElement.Style == nil || styleElement.Selector == "" {
+			continue
+		}
+
+		sel, err := cascadia.Compile(styleElement.Selector)
+		if err != nil {
+			continue
+		}
+
+		matchedNodes := sel.MatchAll(document.HTMLRoot)
+		for _, htmlNode := range matchedNodes {
+			nodeDOM := findNodeDOMByHTMLNode(document.DOM, htmlNode)
+			if nodeDOM != nil {
+				mergeStylesheet(nodeDOM.Style, styleElement.Style)
+			}
+		}
+	}
+}
+
+// findNodeDOMByHTMLNode finds the NodeDOM corresponding to an html.Node by traversing the DOM tree.
+func findNodeDOMByHTMLNode(root *hotdog.NodeDOM, target *html.Node) *hotdog.NodeDOM {
+	if root == nil || root.HTMLNode == target {
+		return root
+	}
+
+	for _, child := range root.Children {
+		if result := findNodeDOMByHTMLNode(child, target); result != nil {
+			return result
+		}
+	}
+
+	return nil
+}
+
+// mergeStylesheet merges source stylesheet into destination, overwriting non-zero values.
+func mergeStylesheet(dest, src *hotdog.Stylesheet) {
+	if src == nil {
+		return
+	}
+
+	// Color properties
+	if src.Color != nil {
+		dest.Color = src.Color
+	}
+	if src.BackgroundColor != nil {
+		dest.BackgroundColor = src.BackgroundColor
+	}
+
+	// Font properties
+	if src.FontSize != 0 {
+		dest.FontSize = src.FontSize
+	}
+	if src.FontWeight != 0 {
+		dest.FontWeight = src.FontWeight
+	}
+	if src.FontFamily != "" {
+		dest.FontFamily = src.FontFamily
+	}
+	if src.FontStyle != "" {
+		dest.FontStyle = src.FontStyle
+	}
+	if src.LineHeight != 0 {
+		dest.LineHeight = src.LineHeight
+	}
+	if src.LetterSpacing != 0 {
+		dest.LetterSpacing = src.LetterSpacing
+	}
+
+	// Text properties
+	if src.TextAlign != "" {
+		dest.TextAlign = src.TextAlign
+	}
+	if src.TextDecoration != "" {
+		dest.TextDecoration = src.TextDecoration
+	}
+	if src.WhiteSpace != "" {
+		dest.WhiteSpace = src.WhiteSpace
+	}
+
+	// Display and position
+	if src.Display != "" {
+		dest.Display = src.Display
+	}
+	if src.Position != "" {
+		dest.Position = src.Position
+	}
+
+	// Flexbox properties
+	if src.FlexDirection != "" {
+		dest.FlexDirection = src.FlexDirection
+	}
+	if src.FlexWrap != "" {
+		dest.FlexWrap = src.FlexWrap
+	}
+	if src.JustifyContent != "" {
+		dest.JustifyContent = src.JustifyContent
+	}
+	if src.AlignItems != "" {
+		dest.AlignItems = src.AlignItems
+	}
+	if src.AlignContent != "" {
+		dest.AlignContent = src.AlignContent
+	}
+	if src.FlexGrow != 0 {
+		dest.FlexGrow = src.FlexGrow
+	}
+	if src.FlexShrink != 0 {
+		dest.FlexShrink = src.FlexShrink
+	}
+	if src.FlexBasis != "" {
+		dest.FlexBasis = src.FlexBasis
+	}
+	if src.Order != 0 {
+		dest.Order = src.Order
+	}
+	if src.AlignSelf != "" {
+		dest.AlignSelf = src.AlignSelf
+	}
+
+	// Size properties
+	if src.Width != 0 {
+		dest.Width = src.Width
+	}
+	if src.Height != 0 {
+		dest.Height = src.Height
+	}
+	if src.MinWidth != 0 {
+		dest.MinWidth = src.MinWidth
+	}
+	if src.MinHeight != 0 {
+		dest.MinHeight = src.MinHeight
+	}
+	if src.MaxWidth != 0 {
+		dest.MaxWidth = src.MaxWidth
+	}
+	if src.MaxHeight != 0 {
+		dest.MaxHeight = src.MaxHeight
+	}
+
+	// Position properties
+	if src.Top != 0 {
+		dest.Top = src.Top
+	}
+	if src.Right != 0 {
+		dest.Right = src.Right
+	}
+	if src.Bottom != 0 {
+		dest.Bottom = src.Bottom
+	}
+	if src.Left != 0 {
+		dest.Left = src.Left
+	}
+	if src.ZIndex != 0 {
+		dest.ZIndex = src.ZIndex
+	}
+
+	// Margin properties
+	if src.MarginTop != 0 {
+		dest.MarginTop = src.MarginTop
+	}
+	if src.MarginRight != 0 {
+		dest.MarginRight = src.MarginRight
+	}
+	if src.MarginBottom != 0 {
+		dest.MarginBottom = src.MarginBottom
+	}
+	if src.MarginLeft != 0 {
+		dest.MarginLeft = src.MarginLeft
+	}
+
+	// Padding properties
+	if src.PaddingTop != 0 {
+		dest.PaddingTop = src.PaddingTop
+	}
+	if src.PaddingRight != 0 {
+		dest.PaddingRight = src.PaddingRight
+	}
+	if src.PaddingBottom != 0 {
+		dest.PaddingBottom = src.PaddingBottom
+	}
+	if src.PaddingLeft != 0 {
+		dest.PaddingLeft = src.PaddingLeft
+	}
+
+	// Border properties
+	if src.BorderTopWidth != 0 {
+		dest.BorderTopWidth = src.BorderTopWidth
+	}
+	if src.BorderRightWidth != 0 {
+		dest.BorderRightWidth = src.BorderRightWidth
+	}
+	if src.BorderBottomWidth != 0 {
+		dest.BorderBottomWidth = src.BorderBottomWidth
+	}
+	if src.BorderLeftWidth != 0 {
+		dest.BorderLeftWidth = src.BorderLeftWidth
+	}
+	if src.BorderTopStyle != "" {
+		dest.BorderTopStyle = src.BorderTopStyle
+	}
+	if src.BorderRightStyle != "" {
+		dest.BorderRightStyle = src.BorderRightStyle
+	}
+	if src.BorderBottomStyle != "" {
+		dest.BorderBottomStyle = src.BorderBottomStyle
+	}
+	if src.BorderLeftStyle != "" {
+		dest.BorderLeftStyle = src.BorderLeftStyle
+	}
+	if src.BorderTopColor != nil {
+		dest.BorderTopColor = src.BorderTopColor
+	}
+	if src.BorderRightColor != nil {
+		dest.BorderRightColor = src.BorderRightColor
+	}
+	if src.BorderBottomColor != nil {
+		dest.BorderBottomColor = src.BorderBottomColor
+	}
+	if src.BorderLeftColor != nil {
+		dest.BorderLeftColor = src.BorderLeftColor
+	}
+
+	// Overflow and visibility
+	if src.OverflowX != "" {
+		dest.OverflowX = src.OverflowX
+	}
+	if src.OverflowY != "" {
+		dest.OverflowY = src.OverflowY
+	}
+	if src.Visibility != "" {
+		dest.Visibility = src.Visibility
+	}
+	if src.Opacity != 0 {
+		dest.Opacity = src.Opacity
 	}
 }

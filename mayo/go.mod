@@ -3,12 +3,13 @@ module github.com/danfragoso/thdwb/mayo
 go 1.25.0
 
 require (
+	github.com/andybalholm/cascadia v1.3.4
 	github.com/danfragoso/thdwb/hotdog v0.0.0-20210411220950-eaec6f13eccb
 	github.com/stretchr/testify v1.11.1
+	golang.org/x/net v0.57.0
 )
 
 require (
-	github.com/andybalholm/cascadia v1.3.4 // indirect
 	github.com/danfragoso/thdwb/assets v0.0.0-20210612223625-beb2b4a85bbb // indirect
 	github.com/danfragoso/thdwb/gg v0.0.0-20210612223625-beb2b4a85bbb // indirect
 	github.com/danfragoso/thdwb/mustard v0.0.0-20210612223625-beb2b4a85bbb // indirect
@@ -19,7 +20,6 @@ require (
 	github.com/goki/freetype v1.0.5 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	golang.org/x/image v0.15.0 // indirect
-	golang.org/x/net v0.57.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
