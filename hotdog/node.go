@@ -249,6 +249,11 @@ func (node *NodeDOM) checkOrigin() error {
 		return nil
 	}
 
+	// Check if this node is inside an iframe with sandbox restrictions
+	if node.isInSandboxedIframe() {
+		return SecurityError("cross-origin iframe access blocked by sandbox")
+	}
+
 	// For now, we assume all nodes in the same document have the same origin.
 	// In a full implementation, each node would track its own origin (for iframes).
 	// The Document should have an origin field that we can check against WindowCtx.Origin.
@@ -265,48 +270,63 @@ func (node *NodeDOM) checkOrigin() error {
 	return nil
 }
 
+// isInSandboxedIframe checks if the node is inside an iframe that doesn't allow same-origin access.
+func (node *NodeDOM) isInSandboxedIframe() bool {
+	current := node
+	for current != nil {
+		if current.Type == NodeTypeElement && current.Element == "iframe" {
+			// Check if iframe has sandbox attribute without allow-same-origin
+			if current.SandboxFlags != SandboxNone && (current.SandboxFlags&SandboxAllowSameOrigin) == 0 {
+				return true
+			}
+		}
+		current = current.Parent
+	}
+	return false
+}
+
 // QuerySelector returns the first element that matches the given CSS selector.
-func (node *NodeDOM) QuerySelector(selector string) *NodeDOM {
+func (node *NodeDOM) QuerySelector(selector string) (*NodeDOM, error) {
 	if err := node.checkOrigin(); err != nil {
-		return nil
+		return nil, err
 	}
 
 	if node.HTMLNode == nil || node.Document == nil || node.Document.HTMLRoot == nil {
-		return nil
+		return nil, nil
 	}
 
 	sel, err := cascadia.Compile(selector)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 
 	matched := sel.MatchFirst(node.Document.HTMLRoot)
 	if matched == nil {
-		return nil
+		return nil, nil
 	}
 
 	result := node.findNodeDOMByHTMLNode(matched)
 	if result != nil {
 		if err := result.checkOrigin(); err != nil {
-			return nil
+			return nil, err
 		}
 	}
-	return result
+	return result, nil
 }
 
 // QuerySelectorAll returns all elements that match the given CSS selector.
-func (node *NodeDOM) QuerySelectorAll(selector string) []*NodeDOM {
+func (node *NodeDOM) QuerySelectorAll(selector string) ([]*NodeDOM, error) {
 	if err := node.checkOrigin(); err != nil {
-		return nil
+		return nil, err
 	}
 
 	if node.HTMLNode == nil || node.Document == nil || node.Document.HTMLRoot == nil {
-		return nil
+		return nil, nil
 	}
 
 	sel, err := cascadia.Compile(selector)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 
 	matched := sel.MatchAll(node.Document.HTMLRoot)
@@ -315,32 +335,35 @@ func (node *NodeDOM) QuerySelectorAll(selector string) []*NodeDOM {
 		if nd := node.findNodeDOMByHTMLNode(m); nd != nil {
 			if err := nd.checkOrigin(); err == nil {
 				results = append(results, nd)
+			} else {
+				// Return error if any node fails origin check
+				return nil, err
 			}
 		}
 	}
-	return results
+	return results, nil
 }
 
 // GetElementById returns the element with the given ID.
-func (node *NodeDOM) GetElementById(id string) *NodeDOM {
+func (node *NodeDOM) GetElementById(id string) (*NodeDOM, error) {
 	if err := node.checkOrigin(); err != nil {
-		return nil
+		return nil, err
 	}
 	return node.QuerySelector("#" + escapeCSSIdentifier(id))
 }
 
 // GetElementsByClassName returns all elements with the given class name.
-func (node *NodeDOM) GetElementsByClassName(className string) []*NodeDOM {
+func (node *NodeDOM) GetElementsByClassName(className string) ([]*NodeDOM, error) {
 	if err := node.checkOrigin(); err != nil {
-		return nil
+		return nil, err
 	}
 	return node.QuerySelectorAll("." + escapeCSSIdentifier(className))
 }
 
 // GetElementsByTagName returns all elements with the given tag name.
-func (node *NodeDOM) GetElementsByTagName(tagName string) []*NodeDOM {
+func (node *NodeDOM) GetElementsByTagName(tagName string) ([]*NodeDOM, error) {
 	if err := node.checkOrigin(); err != nil {
-		return nil
+		return nil, err
 	}
 	return node.QuerySelectorAll(tagName)
 }
@@ -867,17 +890,17 @@ func (doc *Document) CreateTextNode(data string) *NodeDOM {
 }
 
 // GetBody returns the body element of the document.
-func (doc *Document) GetBody() *NodeDOM {
+func (doc *Document) GetBody() (*NodeDOM, error) {
 	if doc.DOM == nil {
-		return nil
+		return nil, nil
 	}
 	return doc.DOM.QuerySelector("body")
 }
 
 // GetDocumentElement returns the root element of the document (html).
-func (doc *Document) GetDocumentElement() *NodeDOM {
+func (doc *Document) GetDocumentElement() (*NodeDOM, error) {
 	if doc.DOM == nil {
-		return nil
+		return nil, nil
 	}
 	return doc.DOM.QuerySelector("html")
 }

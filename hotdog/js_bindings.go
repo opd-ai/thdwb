@@ -150,7 +150,14 @@ func (d *JSDocumentWrapper) querySelector(call goja.FunctionCall) goja.Value {
 	if d.doc.DOM == nil {
 		return goja.Null()
 	}
-	result := d.doc.DOM.QuerySelector(selector)
+	// Check origin on the document's root node
+	if err := d.doc.DOM.checkOrigin(); err != nil {
+		panic(d.runtime.NewGoError(err))
+	}
+	result, err := d.doc.DOM.QuerySelector(selector)
+	if err != nil {
+		panic(d.runtime.NewGoError(err))
+	}
 	if result == nil {
 		return goja.Null()
 	}
@@ -166,7 +173,14 @@ func (d *JSDocumentWrapper) querySelectorAll(call goja.FunctionCall) goja.Value 
 	if d.doc.DOM == nil {
 		return d.runtime.NewArray()
 	}
-	results := d.doc.DOM.QuerySelectorAll(selector)
+	// Check origin on the document's root node
+	if err := d.doc.DOM.checkOrigin(); err != nil {
+		panic(d.runtime.NewGoError(err))
+	}
+	results, err := d.doc.DOM.QuerySelectorAll(selector)
+	if err != nil {
+		panic(d.runtime.NewGoError(err))
+	}
 	arr := d.runtime.NewArray()
 	for i, node := range results {
 		arr.Set(strconv.Itoa(i), d.wrapNode(node))
@@ -183,7 +197,14 @@ func (d *JSDocumentWrapper) getElementById(call goja.FunctionCall) goja.Value {
 	if d.doc.DOM == nil {
 		return goja.Null()
 	}
-	result := d.doc.DOM.GetElementById(id)
+	// Check origin on the document's root node
+	if err := d.doc.DOM.checkOrigin(); err != nil {
+		panic(d.runtime.NewGoError(err))
+	}
+	result, err := d.doc.DOM.GetElementById(id)
+	if err != nil {
+		panic(d.runtime.NewGoError(err))
+	}
 	if result == nil {
 		return goja.Null()
 	}
@@ -199,7 +220,14 @@ func (d *JSDocumentWrapper) getElementsByClassName(call goja.FunctionCall) goja.
 	if d.doc.DOM == nil {
 		return d.runtime.NewArray()
 	}
-	results := d.doc.DOM.GetElementsByClassName(className)
+	// Check origin on the document's root node
+	if err := d.doc.DOM.checkOrigin(); err != nil {
+		panic(d.runtime.NewGoError(err))
+	}
+	results, err := d.doc.DOM.GetElementsByClassName(className)
+	if err != nil {
+		panic(d.runtime.NewGoError(err))
+	}
 	arr := d.runtime.NewArray()
 	for i, node := range results {
 		arr.Set(strconv.Itoa(i), d.wrapNode(node))
@@ -216,7 +244,14 @@ func (d *JSDocumentWrapper) getElementsByTagName(call goja.FunctionCall) goja.Va
 	if d.doc.DOM == nil {
 		return d.runtime.NewArray()
 	}
-	results := d.doc.DOM.GetElementsByTagName(tagName)
+	// Check origin on the document's root node
+	if err := d.doc.DOM.checkOrigin(); err != nil {
+		panic(d.runtime.NewGoError(err))
+	}
+	results, err := d.doc.DOM.GetElementsByTagName(tagName)
+	if err != nil {
+		panic(d.runtime.NewGoError(err))
+	}
 	arr := d.runtime.NewArray()
 	for i, node := range results {
 		arr.Set(strconv.Itoa(i), d.wrapNode(node))
@@ -248,7 +283,16 @@ func (d *JSDocumentWrapper) createTextNode(call goja.FunctionCall) goja.Value {
 
 // getBody returns the body element.
 func (d *JSDocumentWrapper) getBody(call goja.FunctionCall) goja.Value {
-	body := d.doc.GetBody()
+	// Check origin on the document's root node
+	if d.doc.DOM != nil {
+		if err := d.doc.DOM.checkOrigin(); err != nil {
+			panic(d.runtime.NewGoError(err))
+		}
+	}
+	body, err := d.doc.GetBody()
+	if err != nil {
+		panic(d.runtime.NewGoError(err))
+	}
 	if body == nil {
 		return goja.Null()
 	}
@@ -257,7 +301,16 @@ func (d *JSDocumentWrapper) getBody(call goja.FunctionCall) goja.Value {
 
 // getDocumentElement returns the document element (html).
 func (d *JSDocumentWrapper) getDocumentElement(call goja.FunctionCall) goja.Value {
-	docEl := d.doc.GetDocumentElement()
+	// Check origin on the document's root node
+	if d.doc.DOM != nil {
+		if err := d.doc.DOM.checkOrigin(); err != nil {
+			panic(d.runtime.NewGoError(err))
+		}
+	}
+	docEl, err := d.doc.GetDocumentElement()
+	if err != nil {
+		panic(d.runtime.NewGoError(err))
+	}
 	if docEl == nil {
 		return goja.Null()
 	}
@@ -317,7 +370,10 @@ func (w *JSDOMWrapper) querySelector(call goja.FunctionCall) goja.Value {
 	if err := w.node.checkOrigin(); err != nil {
 		panic(w.runtime.NewGoError(err))
 	}
-	result := w.node.QuerySelector(selector)
+	result, err := w.node.QuerySelector(selector)
+	if err != nil {
+		panic(w.runtime.NewGoError(err))
+	}
 	if result == nil {
 		return goja.Null()
 	}
@@ -333,7 +389,10 @@ func (w *JSDOMWrapper) querySelectorAll(call goja.FunctionCall) goja.Value {
 	if err := w.node.checkOrigin(); err != nil {
 		panic(w.runtime.NewGoError(err))
 	}
-	results := w.node.QuerySelectorAll(selector)
+	results, err := w.node.QuerySelectorAll(selector)
+	if err != nil {
+		panic(w.runtime.NewGoError(err))
+	}
 	arr := w.runtime.NewArray()
 	for i, node := range results {
 		arr.Set(strconv.Itoa(i), w.wrapNode(node))

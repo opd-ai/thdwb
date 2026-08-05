@@ -50,7 +50,7 @@ Introduce interactive scripting with per-window Goja isolation and security sand
 - [x] Each window has isolated Goja VM with no memory leaks
 - [x] Cross-window runtime variable access impossible
 - [x] DOM operations from JS mutate Go DOM nodes within same origin
-- [ ] Cross-origin DOM access attempts throw SecurityError
+- [x] Cross-origin DOM access attempts throw SecurityError
 - [ ] querySelector respects iframe boundaries
 - [ ] Element properties work correctly with CSP checks
 - [ ] console output logged with origin attribution

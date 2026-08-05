@@ -1,6 +1,7 @@
 package hotdog
 
 import (
+	"net/url"
 	"strings"
 	"testing"
 
@@ -191,10 +192,16 @@ func parseHTMLForTest(htmlContent string, windowCtx *WindowContext) (*Document, 
 		return nil, err
 	}
 
+	// Set document URL to match window context's origin for origin checking
+	docURL := windowCtx.GetOrigin()
+	if docURL == nil || docURL.String() == "" {
+		docURL, _ = url.Parse("http://localhost")
+	}
+
 	doc := &Document{
 		Title:       "",
 		ContentType: "text/html",
-		URL:         nil,
+		URL:         docURL,
 		RawDocument: htmlContent,
 		HTMLRoot:    htmlRoot,
 		StyleSheets: make([]*StyleElement, 0),
@@ -299,7 +306,7 @@ func TestCrossOriginDOMAccess(t *testing.T) {
 	}
 
 	runtime1 := wc1.GetJSRuntime()
-	_ = wc2.GetJSRuntime() // Ensure wc2 has runtime initialized
+	wc2.GetJSRuntime() // Ensure wc2 has runtime initialized
 
 	// Test that same-origin modification works using innerHTML
 	_, err = runtime1.RunString(`
@@ -319,6 +326,87 @@ func TestCrossOriginDOMAccess(t *testing.T) {
 	if val.String() != "Modified" {
 		t.Fatalf("Expected innerHTML 'Modified', got '%s'", val.String())
 	}
+
+	// Test that cross-origin access from wc2 to wc1's DOM throws SecurityError
+	// We simulate this by creating a node in wc1 and trying to access it from wc2's runtime
+	// Since runtimes are isolated, we test the origin check directly on the node
+	node1, err := wc1.ActiveDocument.DOM.QuerySelector("#test")
+	if err != nil {
+		t.Fatalf("Failed to find test node in wc1: %v", err)
+	}
+	if node1 == nil {
+		t.Fatal("Failed to find test node in wc1")
+	}
+
+	// The node belongs to wc1 (origin: https://example.com)
+	// If we try to check origin against wc2's origin (https://other.com), it should fail
+	// We simulate this by temporarily setting the node's WindowCtx to wc2
+	originalWindowCtx := node1.WindowCtx
+	node1.WindowCtx = wc2
+	err = node1.checkOrigin()
+	node1.WindowCtx = originalWindowCtx // Restore
+
+	if err == nil {
+		t.Fatal("Expected SecurityError for cross-origin access, got nil")
+	}
+	secErr, ok := err.(SecurityError)
+	if !ok {
+		t.Fatalf("Expected SecurityError, got %T: %v", err, err)
+	}
+	t.Logf("Cross-origin access correctly blocked: %v", secErr)
+
+	// Test iframe sandbox restriction
+	// Create a node that's inside a sandboxed iframe (without allow-same-origin)
+	// sandbox="" (empty) means all restrictions apply, but ParseSandboxAttribute returns SandboxNone for empty string
+	// So we use a sandbox value that explicitly doesn't include allow-same-origin
+	iframeNode := &NodeDOM{
+		Type:         NodeTypeElement,
+		Element:      "iframe",
+		SandboxFlags: SandboxAllowScripts | SandboxAllowForms, // Has sandbox but no allow-same-origin
+		WindowCtx:    wc1,
+		Document:     wc1.ActiveDocument,
+	}
+	childNode := &NodeDOM{
+		Type:      NodeTypeElement,
+		Element:   "div",
+		WindowCtx: wc1,
+		Document:  wc1.ActiveDocument,
+		Parent:    iframeNode,
+	}
+	iframeNode.Children = []*NodeDOM{childNode}
+
+	err = childNode.checkOrigin()
+	if err == nil {
+		t.Fatal("Expected SecurityError for sandboxed iframe access, got nil")
+	}
+	secErr, ok = err.(SecurityError)
+	if !ok {
+		t.Fatalf("Expected SecurityError, got %T: %v", err, err)
+	}
+	t.Logf("Sandboxed iframe access correctly blocked: %v", secErr)
+
+	// Test that iframe with allow-same-origin works
+	iframeNodeAllow := &NodeDOM{
+		Type:         NodeTypeElement,
+		Element:      "iframe",
+		SandboxFlags: SandboxAllowSameOrigin,
+		WindowCtx:    wc1,
+		Document:     wc1.ActiveDocument,
+	}
+	childNodeAllow := &NodeDOM{
+		Type:      NodeTypeElement,
+		Element:   "div",
+		WindowCtx: wc1,
+		Document:  wc1.ActiveDocument,
+		Parent:    iframeNodeAllow,
+	}
+	iframeNodeAllow.Children = []*NodeDOM{childNodeAllow}
+
+	err = childNodeAllow.checkOrigin()
+	if err != nil {
+		t.Fatalf("Expected no error for iframe with allow-same-origin, got: %v", err)
+	}
+	t.Logf("Iframe with allow-same-origin correctly allows access")
 
 	wc1.Destroy()
 	wc2.Destroy()
