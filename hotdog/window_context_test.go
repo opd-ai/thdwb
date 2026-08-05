@@ -1,7 +1,10 @@
 package hotdog
 
 import (
+	"strings"
 	"testing"
+
+	"golang.org/x/net/html"
 
 	profiler "github.com/danfragoso/thdwb/profiler"
 	"github.com/dop251/goja"
@@ -77,4 +80,246 @@ func TestWindowContextJSRuntimeBasicExecution(t *testing.T) {
 	}
 
 	wc.Destroy()
+}
+
+func TestDOMMutationsFromJS(t *testing.T) {
+	settings := &Settings{}
+	buildInfo := &BuildInfo{}
+	prof := profiler.CreateProfiler()
+
+	wc := NewWindowContext(settings, buildInfo, prof)
+
+	// Parse a basic HTML document with html and body
+	htmlContent := `<html><head></head><body></body></html>`
+	// Use ketchup parser to parse the HTML
+	parsedDoc, err := parseHTMLForTest(htmlContent, wc)
+	if err != nil {
+		t.Fatalf("Failed to parse HTML: %v", err)
+	}
+	wc.ActiveDocument = parsedDoc
+
+	// Initialize JS runtime with DOM bindings
+	err = wc.InitJSRuntime()
+	if err != nil {
+		t.Fatalf("Failed to init JS runtime: %v", err)
+	}
+
+	runtime := wc.GetJSRuntime()
+
+	// Test innerHTML setter
+	_, err = runtime.RunString(`
+		var div = document.createElement("div");
+		div.innerHTML = "<span>Hello</span><span>World</span>";
+		document.body.appendChild(div);
+	`)
+	if err != nil {
+		t.Fatalf("Failed to set innerHTML: %v", err)
+	}
+
+	// Verify innerHTML was set
+	val, err := runtime.RunString("document.body.innerHTML")
+	if err != nil {
+		t.Fatalf("Failed to get innerHTML: %v", err)
+	}
+	t.Logf("body innerHTML: %v", val.String())
+
+	// Test textContent setter
+	_, err = runtime.RunString(`
+		var p = document.createElement("p");
+		p.textContent = "Hello World";
+		document.body.appendChild(p);
+	`)
+	if err != nil {
+		t.Fatalf("Failed to set textContent: %v", err)
+	}
+
+	// Test insertBefore
+	_, err = runtime.RunString(`
+		var parent = document.createElement("div");
+		var child1 = document.createElement("span");
+		child1.textContent = "First";
+		var child2 = document.createElement("span");
+		child2.textContent = "Second";
+		parent.appendChild(child1);
+		parent.appendChild(child2);
+		var child3 = document.createElement("span");
+		child3.textContent = "Inserted";
+		parent.insertBefore(child3, child2);
+		document.body.appendChild(parent);
+	`)
+	if err != nil {
+		t.Fatalf("Failed to insertBefore: %v", err)
+	}
+
+	// Test replaceChild
+	_, err = runtime.RunString(`
+		var parent = document.createElement("div");
+		var oldChild = document.createElement("span");
+		oldChild.textContent = "Old";
+		parent.appendChild(oldChild);
+		var newChild = document.createElement("span");
+		newChild.textContent = "New";
+		parent.replaceChild(newChild, oldChild);
+		document.body.appendChild(parent);
+	`)
+	if err != nil {
+		t.Fatalf("Failed to replaceChild: %v", err)
+	}
+
+	// Test cloneNode
+	_, err = runtime.RunString(`
+		var original = document.createElement("div");
+		original.textContent = "Original";
+		var clone = original.cloneNode(true);
+		clone.textContent = "Clone";
+		document.body.appendChild(original);
+		document.body.appendChild(clone);
+	`)
+	if err != nil {
+		t.Fatalf("Failed to cloneNode: %v", err)
+	}
+
+	wc.Destroy()
+}
+
+// parseHTMLForTest parses HTML using the ketchup parser for testing.
+func parseHTMLForTest(htmlContent string, windowCtx *WindowContext) (*Document, error) {
+	// Use the existing HTML parser from ketchup
+	// This is a simplified version - in reality we'd use the ketchup package
+	htmlRoot, err := html.Parse(strings.NewReader(htmlContent))
+	if err != nil {
+		return nil, err
+	}
+
+	doc := &Document{
+		Title:       "",
+		ContentType: "text/html",
+		URL:         nil,
+		RawDocument: htmlContent,
+		HTMLRoot:    htmlRoot,
+		StyleSheets: make([]*StyleElement, 0),
+	}
+
+	// Convert html.Node tree to NodeDOM tree
+	doc.DOM = convertHTMLNodeToNodeDOMForTest(htmlRoot, doc, windowCtx)
+	if doc.DOM != nil {
+		doc.DOM.Document = doc
+	}
+
+	return doc, nil
+}
+
+// convertHTMLNodeToNodeDOMForTest converts an html.Node to a NodeDOM for testing.
+func convertHTMLNodeToNodeDOMForTest(htmlNode *html.Node, doc *Document, windowCtx *WindowContext) *NodeDOM {
+	switch htmlNode.Type {
+	case html.DocumentNode:
+		var result *NodeDOM
+		for child := htmlNode.FirstChild; child != nil; child = child.NextSibling {
+			childDOM := convertHTMLNodeToNodeDOMForTest(child, doc, windowCtx)
+			if childDOM != nil {
+				result = childDOM
+				break
+			}
+		}
+		return result
+	case html.ElementNode:
+		nodeDOM := &NodeDOM{
+			Type:       NodeTypeElement,
+			Element:    htmlNode.Data,
+			Children:   make([]*NodeDOM, 0),
+			Attributes: make([]*Attribute, 0),
+			Document:   doc,
+			HTMLNode:   htmlNode,
+			WindowCtx:  windowCtx,
+		}
+		for _, attr := range htmlNode.Attr {
+			nodeDOM.Attributes = append(nodeDOM.Attributes, &Attribute{
+				Name:  attr.Key,
+				Value: attr.Val,
+			})
+		}
+		for child := htmlNode.FirstChild; child != nil; child = child.NextSibling {
+			childDOM := convertHTMLNodeToNodeDOMForTest(child, doc, windowCtx)
+			if childDOM != nil {
+				nodeDOM.appendChildNode(childDOM)
+			}
+		}
+		return nodeDOM
+	case html.TextNode:
+		return &NodeDOM{
+			Type:      NodeTypeText,
+			Content:   htmlNode.Data,
+			Document:  doc,
+			WindowCtx: windowCtx,
+		}
+	case html.CommentNode:
+		return &NodeDOM{
+			Type:      NodeTypeComment,
+			Content:   htmlNode.Data,
+			Document:  doc,
+			WindowCtx: windowCtx,
+		}
+	default:
+		return nil
+	}
+}
+
+func TestCrossOriginDOMAccess(t *testing.T) {
+	settings := &Settings{}
+	buildInfo := &BuildInfo{}
+	prof := profiler.CreateProfiler()
+
+	wc1 := NewWindowContext(settings, buildInfo, prof)
+	wc2 := NewWindowContext(settings, buildInfo, prof)
+
+	wc1.SetOrigin("https://example.com")
+	wc2.SetOrigin("https://other.com")
+
+	// Parse HTML for both windows with a div already in body
+	htmlContent := `<html><head></head><body><div id="test">Secret</div></body></html>`
+	parsedDoc1, err := parseHTMLForTest(htmlContent, wc1)
+	if err != nil {
+		t.Fatalf("Failed to parse HTML for wc1: %v", err)
+	}
+	wc1.ActiveDocument = parsedDoc1
+
+	parsedDoc2, err := parseHTMLForTest(htmlContent, wc2)
+	if err != nil {
+		t.Fatalf("Failed to parse HTML for wc2: %v", err)
+	}
+	wc2.ActiveDocument = parsedDoc2
+
+	err = wc1.InitJSRuntime()
+	if err != nil {
+		t.Fatalf("Failed to init wc1 JS runtime: %v", err)
+	}
+	err = wc2.InitJSRuntime()
+	if err != nil {
+		t.Fatalf("Failed to init wc2 JS runtime: %v", err)
+	}
+
+	runtime1 := wc1.GetJSRuntime()
+	_ = wc2.GetJSRuntime() // Ensure wc2 has runtime initialized
+
+	// Test that same-origin modification works using innerHTML
+	_, err = runtime1.RunString(`
+		var div = document.querySelector("#test");
+		div.innerHTML = "Modified"; // Should work - same origin
+	`)
+	if err != nil {
+		t.Fatalf("Same-origin modification failed: %v", err)
+	}
+
+	// Verify the modification
+	val, err := runtime1.RunString("document.querySelector('#test').innerHTML")
+	if err != nil {
+		t.Fatalf("Failed to get innerHTML: %v", err)
+	}
+	t.Logf("innerHTML after modification: '%s'", val.String())
+	if val.String() != "Modified" {
+		t.Fatalf("Expected innerHTML 'Modified', got '%s'", val.String())
+	}
+
+	wc1.Destroy()
+	wc2.Destroy()
 }

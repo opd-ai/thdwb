@@ -49,7 +49,7 @@ Introduce interactive scripting with per-window Goja isolation and security sand
 ### Phase 3 Completion Checklist
 - [x] Each window has isolated Goja VM with no memory leaks
 - [x] Cross-window runtime variable access impossible
-- [ ] DOM operations from JS mutate Go DOM nodes within same origin
+- [x] DOM operations from JS mutate Go DOM nodes within same origin
 - [ ] Cross-origin DOM access attempts throw SecurityError
 - [ ] querySelector respects iframe boundaries
 - [ ] Element properties work correctly with CSP checks

@@ -7,8 +7,10 @@ import (
 	"regexp"
 	"strings"
 
-	cascadia "github.com/andybalholm/cascadia"
 	"golang.org/x/net/html"
+	"golang.org/x/net/html/atom"
+
+	cascadia "github.com/andybalholm/cascadia"
 )
 
 // NodeType represents the type of a DOM node.
@@ -583,6 +585,261 @@ func (node *NodeDOM) GetTextContent() string {
 	default: // "normal"
 		return CollapseWhitespace(node.Content)
 	}
+}
+
+// SetInnerHTML sets the HTML content of the node by parsing the HTML string
+// and replacing all children with the parsed nodes.
+func (node *NodeDOM) SetInnerHTML(htmlString string) error {
+	if node.Type != NodeTypeElement {
+		return fmt.Errorf("innerHTML can only be set on element nodes")
+	}
+
+	// Remove all existing children
+	for _, child := range node.Children {
+		child.Parent = nil
+		child.PrevSibling = nil
+		child.NextSibling = nil
+	}
+	node.Children = nil
+	node.FirstChild = nil
+
+	// Parse the HTML string
+	parsedNodes, err := parseHTMLFragment(htmlString, node.Document)
+	if err != nil {
+		return err
+	}
+
+	// Append parsed nodes as children
+	for _, child := range parsedNodes {
+		node.appendChildNode(child)
+	}
+
+	node.RequestReflow()
+	node.RequestRepaint()
+	return nil
+}
+
+// parseHTMLFragment parses an HTML fragment and returns a list of NodeDOM nodes.
+func parseHTMLFragment(htmlString string, doc *Document) ([]*NodeDOM, error) {
+	// Use ParseFragment to parse HTML fragment without full document structure
+	// We need a context element - create a div node as context
+	contextNode := &html.Node{
+		Type:     html.ElementNode,
+		Data:     "div",
+		DataAtom: atom.Div,
+	}
+	nodes, err := html.ParseFragment(strings.NewReader(htmlString), contextNode)
+	if err != nil {
+		return nil, err
+	}
+
+	var result []*NodeDOM
+	for _, node := range nodes {
+		nodeDOM := convertHTMLNodeToNodeDOM(node, doc)
+		if nodeDOM != nil {
+			result = append(result, nodeDOM)
+		}
+	}
+
+	return result, nil
+}
+
+// convertHTMLNodeToNodeDOM converts an html.Node to a NodeDOM
+func convertHTMLNodeToNodeDOM(htmlNode *html.Node, doc *Document) *NodeDOM {
+	switch htmlNode.Type {
+	case html.TextNode:
+		return &NodeDOM{
+			Type:     NodeTypeText,
+			Content:  htmlNode.Data,
+			Document: doc,
+		}
+	case html.ElementNode:
+		nodeDOM := &NodeDOM{
+			Type:       NodeTypeElement,
+			Element:    htmlNode.Data,
+			Children:   make([]*NodeDOM, 0),
+			Attributes: make([]*Attribute, 0),
+			Document:   doc,
+			HTMLNode:   htmlNode,
+		}
+		for _, attr := range htmlNode.Attr {
+			nodeDOM.Attributes = append(nodeDOM.Attributes, &Attribute{
+				Name:  attr.Key,
+				Value: attr.Val,
+			})
+		}
+		for child := htmlNode.FirstChild; child != nil; child = child.NextSibling {
+			childDOM := convertHTMLNodeToNodeDOM(child, doc)
+			if childDOM != nil {
+				nodeDOM.appendChildNode(childDOM)
+			}
+		}
+		return nodeDOM
+	case html.CommentNode:
+		return &NodeDOM{
+			Type:     NodeTypeComment,
+			Content:  htmlNode.Data,
+			Document: doc,
+		}
+	default:
+		return nil
+	}
+}
+
+// SetTextContent sets the text content of the node, replacing all children
+// with a single text node.
+func (node *NodeDOM) SetTextContent(text string) {
+	// Remove all existing children
+	for _, child := range node.Children {
+		child.Parent = nil
+		child.PrevSibling = nil
+		child.NextSibling = nil
+	}
+	node.Children = nil
+	node.FirstChild = nil
+
+	if node.Type == NodeTypeText {
+		node.Content = text
+	} else {
+		textNode := &NodeDOM{
+			Type:     NodeTypeText,
+			Content:  text,
+			Document: node.Document,
+		}
+		node.appendChildNode(textNode)
+	}
+
+	node.RequestReflow()
+	node.RequestRepaint()
+}
+
+// InsertBefore inserts a new child node before an existing child node.
+// If referenceNode is nil, the new node is appended at the end.
+func (node *NodeDOM) InsertBefore(newChild, referenceChild *NodeDOM) error {
+	if newChild == nil {
+		return fmt.Errorf("newChild cannot be nil")
+	}
+
+	if newChild.Parent != nil {
+		newChild.Parent.removeChildNode(newChild)
+	}
+
+	newChild.Document = node.Document
+	newChild.WindowCtx = node.WindowCtx
+
+	if referenceChild == nil {
+		node.appendChildNode(newChild)
+		return nil
+	}
+
+	for i, child := range node.Children {
+		if child == referenceChild {
+			newChild.Parent = node
+			newChild.PrevSibling = referenceChild.PrevSibling
+			newChild.NextSibling = referenceChild
+			referenceChild.PrevSibling = newChild
+
+			if referenceChild == node.FirstChild {
+				node.FirstChild = newChild
+			} else if newChild.PrevSibling != nil {
+				newChild.PrevSibling.NextSibling = newChild
+			}
+
+			node.Children = append(node.Children[:i], append([]*NodeDOM{newChild}, node.Children[i:]...)...)
+			node.RequestReflow()
+			node.RequestRepaint()
+			return nil
+		}
+	}
+
+	return fmt.Errorf("referenceChild is not a child of this node")
+}
+
+// ReplaceChild replaces an existing child node with a new node.
+// Returns the replaced node.
+func (node *NodeDOM) ReplaceChild(newChild, oldChild *NodeDOM) (*NodeDOM, error) {
+	if newChild == nil || oldChild == nil {
+		return nil, fmt.Errorf("newChild and oldChild cannot be nil")
+	}
+
+	found := false
+	for _, child := range node.Children {
+		if child == oldChild {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return nil, fmt.Errorf("oldChild is not a child of this node")
+	}
+
+	if newChild.Parent != nil {
+		newChild.Parent.removeChildNode(newChild)
+	}
+
+	newChild.Document = node.Document
+	newChild.WindowCtx = node.WindowCtx
+
+	for i, child := range node.Children {
+		if child == oldChild {
+			newChild.PrevSibling = oldChild.PrevSibling
+			newChild.NextSibling = oldChild.NextSibling
+			newChild.Parent = node
+
+			if oldChild.PrevSibling != nil {
+				oldChild.PrevSibling.NextSibling = newChild
+			}
+			if oldChild.NextSibling != nil {
+				oldChild.NextSibling.PrevSibling = newChild
+			}
+			if node.FirstChild == oldChild {
+				node.FirstChild = newChild
+			}
+
+			node.Children[i] = newChild
+
+			oldChild.Parent = nil
+			oldChild.PrevSibling = nil
+			oldChild.NextSibling = nil
+
+			node.RequestReflow()
+			node.RequestRepaint()
+			return oldChild, nil
+		}
+	}
+
+	return nil, fmt.Errorf("oldChild not found")
+}
+
+// CloneNode creates a copy of the node.
+// If deep is true, it also clones all descendants.
+func (node *NodeDOM) CloneNode(deep bool) *NodeDOM {
+	clone := &NodeDOM{
+		Type:       node.Type,
+		Element:    node.Element,
+		Content:    node.Content,
+		Attributes: make([]*Attribute, 0),
+		Document:   node.Document,
+		WindowCtx:  node.WindowCtx,
+		Style:      node.Style,
+	}
+
+	for _, attr := range node.Attributes {
+		clone.Attributes = append(clone.Attributes, &Attribute{
+			Name:  attr.Name,
+			Value: attr.Value,
+		})
+	}
+
+	if deep {
+		clone.Children = make([]*NodeDOM, 0, len(node.Children))
+		for _, child := range node.Children {
+			clonedChild := child.CloneNode(true)
+			clone.appendChildNode(clonedChild)
+		}
+	}
+
+	return clone
 }
 
 // CreateElement creates a new element node and returns it.

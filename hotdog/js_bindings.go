@@ -9,6 +9,9 @@ import (
 	"github.com/dop251/goja"
 )
 
+// nodeWrapperSymbol is a unique symbol used to store the JSDOMWrapper reference on JS objects.
+var nodeWrapperSymbol = goja.NewSymbol("thdwb.nodeWrapper")
+
 // JSDOMWrapper wraps a NodeDOM for JavaScript access
 type JSDOMWrapper struct {
 	node      *NodeDOM
@@ -68,8 +71,9 @@ func (wc *WindowContext) InitJSRuntime() error {
 		docObj.Set("getElementsByTagName", docWrapper.getElementsByTagName)
 		docObj.Set("createElement", docWrapper.createElement)
 		docObj.Set("createTextNode", docWrapper.createTextNode)
-		docObj.Set("body", docWrapper.getBody)
-		docObj.Set("documentElement", docWrapper.getDocumentElement)
+		// Expose body and documentElement as properties (getters)
+		docObj.DefineAccessorProperty("body", runtime.ToValue(docWrapper.getBody), goja.Undefined(), 0, 0)
+		docObj.DefineAccessorProperty("documentElement", runtime.ToValue(docWrapper.getDocumentElement), goja.Undefined(), 0, 0)
 		docObj.Set("title", docWrapper.getTitle)
 		runtime.Set("document", docObj)
 	}
@@ -273,10 +277,13 @@ func (d *JSDocumentWrapper) wrapNode(node *NodeDOM) goja.Value {
 		windowCtx: d.windowCtx,
 	}
 	obj := d.runtime.NewObject()
+	obj.SetSymbol(nodeWrapperSymbol, wrapper) // Store wrapper reference for retrieval
 	obj.Set("nodeType", node.Type)
 	obj.Set("tagName", strings.ToUpper(node.Element))
-	obj.Set("textContent", node.GetTextContent())
-	obj.Set("innerHTML", node.InnerHTML())
+	// Define textContent with getter/setter
+	obj.DefineAccessorProperty("textContent", d.runtime.ToValue(wrapper.getTextContentProp), d.runtime.ToValue(wrapper.setTextContent), 0, 0)
+	// Define innerHTML with getter/setter
+	obj.DefineAccessorProperty("innerHTML", d.runtime.ToValue(wrapper.getInnerHTMLProp), d.runtime.ToValue(wrapper.setInnerHTML), 0, 0)
 	obj.Set("id", node.Attr("id"))
 	obj.Set("className", node.Attr("class"))
 	obj.Set("querySelector", wrapper.querySelector)
@@ -286,6 +293,9 @@ func (d *JSDocumentWrapper) wrapNode(node *NodeDOM) goja.Value {
 	obj.Set("removeAttribute", wrapper.removeAttribute)
 	obj.Set("appendChild", wrapper.appendChild)
 	obj.Set("removeChild", wrapper.removeChild)
+	obj.Set("insertBefore", wrapper.insertBefore)
+	obj.Set("replaceChild", wrapper.replaceChild)
+	obj.Set("cloneNode", wrapper.cloneNode)
 	obj.Set("parentNode", wrapper.getParentNode)
 	obj.Set("childNodes", wrapper.getChildNodes)
 	obj.Set("firstChild", wrapper.getFirstChild)
@@ -518,6 +528,144 @@ func (w *JSDOMWrapper) getPreviousSibling(call goja.FunctionCall) goja.Value {
 	return w.wrapNode(w.node.PrevSibling)
 }
 
+// setInnerHTML sets the HTML content of the element.
+func (w *JSDOMWrapper) setInnerHTML(call goja.FunctionCall) goja.Value {
+	if err := w.node.checkOrigin(); err != nil {
+		panic(w.runtime.NewGoError(err))
+	}
+	if len(call.Arguments) < 1 {
+		panic(w.runtime.NewGoError(errors.New("innerHTML setter requires a value argument")))
+	}
+	htmlString := call.Arguments[0].String()
+	if err := w.node.SetInnerHTML(htmlString); err != nil {
+		panic(w.runtime.NewGoError(err))
+	}
+	// Return the new innerHTML value
+	return w.runtime.ToValue(w.node.InnerHTML())
+}
+
+// setTextContent sets the text content of the node.
+func (w *JSDOMWrapper) setTextContent(call goja.FunctionCall) goja.Value {
+	if err := w.node.checkOrigin(); err != nil {
+		panic(w.runtime.NewGoError(err))
+	}
+	if len(call.Arguments) < 1 {
+		panic(w.runtime.NewGoError(errors.New("textContent setter requires a value argument")))
+	}
+	text := call.Arguments[0].String()
+	w.node.SetTextContent(text)
+	// Return the new textContent value
+	return w.runtime.ToValue(w.node.GetTextContent())
+}
+
+// insertBefore inserts a new child node before an existing child node.
+// If referenceNode is null, the new node is appended at the end.
+func (w *JSDOMWrapper) insertBefore(call goja.FunctionCall) goja.Value {
+	if err := w.node.checkOrigin(); err != nil {
+		panic(w.runtime.NewGoError(err))
+	}
+	if len(call.Arguments) < 1 {
+		panic(w.runtime.NewGoError(errors.New("insertBefore requires a newNode argument")))
+	}
+	newNodeVal := call.Arguments[0]
+	newNodeObj := newNodeVal.ToObject(w.runtime)
+	if newNodeObj == nil {
+		panic(w.runtime.NewGoError(errors.New("insertBefore newNode must be a Node object")))
+	}
+	newNodeWrapper := w.getNodeFromJSObject(newNodeObj)
+	if newNodeWrapper == nil {
+		panic(w.runtime.NewGoError(errors.New("insertBefore newNode must be a valid Node")))
+	}
+	newNode := newNodeWrapper.node
+
+	if err := newNode.checkOrigin(); err != nil {
+		panic(w.runtime.NewGoError(err))
+	}
+
+	var referenceNode *NodeDOM
+	if len(call.Arguments) >= 2 && !goja.IsNull(call.Arguments[1]) && !goja.IsUndefined(call.Arguments[1]) {
+		refVal := call.Arguments[1]
+		refObj := refVal.ToObject(w.runtime)
+		if refObj == nil {
+			panic(w.runtime.NewGoError(errors.New("insertBefore referenceNode must be a Node object")))
+		}
+		refWrapper := w.getNodeFromJSObject(refObj)
+		if refWrapper == nil {
+			panic(w.runtime.NewGoError(errors.New("insertBefore referenceNode must be a valid Node")))
+		}
+		referenceNode = refWrapper.node
+		if err := referenceNode.checkOrigin(); err != nil {
+			panic(w.runtime.NewGoError(err))
+		}
+	}
+
+	if err := w.node.InsertBefore(newNode, referenceNode); err != nil {
+		panic(w.runtime.NewGoError(err))
+	}
+
+	return w.wrapNode(newNode)
+}
+
+// replaceChild replaces an existing child node with a new node.
+// Returns the replaced node.
+func (w *JSDOMWrapper) replaceChild(call goja.FunctionCall) goja.Value {
+	if err := w.node.checkOrigin(); err != nil {
+		panic(w.runtime.NewGoError(err))
+	}
+	if len(call.Arguments) < 2 {
+		panic(w.runtime.NewGoError(errors.New("replaceChild requires newNode and oldNode arguments")))
+	}
+	newNodeVal := call.Arguments[0]
+	newNodeObj := newNodeVal.ToObject(w.runtime)
+	if newNodeObj == nil {
+		panic(w.runtime.NewGoError(errors.New("replaceChild newNode must be a Node object")))
+	}
+	newNodeWrapper := w.getNodeFromJSObject(newNodeObj)
+	if newNodeWrapper == nil {
+		panic(w.runtime.NewGoError(errors.New("replaceChild newNode must be a valid Node")))
+	}
+	newNode := newNodeWrapper.node
+
+	oldNodeVal := call.Arguments[1]
+	oldNodeObj := oldNodeVal.ToObject(w.runtime)
+	if oldNodeObj == nil {
+		panic(w.runtime.NewGoError(errors.New("replaceChild oldNode must be a Node object")))
+	}
+	oldNodeWrapper := w.getNodeFromJSObject(oldNodeObj)
+	if oldNodeWrapper == nil {
+		panic(w.runtime.NewGoError(errors.New("replaceChild oldNode must be a valid Node")))
+	}
+	oldNode := oldNodeWrapper.node
+
+	if err := newNode.checkOrigin(); err != nil {
+		panic(w.runtime.NewGoError(err))
+	}
+	if err := oldNode.checkOrigin(); err != nil {
+		panic(w.runtime.NewGoError(err))
+	}
+
+	replacedNode, err := w.node.ReplaceChild(newNode, oldNode)
+	if err != nil {
+		panic(w.runtime.NewGoError(err))
+	}
+
+	return w.wrapNode(replacedNode)
+}
+
+// cloneNode creates a copy of the node.
+// If deep is true, it also clones all descendants.
+func (w *JSDOMWrapper) cloneNode(call goja.FunctionCall) goja.Value {
+	if err := w.node.checkOrigin(); err != nil {
+		panic(w.runtime.NewGoError(err))
+	}
+	deep := false
+	if len(call.Arguments) >= 1 {
+		deep = call.Arguments[0].ToBoolean()
+	}
+	clonedNode := w.node.CloneNode(deep)
+	return w.wrapNode(clonedNode)
+}
+
 // getStyle returns the computed style object for this element.
 func (w *JSDOMWrapper) getStyle(call goja.FunctionCall) goja.Value {
 	if err := w.node.checkOrigin(); err != nil {
@@ -560,6 +708,22 @@ func (w *JSDOMWrapper) getStyle(call goja.FunctionCall) goja.Value {
 	return styleObj
 }
 
+// getTextContentProp is the getter for the textContent property.
+func (w *JSDOMWrapper) getTextContentProp(call goja.FunctionCall) goja.Value {
+	if err := w.node.checkOrigin(); err != nil {
+		panic(w.runtime.NewGoError(err))
+	}
+	return w.runtime.ToValue(w.node.GetTextContent())
+}
+
+// getInnerHTMLProp is the getter for the innerHTML property.
+func (w *JSDOMWrapper) getInnerHTMLProp(call goja.FunctionCall) goja.Value {
+	if err := w.node.checkOrigin(); err != nil {
+		panic(w.runtime.NewGoError(err))
+	}
+	return w.runtime.ToValue(w.node.InnerHTML())
+}
+
 // wrapNode wraps a NodeDOM in a JSDOMWrapper and returns a JS object.
 func (w *JSDOMWrapper) wrapNode(node *NodeDOM) goja.Value {
 	wrapper := &JSDOMWrapper{
@@ -570,8 +734,10 @@ func (w *JSDOMWrapper) wrapNode(node *NodeDOM) goja.Value {
 	obj := w.runtime.NewObject()
 	obj.Set("nodeType", node.Type)
 	obj.Set("tagName", strings.ToUpper(node.Element))
-	obj.Set("textContent", node.GetTextContent())
-	obj.Set("innerHTML", node.InnerHTML())
+	// Define textContent with getter/setter
+	obj.DefineAccessorProperty("textContent", w.runtime.ToValue(wrapper.getTextContentProp), w.runtime.ToValue(wrapper.setTextContent), 0, 0)
+	// Define innerHTML with getter/setter
+	obj.DefineAccessorProperty("innerHTML", w.runtime.ToValue(wrapper.getInnerHTMLProp), w.runtime.ToValue(wrapper.setInnerHTML), 0, 0)
 	obj.Set("id", node.Attr("id"))
 	obj.Set("className", node.Attr("class"))
 	obj.Set("querySelector", wrapper.querySelector)
@@ -581,6 +747,9 @@ func (w *JSDOMWrapper) wrapNode(node *NodeDOM) goja.Value {
 	obj.Set("removeAttribute", wrapper.removeAttribute)
 	obj.Set("appendChild", wrapper.appendChild)
 	obj.Set("removeChild", wrapper.removeChild)
+	obj.Set("insertBefore", wrapper.insertBefore)
+	obj.Set("replaceChild", wrapper.replaceChild)
+	obj.Set("cloneNode", wrapper.cloneNode)
 	obj.Set("parentNode", wrapper.getParentNode)
 	obj.Set("childNodes", wrapper.getChildNodes)
 	obj.Set("firstChild", wrapper.getFirstChild)
@@ -588,13 +757,22 @@ func (w *JSDOMWrapper) wrapNode(node *NodeDOM) goja.Value {
 	obj.Set("nextSibling", wrapper.getNextSibling)
 	obj.Set("previousSibling", wrapper.getPreviousSibling)
 	obj.Set("style", wrapper.getStyle)
+	obj.SetSymbol(nodeWrapperSymbol, wrapper) // Store wrapper reference for retrieval
 	return obj
 }
 
 // getNodeFromJSObject extracts a JSDOMWrapper from a JS object.
 func (w *JSDOMWrapper) getNodeFromJSObject(obj *goja.Object) *JSDOMWrapper {
-	// This is a simplified implementation - in a real browser, you'd use internal slots or WeakMap
-	// For now, we can't easily retrieve the Go struct from the JS object
+	if obj == nil {
+		return nil
+	}
+	val := obj.GetSymbol(nodeWrapperSymbol)
+	if val == nil || goja.IsUndefined(val) || goja.IsNull(val) {
+		return nil
+	}
+	if wrapper, ok := val.Export().(*JSDOMWrapper); ok {
+		return wrapper
+	}
 	return nil
 }
 
@@ -686,18 +864,18 @@ func (w *JSWindowWrapper) getStorage(storageType string) goja.Value {
 	storageObj := w.runtime.NewObject()
 	var storageMap map[string]string
 	if storageType == "localStorage" {
-		if w.windowCtx.GetInputState("localStorage") == nil {
+		if val, ok := w.windowCtx.GetInputState("localStorage"); !ok || val == nil {
 			storageMap = make(map[string]string)
 			w.windowCtx.SetInputState("localStorage", storageMap)
 		} else {
-			storageMap = w.windowCtx.GetInputState("localStorage").(map[string]string)
+			storageMap = val.(map[string]string)
 		}
 	} else {
-		if w.windowCtx.GetInputState("sessionStorage") == nil {
+		if val, ok := w.windowCtx.GetInputState("sessionStorage"); !ok || val == nil {
 			storageMap = make(map[string]string)
 			w.windowCtx.SetInputState("sessionStorage", storageMap)
 		} else {
-			storageMap = w.windowCtx.GetInputState("sessionStorage").(map[string]string)
+			storageMap = val.(map[string]string)
 		}
 	}
 	storageObj.Set("length", len(storageMap))
@@ -752,4 +930,89 @@ func (w *JSWindowWrapper) getStorage(storageType string) goja.Value {
 		return goja.Undefined()
 	})
 	return storageObj
+}
+
+// === JSWindowWrapper methods for event handling and messaging ===
+
+// addEventListener adds an event listener to the window.
+func (w *JSWindowWrapper) addEventListener(call goja.FunctionCall) goja.Value {
+	if len(call.Arguments) < 2 {
+		panic(w.runtime.NewGoError(errors.New("addEventListener requires type and listener arguments")))
+	}
+	eventType := call.Arguments[0].String()
+	listener := call.Arguments[1]
+	if goja.IsNull(listener) || goja.IsUndefined(listener) {
+		return goja.Undefined()
+	}
+	listenerFunc, ok := goja.AssertFunction(listener)
+	if !ok {
+		panic(w.runtime.NewGoError(errors.New("addEventListener listener must be a function")))
+	}
+	w.windowCtx.RegisterEvent(eventType, func(data interface{}) {
+		listenerFunc(goja.Undefined(), w.runtime.ToValue(data))
+	})
+	return goja.Undefined()
+}
+
+// removeEventListener removes an event listener from the window.
+func (w *JSWindowWrapper) removeEventListener(call goja.FunctionCall) goja.Value {
+	// Simplified implementation - in a real browser, you'd track specific listeners
+	// For now, we just acknowledge the call
+	return goja.Undefined()
+}
+
+// postMessage implements window.postMessage for cross-origin communication.
+func (w *JSWindowWrapper) postMessage(call goja.FunctionCall) goja.Value {
+	if len(call.Arguments) < 2 {
+		panic(w.runtime.NewGoError(errors.New("postMessage requires message and targetOrigin arguments")))
+	}
+	message := call.Arguments[0].Export()
+	targetOrigin := call.Arguments[1].String()
+
+	// Validate targetOrigin - for now, only allow same-origin or "*"
+	windowOrigin := w.windowCtx.GetOrigin().String()
+	if targetOrigin != "*" && targetOrigin != windowOrigin {
+		// In a real implementation, you'd queue the message for the target window
+		// For now, we silently drop cross-origin messages
+		return goja.Undefined()
+	}
+
+	// Create MessageEvent-like object
+	eventObj := w.runtime.NewObject()
+	eventObj.Set("data", message)
+	eventObj.Set("origin", windowOrigin)
+	eventObj.Set("source", w.runtime.Get("window")) // self reference
+
+	// Emit message event on this window (for same-origin)
+	w.windowCtx.EmitEvent("message", eventObj)
+
+	return goja.Undefined()
+}
+
+// fetch implements the Fetch API.
+func (w *JSWindowWrapper) fetch(call goja.FunctionCall) goja.Value {
+	if len(call.Arguments) < 1 {
+		panic(w.runtime.NewGoError(errors.New("fetch requires a resource argument")))
+	}
+	// Simplified implementation - returns a rejected promise for now
+	promise, _, reject := w.runtime.NewPromise()
+	reject(w.runtime.NewGoError(errors.New("fetch not yet implemented")))
+	return w.runtime.ToValue(promise)
+}
+
+// XMLHttpRequest implements the XMLHttpRequest constructor.
+func (w *JSWindowWrapper) XMLHttpRequest(call goja.FunctionCall) goja.Value {
+	// Return a constructor function that creates XHR objects
+	xhrConstructor := func(call goja.FunctionCall) goja.Value {
+		xhrObj := w.runtime.NewObject()
+		xhrObj.Set("open", func(call goja.FunctionCall) goja.Value { return goja.Undefined() })
+		xhrObj.Set("send", func(call goja.FunctionCall) goja.Value { return goja.Undefined() })
+		xhrObj.Set("setRequestHeader", func(call goja.FunctionCall) goja.Value { return goja.Undefined() })
+		xhrObj.Set("addEventListener", func(call goja.FunctionCall) goja.Value { return goja.Undefined() })
+		xhrObj.Set("readyState", 0)
+		xhrObj.Set("status", 0)
+		xhrObj.Set("responseText", "")
+		return xhrObj
+	}
+	return w.runtime.ToValue(xhrConstructor)
 }
