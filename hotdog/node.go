@@ -192,7 +192,7 @@ func escapeHTML(s string) string {
 	s = strings.ReplaceAll(s, "&", "&")
 	s = strings.ReplaceAll(s, "<", "<")
 	s = strings.ReplaceAll(s, ">", ">")
-	s = strings.ReplaceAll(s, "\"", """)
+	s = strings.ReplaceAll(s, "\"", "&quot;")
 	s = strings.ReplaceAll(s, "'", "'")
 	return s
 }
