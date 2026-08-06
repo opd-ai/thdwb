@@ -48,6 +48,9 @@ type WindowContext struct {
 	// JS runtime (Goja VM) - per window isolation
 	jsRuntime *goja.Runtime
 
+	// Session storage manager (per-window, origin-partitioned)
+	sessionStorage *SessionStorageManager
+
 	// Debug state
 	DebugFlag   bool
 	DebugWindow *mustard.Window
@@ -66,6 +69,7 @@ func NewWindowContext(settings *Settings, buildInfo *BuildInfo, profiler *profil
 		layoutCache:    make(map[string]interface{}),
 		inputState:     make(map[string]interface{}),
 		eventRegistry:  make(map[string][]func(interface{})),
+		sessionStorage: NewSessionStorageManager(),
 	}
 
 	// Initialize per-window Goja VM for JavaScript execution
@@ -167,6 +171,13 @@ func (wc *WindowContext) Destroy() {
 	wc.eventRegistry = nil
 	wc.focusedElement = nil
 	wc.jsRuntime = nil // Allow Goja VM to be garbage collected
+	wc.sessionStorage.ClearAllSessionStorage()
+	wc.sessionStorage = nil
 	wc.DebugWindow = nil
 	wc.DebugTree = nil
+}
+
+// GetSessionStorageManager returns the session storage manager for this window.
+func (wc *WindowContext) GetSessionStorageManager() *SessionStorageManager {
+	return wc.sessionStorage
 }

@@ -499,3 +499,219 @@ func TestQuerySelectorRespectsIframeBoundaries(t *testing.T) {
 
 	wc.Destroy()
 }
+
+func TestStoragePartitioningByOrigin(t *testing.T) {
+	settings := &Settings{}
+	buildInfo := &BuildInfo{}
+	prof := profiler.CreateProfiler()
+
+	// Create two window contexts with the same origin
+	origin1, _ := url.Parse("https://example.com:443")
+	origin2, _ := url.Parse("https://other.com:443")
+
+	wc1 := NewWindowContext(settings, buildInfo, prof)
+	wc1.SetOrigin(origin1.String())
+
+	wc2 := NewWindowContext(settings, buildInfo, prof)
+	wc2.SetOrigin(origin1.String()) // Same origin as wc1
+
+	wc3 := NewWindowContext(settings, buildInfo, prof)
+	wc3.SetOrigin(origin2.String()) // Different origin
+
+	// Initialize JS runtimes
+	err := wc1.InitJSRuntime()
+	if err != nil {
+		t.Fatalf("Failed to init wc1 JS runtime: %v", err)
+	}
+	err = wc2.InitJSRuntime()
+	if err != nil {
+		t.Fatalf("Failed to init wc2 JS runtime: %v", err)
+	}
+	err = wc3.InitJSRuntime()
+	if err != nil {
+		t.Fatalf("Failed to init wc3 JS runtime: %v", err)
+	}
+
+	runtime1 := wc1.GetJSRuntime()
+	runtime2 := wc2.GetJSRuntime()
+	runtime3 := wc3.GetJSRuntime()
+
+	// Test localStorage is shared across windows of same origin
+	_, err = runtime1.RunString(`localStorage.setItem("testKey", "valueFromWc1")`)
+	if err != nil {
+		t.Fatalf("wc1 failed to set localStorage: %v", err)
+	}
+
+	val, err := runtime2.RunString(`localStorage.getItem("testKey")`)
+	if err != nil {
+		t.Fatalf("wc2 failed to get localStorage: %v", err)
+	}
+	if val.String() != "valueFromWc1" {
+		t.Fatalf("Expected localStorage to be shared across windows of same origin. Got: %s", val.String())
+	}
+
+	// Test localStorage is NOT shared across different origins
+	val, err = runtime3.RunString(`localStorage.getItem("testKey")`)
+	if err != nil {
+		t.Fatalf("wc3 failed to get localStorage: %v", err)
+	}
+	if !goja.IsNull(val) && !goja.IsUndefined(val) {
+		t.Fatalf("Expected localStorage to be isolated by origin. Got: %s", val.String())
+	}
+
+	// Test sessionStorage is per-window but partitioned by origin
+	_, err = runtime1.RunString(`sessionStorage.setItem("sessionKey", "sessionFromWc1")`)
+	if err != nil {
+		t.Fatalf("wc1 failed to set sessionStorage: %v", err)
+	}
+
+	val, err = runtime2.RunString(`sessionStorage.getItem("sessionKey")`)
+	if err != nil {
+		t.Fatalf("wc2 failed to get sessionStorage: %v", err)
+	}
+	// sessionStorage should NOT be shared between windows even of same origin
+	if !goja.IsNull(val) && !goja.IsUndefined(val) {
+		t.Fatalf("Expected sessionStorage to be per-window. Got: %s", val.String())
+	}
+
+	// Test sessionStorage in wc1 is accessible
+	val, err = runtime1.RunString(`sessionStorage.getItem("sessionKey")`)
+	if err != nil {
+		t.Fatalf("wc1 failed to get sessionStorage: %v", err)
+	}
+	if val.String() != "sessionFromWc1" {
+		t.Fatalf("Expected sessionStorage to work in same window. Got: %s", val.String())
+	}
+
+	// Test sessionStorage in wc3 (different origin) is isolated
+	val, err = runtime3.RunString(`sessionStorage.getItem("sessionKey")`)
+	if err != nil {
+		t.Fatalf("wc3 failed to get sessionStorage: %v", err)
+	}
+	if !goja.IsNull(val) && !goja.IsUndefined(val) {
+		t.Fatalf("Expected sessionStorage to be isolated by origin. Got: %s", val.String())
+	}
+
+	// Test localStorage length
+	val, err = runtime1.RunString(`localStorage.length`)
+	if err != nil {
+		t.Fatalf("wc1 failed to get localStorage.length: %v", err)
+	}
+	if val.ToInteger() != 1 {
+		t.Fatalf("Expected localStorage.length == 1, got %d", val.ToInteger())
+	}
+
+	// Test sessionStorage length
+	val, err = runtime1.RunString(`sessionStorage.length`)
+	if err != nil {
+		t.Fatalf("wc1 failed to get sessionStorage.length: %v", err)
+	}
+	if val.ToInteger() != 1 {
+		t.Fatalf("Expected sessionStorage.length == 1, got %d", val.ToInteger())
+	}
+
+	// Test localStorage clear
+	_, err = runtime1.RunString(`localStorage.clear()`)
+	if err != nil {
+		t.Fatalf("wc1 failed to clear localStorage: %v", err)
+	}
+
+	val, err = runtime2.RunString(`localStorage.length`)
+	if err != nil {
+		t.Fatalf("wc2 failed to get localStorage.length after clear: %v", err)
+	}
+	if val.ToInteger() != 0 {
+		t.Fatalf("Expected localStorage.length == 0 after clear, got %d", val.ToInteger())
+	}
+	// Test sessionStorage clear
+	_, err = runtime1.RunString(`sessionStorage.clear()`)
+	if err != nil {
+		t.Fatalf("wc1 failed to clear sessionStorage: %v", err)
+	}
+
+	val, err = runtime1.RunString(`sessionStorage.length`)
+	if err != nil {
+		t.Fatalf("wc1 failed to get sessionStorage.length after clear: %v", err)
+	}
+	if val.ToInteger() != 0 {
+		t.Fatalf("Expected sessionStorage.length == 0 after clear, got %d", val.ToInteger())
+	}
+
+	// Clean up
+	wc1.Destroy()
+	wc2.Destroy()
+	wc3.Destroy()
+
+	// Verify sessionStorage is cleared on window destroy
+	// Create new window with same origin
+	wc4 := NewWindowContext(settings, buildInfo, prof)
+	wc4.SetOrigin(origin1.String())
+	err = wc4.InitJSRuntime()
+	if err != nil {
+		t.Fatalf("Failed to init wc4 JS runtime: %v", err)
+	}
+	runtime4 := wc4.GetJSRuntime()
+
+	val, err = runtime4.RunString(`sessionStorage.getItem("sessionKey")`)
+	if err != nil {
+		t.Fatalf("wc4 failed to get sessionStorage: %v", err)
+	}
+	if !goja.IsNull(val) && !goja.IsUndefined(val) {
+		t.Fatalf("Expected sessionStorage to be cleared after window destroy. Got: %s", val.String())
+	}
+
+	// But localStorage should persist across window destroy
+	val, err = runtime4.RunString(`localStorage.setItem("persistKey", "persistValue")`)
+	if err != nil {
+		t.Fatalf("wc4 failed to set localStorage: %v", err)
+	}
+	wc4.Destroy()
+
+	wc5 := NewWindowContext(settings, buildInfo, prof)
+	wc5.SetOrigin(origin1.String())
+	err = wc5.InitJSRuntime()
+	if err != nil {
+		t.Fatalf("Failed to init wc5 JS runtime: %v", err)
+	}
+	runtime5 := wc5.GetJSRuntime()
+
+	val, err = runtime5.RunString(`localStorage.getItem("persistKey")`)
+	if err != nil {
+		t.Fatalf("wc5 failed to get localStorage: %v", err)
+	}
+	if val.String() != "persistValue" {
+		t.Fatalf("Expected localStorage to persist across window destroy. Got: %s", val.String())
+	}
+
+	wc5.Destroy()
+}
+
+func TestStorageOriginKey(t *testing.T) {
+	testCases := []struct {
+		input    string
+		expected string
+	}{
+		{"https://example.com", "https://example.com:443"},
+		{"http://example.com", "http://example.com:80"},
+		{"https://example.com:8443", "https://example.com:8443"},
+		{"http://example.com:8080", "http://example.com:8080"},
+		{"https://sub.example.com", "https://sub.example.com:443"},
+	}
+
+	for _, tc := range testCases {
+		u, err := url.Parse(tc.input)
+		if err != nil {
+			t.Fatalf("Failed to parse URL %s: %v", tc.input, err)
+		}
+		key := originKey(u)
+		if key != tc.expected {
+			t.Errorf("originKey(%s) = %s, want %s", tc.input, key, tc.expected)
+		}
+	}
+
+	// Test nil origin
+	nilKey := originKey(nil)
+	if nilKey != "null" {
+		t.Errorf("originKey(nil) = %s, want 'null'", nilKey)
+	}
+}

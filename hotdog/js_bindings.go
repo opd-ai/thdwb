@@ -969,21 +969,15 @@ func (w *JSWindowWrapper) getSessionStorage(call goja.FunctionCall) goja.Value {
 // getStorage returns a Storage object for the given type.
 func (w *JSWindowWrapper) getStorage(storageType string) goja.Value {
 	storageObj := w.runtime.NewObject()
-	var storageMap map[string]string
+	var storageMap StorageMap
+	origin := w.windowCtx.GetOrigin()
+
 	if storageType == "localStorage" {
-		if val, ok := w.windowCtx.GetInputState("localStorage"); !ok || val == nil {
-			storageMap = make(map[string]string)
-			w.windowCtx.SetInputState("localStorage", storageMap)
-		} else {
-			storageMap = val.(map[string]string)
-		}
+		// localStorage is shared across all windows of the same origin
+		storageMap = GetLocalStorage(origin)
 	} else {
-		if val, ok := w.windowCtx.GetInputState("sessionStorage"); !ok || val == nil {
-			storageMap = make(map[string]string)
-			w.windowCtx.SetInputState("sessionStorage", storageMap)
-		} else {
-			storageMap = val.(map[string]string)
-		}
+		// sessionStorage is per-window but partitioned by origin
+		storageMap = w.windowCtx.GetSessionStorageManager().GetSessionStorage(origin)
 	}
 	storageObj.Set("length", len(storageMap))
 	storageObj.Set("key", func(call goja.FunctionCall) goja.Value {
