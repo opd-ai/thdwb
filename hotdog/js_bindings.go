@@ -1,12 +1,16 @@
 package hotdog
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 
+	sauce "github.com/danfragoso/thdwb/sauce"
 	"github.com/dop251/goja"
 )
 
@@ -1138,14 +1142,107 @@ func isValidTargetOrigin(targetOrigin string) bool {
 	return true
 }
 
-// fetch implements the Fetch API.
+// fetch implements the Fetch API with CORS support.
 func (w *JSWindowWrapper) fetch(call goja.FunctionCall) goja.Value {
 	if len(call.Arguments) < 1 {
 		panic(w.runtime.NewGoError(errors.New("fetch requires a resource argument")))
 	}
-	// Simplified implementation - returns a rejected promise for now
-	promise, _, reject := w.runtime.NewPromise()
-	reject(w.runtime.NewGoError(errors.New("fetch not yet implemented")))
+
+	promise, resolve, reject := w.runtime.NewPromise()
+
+	// Parse arguments
+	resourceArg := call.Arguments[0]
+	var requestURL string
+	var options map[string]interface{}
+
+	if resourceArg.ExportType().Kind() == reflect.String {
+		requestURL = resourceArg.String()
+	} else {
+		// Request object
+		requestURL = resourceArg.ToObject(w.runtime).Get("url").String()
+	}
+
+	if len(call.Arguments) > 1 {
+		optionsObj := call.Arguments[1].ToObject(w.runtime)
+		if optionsObj != nil {
+			options = make(map[string]interface{})
+			keys := optionsObj.Keys()
+			for _, key := range keys {
+				val := optionsObj.Get(key)
+				options[key] = val.Export()
+			}
+		}
+	}
+
+	// Default options
+	method := "GET"
+	var headers map[string]string
+	var body io.Reader
+
+	if options != nil {
+		if m, ok := options["method"].(string); ok {
+			method = strings.ToUpper(m)
+		}
+		if h, ok := options["headers"].(map[string]interface{}); ok {
+			headers = make(map[string]string)
+			for k, v := range h {
+				if vs, ok := v.(string); ok {
+					headers[k] = vs
+				}
+			}
+		}
+		if b, ok := options["body"]; ok && b != nil {
+			bodyStr := fmt.Sprintf("%v", b)
+			body = bytes.NewReader([]byte(bodyStr))
+		}
+	}
+
+	// Parse URL
+	parsedURL, err := url.Parse(requestURL)
+	if err != nil {
+		reject(w.runtime.NewGoError(fmt.Errorf("invalid URL: %w", err)))
+		return w.runtime.ToValue(promise)
+	}
+
+	// Get origin for CORS
+	origin := w.windowCtx.GetOrigin().String()
+	if origin == "" {
+		origin = "null"
+	}
+
+	// Determine if this is a cross-origin request
+	isCrossOrigin := false
+	if parsedURL.Scheme == "http" || parsedURL.Scheme == "https" {
+		requestOrigin := parsedURL.Scheme + "://" + parsedURL.Host
+		isCrossOrigin = requestOrigin != origin
+	}
+
+	// Check if preflight is needed
+	needsPreflight := isCrossOrigin && !isSimpleRequest(method, headers)
+
+	// Execute request asynchronously
+	go func() {
+		if needsPreflight {
+			// Send OPTIONS preflight request
+			preflightResp := sauce.MakeCORSRequest(parsedURL, origin, "OPTIONS", nil, getPreflightHeaders(method, headers))
+			if !isCORSPreflightSuccessful(preflightResp) {
+				reject(w.runtime.NewGoError(errors.New("CORS preflight failed")))
+				return
+			}
+		}
+
+		// Make actual request
+		resp := sauce.MakeCORSRequest(parsedURL, origin, method, body, headers)
+		if resp.Code == 0 && resp.Body != "" && strings.Contains(resp.Body, "error") {
+			reject(w.runtime.NewGoError(errors.New(resp.Body)))
+			return
+		}
+
+		// Create Response object
+		responseObj := w.createResponseObject(resp)
+		resolve(responseObj)
+	}()
+
 	return w.runtime.ToValue(promise)
 }
 

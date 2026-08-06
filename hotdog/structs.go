@@ -2,6 +2,7 @@ package hotdog
 
 import (
 	"fmt"
+	"net/http"
 	"net/url"
 	"strings"
 
@@ -130,6 +131,7 @@ type Resource struct {
 	Code        int
 	URL         *url.URL
 	Key         string
+	Headers     http.Header
 }
 
 // Attribute "Generic key:value attribute definition"
