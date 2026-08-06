@@ -2,11 +2,57 @@ package hotdog
 
 import (
 	"net/url"
+	"sync"
 
 	mustard "github.com/danfragoso/thdwb/mustard"
 	profiler "github.com/danfragoso/thdwb/profiler"
 	goja "github.com/dop251/goja"
 )
+
+// WindowRegistry manages all window contexts for cross-window communication.
+type WindowRegistry struct {
+	mu      sync.RWMutex
+	windows map[*WindowContext]struct{}
+}
+
+// Global window registry for cross-window messaging.
+var globalWindowRegistry = &WindowRegistry{
+	windows: make(map[*WindowContext]struct{}),
+}
+
+// RegisterWindow adds a window context to the global registry.
+func RegisterWindow(wc *WindowContext) {
+	globalWindowRegistry.mu.Lock()
+	defer globalWindowRegistry.mu.Unlock()
+	globalWindowRegistry.windows[wc] = struct{}{}
+}
+
+// UnregisterWindow removes a window context from the global registry.
+func UnregisterWindow(wc *WindowContext) {
+	globalWindowRegistry.mu.Lock()
+	defer globalWindowRegistry.mu.Unlock()
+	delete(globalWindowRegistry.windows, wc)
+}
+
+// FindWindowsByOrigin returns all window contexts matching the given origin.
+// If targetOrigin is "*", all windows are returned.
+func FindWindowsByOrigin(targetOrigin string) []*WindowContext {
+	globalWindowRegistry.mu.RLock()
+	defer globalWindowRegistry.mu.RUnlock()
+
+	var result []*WindowContext
+	for wc := range globalWindowRegistry.windows {
+		if targetOrigin == "*" {
+			result = append(result, wc)
+			continue
+		}
+		wcOrigin := wc.GetOrigin().String()
+		if wcOrigin == targetOrigin {
+			result = append(result, wc)
+		}
+	}
+	return result
+}
 
 // WindowContext holds all state for a single browser window/tab instance.
 // This enables multiple independent windows to run without memory interference.
@@ -74,6 +120,9 @@ func NewWindowContext(settings *Settings, buildInfo *BuildInfo, profiler *profil
 
 	// Initialize per-window Goja VM for JavaScript execution
 	wc.jsRuntime = goja.New()
+
+	// Register this window for cross-window communication
+	RegisterWindow(wc)
 
 	return wc
 }
@@ -175,6 +224,9 @@ func (wc *WindowContext) Destroy() {
 	wc.sessionStorage = nil
 	wc.DebugWindow = nil
 	wc.DebugTree = nil
+
+	// Unregister this window from cross-window communication
+	UnregisterWindow(wc)
 }
 
 // GetSessionStorageManager returns the session storage manager for this window.

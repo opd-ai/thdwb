@@ -54,8 +54,8 @@ Introduce interactive scripting with per-window Goja isolation and security sand
 - [x] querySelector respects iframe boundaries
 - [x] Element properties work correctly with CSP checks
 - [x] console output logged with origin attribution
-- [ ] Storage partitioned by origin, not window
-- [ ] postMessage validates targetOrigin
+- [x] Storage partitioned by origin, not window
+- [x] postMessage validates targetOrigin
 - [ ] CORS preflight works for cross-origin requests
 - [ ] eval() blocked unless permitted by CSP
 - [ ] Fetch/XMLHttpRequest uses correct cookie jar partition

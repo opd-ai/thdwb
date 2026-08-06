@@ -715,3 +715,330 @@ func TestStorageOriginKey(t *testing.T) {
 		t.Errorf("originKey(nil) = %s, want 'null'", nilKey)
 	}
 }
+
+// TestPostMessageTargetOriginValidation tests postMessage targetOrigin validation and delivery.
+func TestPostMessageTargetOriginValidation(t *testing.T) {
+	settings := &Settings{}
+	buildInfo := &BuildInfo{}
+	prof := profiler.CreateProfiler()
+
+	origin1, _ := url.Parse("https://example.com:443")
+	origin2, _ := url.Parse("https://other.com:443")
+
+	wc1 := NewWindowContext(settings, buildInfo, prof)
+	wc1.SetOrigin(origin1.String())
+
+	wc2 := NewWindowContext(settings, buildInfo, prof)
+	wc2.SetOrigin(origin2.String())
+
+	err := wc1.InitJSRuntime()
+	if err != nil {
+		t.Fatalf("Failed to init wc1 JS runtime: %v", err)
+	}
+	err = wc2.InitJSRuntime()
+	if err != nil {
+		t.Fatalf("Failed to init wc2 JS runtime: %v", err)
+	}
+
+	runtime1 := wc1.GetJSRuntime()
+	runtime2 := wc2.GetJSRuntime()
+
+	// Test 1: postMessage with "*" targetOrigin delivers to all windows
+	t.Run("wildcard targetOrigin delivers to all windows", func(t *testing.T) {
+		var receivedMsg interface{}
+		runtime2.Set("onMessageHandler", func(call goja.FunctionCall) goja.Value {
+			receivedMsg = call.Arguments[0].Export()
+			return goja.Undefined()
+		})
+		_, err := runtime2.RunString(`window.addEventListener("message", onMessageHandler)`)
+		if err != nil {
+			t.Fatalf("Failed to add event listener: %v", err)
+		}
+
+		_, err = runtime1.RunString(`window.postMessage("hello from wc1", "*")`)
+		if err != nil {
+			t.Fatalf("Failed to postMessage: %v", err)
+		}
+
+		if receivedMsg == nil {
+			t.Fatal("wc2 did not receive message")
+		}
+		msgMap, ok := receivedMsg.(map[string]interface{})
+		if !ok {
+			t.Fatalf("Expected message object, got %T", receivedMsg)
+		}
+		if msgMap["data"] != "hello from wc1" {
+			t.Errorf("Expected data 'hello from wc1', got %v", msgMap["data"])
+		}
+		if msgMap["origin"] != "https://example.com:443" {
+			t.Errorf("Expected origin 'https://example.com:443', got %v", msgMap["origin"])
+		}
+	})
+
+	wc1.Destroy()
+	wc2.Destroy()
+}
+
+// TestPostMessageSpecificTargetOrigin tests specific targetOrigin delivery.
+func TestPostMessageSpecificTargetOrigin(t *testing.T) {
+	settings := &Settings{}
+	buildInfo := &BuildInfo{}
+	prof := profiler.CreateProfiler()
+
+	origin1, _ := url.Parse("https://example.com:443")
+	origin2, _ := url.Parse("https://other.com:443")
+
+	wc1 := NewWindowContext(settings, buildInfo, prof)
+	wc1.SetOrigin(origin1.String())
+
+	wc2 := NewWindowContext(settings, buildInfo, prof)
+	wc2.SetOrigin(origin2.String())
+
+	err := wc1.InitJSRuntime()
+	if err != nil {
+		t.Fatalf("Failed to init wc1 JS runtime: %v", err)
+	}
+	err = wc2.InitJSRuntime()
+	if err != nil {
+		t.Fatalf("Failed to init wc2 JS runtime: %v", err)
+	}
+
+	runtime1 := wc1.GetJSRuntime()
+	runtime2 := wc2.GetJSRuntime()
+
+	// Test: postMessage with specific targetOrigin delivers only to matching origin
+	var receivedMsg2 interface{}
+	runtime2.Set("onMessageHandler2", func(call goja.FunctionCall) goja.Value {
+		receivedMsg2 = call.Arguments[0].Export()
+		return goja.Undefined()
+	})
+	_, err = runtime2.RunString(`window.addEventListener("message", onMessageHandler2)`)
+	if err != nil {
+		t.Fatalf("Failed to add event listener: %v", err)
+	}
+
+	// Send message from wc1 with wc2's origin as targetOrigin
+	_, err = runtime1.RunString(`window.postMessage("hello to wc2", "https://other.com:443")`)
+	if err != nil {
+		t.Fatalf("Failed to postMessage: %v", err)
+	}
+
+	// Check that wc2 received the message
+	if receivedMsg2 == nil {
+		t.Fatal("wc2 did not receive message with specific targetOrigin")
+	}
+	msgMap, ok := receivedMsg2.(map[string]interface{})
+	if !ok {
+		t.Fatalf("Expected message object, got %T", receivedMsg2)
+	}
+	if msgMap["data"] != "hello to wc2" {
+		t.Errorf("Expected data 'hello to wc2', got %v", msgMap["data"])
+	}
+
+	wc1.Destroy()
+	wc2.Destroy()
+}
+
+// TestPostMessageNonMatchingTargetOrigin tests that non-matching targetOrigin does not deliver.
+func TestPostMessageNonMatchingTargetOrigin(t *testing.T) {
+	settings := &Settings{}
+	buildInfo := &BuildInfo{}
+	prof := profiler.CreateProfiler()
+
+	origin1, _ := url.Parse("https://example.com:443")
+	origin2, _ := url.Parse("https://other.com:443")
+
+	wc1 := NewWindowContext(settings, buildInfo, prof)
+	wc1.SetOrigin(origin1.String())
+
+	wc2 := NewWindowContext(settings, buildInfo, prof)
+	wc2.SetOrigin(origin2.String())
+
+	err := wc1.InitJSRuntime()
+	if err != nil {
+		t.Fatalf("Failed to init wc1 JS runtime: %v", err)
+	}
+	err = wc2.InitJSRuntime()
+	if err != nil {
+		t.Fatalf("Failed to init wc2 JS runtime: %v", err)
+	}
+
+	runtime1 := wc1.GetJSRuntime()
+	runtime2 := wc2.GetJSRuntime()
+
+	// Test: postMessage with non-matching targetOrigin does not deliver
+	var receivedMsg3 interface{}
+	runtime2.Set("onMessageHandler3", func(call goja.FunctionCall) goja.Value {
+		receivedMsg3 = call.Arguments[0].Export()
+		return goja.Undefined()
+	})
+	_, err = runtime2.RunString(`window.addEventListener("message", onMessageHandler3)`)
+	if err != nil {
+		t.Fatalf("Failed to add event listener: %v", err)
+	}
+
+	// Send message from wc1 with a non-matching targetOrigin
+	_, err = runtime1.RunString(`window.postMessage("should not deliver", "https://nonexistent.com:443")`)
+	if err != nil {
+		t.Fatalf("Failed to postMessage: %v", err)
+	}
+
+	// Check that wc2 did NOT receive the message
+	if receivedMsg3 != nil {
+		t.Fatal("wc2 should not have received message with non-matching targetOrigin")
+	}
+
+	wc1.Destroy()
+	wc2.Destroy()
+}
+
+// TestPostMessageInvalidTargetOrigin tests that invalid targetOrigin throws error.
+func TestPostMessageInvalidTargetOrigin(t *testing.T) {
+	settings := &Settings{}
+	buildInfo := &BuildInfo{}
+	prof := profiler.CreateProfiler()
+
+	origin1, _ := url.Parse("https://example.com:443")
+
+	wc1 := NewWindowContext(settings, buildInfo, prof)
+	wc1.SetOrigin(origin1.String())
+
+	err := wc1.InitJSRuntime()
+	if err != nil {
+		t.Fatalf("Failed to init wc1 JS runtime: %v", err)
+	}
+
+	runtime1 := wc1.GetJSRuntime()
+
+	// Test: Invalid targetOrigin throws error
+	_, err = runtime1.RunString(`window.postMessage("test", "invalid-origin")`)
+	if err == nil {
+		t.Fatal("Expected error for invalid targetOrigin")
+	}
+	if !strings.Contains(err.Error(), "targetOrigin must be a valid origin") {
+		t.Errorf("Expected targetOrigin validation error, got: %v", err)
+	}
+
+	wc1.Destroy()
+}
+
+// TestPostMessageSameOrigin tests same-origin postMessage delivery.
+func TestPostMessageSameOrigin(t *testing.T) {
+	settings := &Settings{}
+	buildInfo := &BuildInfo{}
+	prof := profiler.CreateProfiler()
+
+	origin1, _ := url.Parse("https://example.com:443")
+
+	wc1 := NewWindowContext(settings, buildInfo, prof)
+	wc1.SetOrigin(origin1.String())
+
+	wc2 := NewWindowContext(settings, buildInfo, prof)
+	wc2.SetOrigin(origin1.String()) // Same origin
+
+	err := wc1.InitJSRuntime()
+	if err != nil {
+		t.Fatalf("Failed to init wc1 JS runtime: %v", err)
+	}
+	err = wc2.InitJSRuntime()
+	if err != nil {
+		t.Fatalf("Failed to init wc2 JS runtime: %v", err)
+	}
+
+	runtime1 := wc1.GetJSRuntime()
+	runtime2 := wc2.GetJSRuntime()
+
+	// Test: same-origin targetOrigin delivers to same origin windows
+	var receivedMsg4 interface{}
+	runtime2.Set("onMessageHandler4", func(call goja.FunctionCall) goja.Value {
+		receivedMsg4 = call.Arguments[0].Export()
+		return goja.Undefined()
+	})
+	_, err = runtime2.RunString(`window.addEventListener("message", onMessageHandler4)`)
+	if err != nil {
+		t.Fatalf("Failed to add event listener: %v", err)
+	}
+
+	// Send message from wc1 with its own origin as targetOrigin
+	_, err = runtime1.RunString(`window.postMessage("same origin msg", "https://example.com:443")`)
+	if err != nil {
+		t.Fatalf("Failed to postMessage: %v", err)
+	}
+
+	// Check that wc2 (same origin) received the message
+	if receivedMsg4 == nil {
+		t.Fatal("wc2 (same origin) did not receive message")
+	}
+	msgMap, ok := receivedMsg4.(map[string]interface{})
+	if !ok {
+		t.Fatalf("Expected message object, got %T", receivedMsg4)
+	}
+	if msgMap["data"] != "same origin msg" {
+		t.Errorf("Expected data 'same origin msg', got %v", msgMap["data"])
+	}
+
+	wc1.Destroy()
+	wc2.Destroy()
+}
+
+// TestPostMessageCrossWindowIsolation tests cross-window isolation with wildcard.
+func TestPostMessageCrossWindowIsolation(t *testing.T) {
+	settings := &Settings{}
+	buildInfo := &BuildInfo{}
+	prof := profiler.CreateProfiler()
+
+	origin1, _ := url.Parse("https://example.com:443")
+
+	wc1 := NewWindowContext(settings, buildInfo, prof)
+	wc1.SetOrigin(origin1.String())
+
+	wc2 := NewWindowContext(settings, buildInfo, prof)
+	wc2.SetOrigin(origin1.String()) // Same origin
+
+	err := wc1.InitJSRuntime()
+	if err != nil {
+		t.Fatalf("Failed to init wc1 JS runtime: %v", err)
+	}
+	err = wc2.InitJSRuntime()
+	if err != nil {
+		t.Fatalf("Failed to init wc2 JS runtime: %v", err)
+	}
+
+	runtime1 := wc1.GetJSRuntime()
+	runtime2 := wc2.GetJSRuntime()
+
+	// Test that postMessage with "*" delivers to both windows (including sender)
+	var receivedMsg1, receivedMsg2 interface{}
+	runtime1.Set("handler1", func(call goja.FunctionCall) goja.Value {
+		receivedMsg1 = call.Arguments[0].Export()
+		return goja.Undefined()
+	})
+	runtime2.Set("handler2", func(call goja.FunctionCall) goja.Value {
+		receivedMsg2 = call.Arguments[0].Export()
+		return goja.Undefined()
+	})
+	_, err = runtime1.RunString(`window.addEventListener("message", handler1)`)
+	if err != nil {
+		t.Fatalf("Failed to add event listener: %v", err)
+	}
+	_, err = runtime2.RunString(`window.addEventListener("message", handler2)`)
+	if err != nil {
+		t.Fatalf("Failed to add event listener: %v", err)
+	}
+
+	_, err = runtime1.RunString(`window.postMessage("broadcast", "*")`)
+	if err != nil {
+		t.Fatalf("Failed to postMessage: %v", err)
+	}
+
+	// Both windows should receive the message
+	if receivedMsg1 == nil {
+		t.Fatal("wc1 (sender) did not receive broadcast message")
+	}
+	if receivedMsg2 == nil {
+		t.Fatal("wc2 (same origin) did not receive broadcast message")
+	}
+
+	wc1.Destroy()
+	wc2.Destroy()
+}

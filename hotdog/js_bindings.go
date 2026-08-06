@@ -3,6 +3,7 @@ package hotdog
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -87,15 +88,25 @@ func (wc *WindowContext) InitJSRuntime() error {
 	windowObj.Set("document", runtime.Get("document"))
 	windowObj.Set("console", runtime.Get("console"))
 	windowObj.Set("location", windowWrapper.getLocation)
-	windowObj.Set("localStorage", windowWrapper.getLocalStorage)
-	windowObj.Set("sessionStorage", windowWrapper.getSessionStorage)
 	windowObj.Set("addEventListener", windowWrapper.addEventListener)
 	windowObj.Set("removeEventListener", windowWrapper.removeEventListener)
 	windowObj.Set("postMessage", windowWrapper.postMessage)
 	windowObj.Set("fetch", windowWrapper.fetch)
 	windowObj.Set("XMLHttpRequest", windowWrapper.XMLHttpRequest)
+
+	// Create localStorage and sessionStorage objects (singletons per origin/window)
+	localStorageObj := windowWrapper.getStorage("localStorage")
+	sessionStorageObj := windowWrapper.getStorage("sessionStorage")
+
+	// Set as properties on window object
+	windowObj.Set("localStorage", localStorageObj)
+	windowObj.Set("sessionStorage", sessionStorageObj)
+
+	// Also set as globals (window.localStorage === localStorage)
 	runtime.Set("window", windowObj)
 	runtime.Set("self", windowObj) // window.self === window
+	runtime.Set("localStorage", localStorageObj)
+	runtime.Set("sessionStorage", sessionStorageObj)
 
 	// Block dangerous APIs unless CSP allows
 	runtime.Set("eval", func(call goja.FunctionCall) goja.Value {
@@ -1070,24 +1081,61 @@ func (w *JSWindowWrapper) postMessage(call goja.FunctionCall) goja.Value {
 	message := call.Arguments[0].Export()
 	targetOrigin := call.Arguments[1].String()
 
-	// Validate targetOrigin - for now, only allow same-origin or "*"
-	windowOrigin := w.windowCtx.GetOrigin().String()
-	if targetOrigin != "*" && targetOrigin != windowOrigin {
-		// In a real implementation, you'd queue the message for the target window
-		// For now, we silently drop cross-origin messages
-		return goja.Undefined()
+	// Validate targetOrigin format
+	if !isValidTargetOrigin(targetOrigin) {
+		panic(w.runtime.NewGoError(errors.New("targetOrigin must be a valid origin or \"*\"")))
 	}
 
-	// Create MessageEvent-like object
-	eventObj := w.runtime.NewObject()
-	eventObj.Set("data", message)
-	eventObj.Set("origin", windowOrigin)
-	eventObj.Set("source", w.runtime.Get("window")) // self reference
+	windowOrigin := w.windowCtx.GetOrigin().String()
 
-	// Emit message event on this window (for same-origin)
-	w.windowCtx.EmitEvent("message", eventObj)
+	// Find target windows matching the targetOrigin
+	targetWindows := FindWindowsByOrigin(targetOrigin)
+
+	// Create MessageEvent-like object for each target
+	for _, targetWC := range targetWindows {
+		// Skip if target is the same window and targetOrigin is not "*" (same-origin delivery)
+		// For same window, we still deliver if targetOrigin matches or is "*"
+		if targetWC == w.windowCtx && targetOrigin != "*" && targetOrigin != windowOrigin {
+			continue
+		}
+
+		// Create event object in the target window's runtime
+		targetRuntime := targetWC.GetJSRuntime()
+		if targetRuntime == nil {
+			continue
+		}
+
+		eventObj := targetRuntime.NewObject()
+		eventObj.Set("data", message)
+		eventObj.Set("origin", windowOrigin)
+		eventObj.Set("source", targetRuntime.Get("window")) // reference to target's window
+
+		// Emit message event on the target window
+		targetWC.EmitEvent("message", eventObj)
+	}
 
 	return goja.Undefined()
+}
+
+// isValidTargetOrigin validates that targetOrigin is either "*" or a valid origin (scheme://host:port)
+func isValidTargetOrigin(targetOrigin string) bool {
+	if targetOrigin == "*" {
+		return true
+	}
+	// Parse as URL to validate format
+	parsed, err := url.Parse(targetOrigin)
+	if err != nil {
+		return false
+	}
+	// Must have scheme and host
+	if parsed.Scheme == "" || parsed.Host == "" {
+		return false
+	}
+	// Only http and https schemes allowed for postMessage
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return false
+	}
+	return true
 }
 
 // fetch implements the Fetch API.
