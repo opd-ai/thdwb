@@ -58,7 +58,7 @@ Introduce interactive scripting with per-window Goja isolation and security sand
 - [x] postMessage validates targetOrigin
 - [x] CORS preflight works for cross-origin requests
 - [x] eval() blocked unless permitted by CSP
-- [ ] Fetch/XMLHttpRequest uses correct cookie jar partition
+- [x] Fetch/XMLHttpRequest uses correct cookie jar partition
 - [x] No cross-window variable access leakage
 
 ---

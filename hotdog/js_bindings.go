@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"net/url"
 	"reflect"
 	"strconv"
@@ -1179,6 +1180,7 @@ func (w *JSWindowWrapper) fetch(call goja.FunctionCall) goja.Value {
 	method := "GET"
 	var headers map[string]string
 	var body io.Reader
+	credentials := "same-origin" // Default credentials mode
 
 	if options != nil {
 		if m, ok := options["method"].(string); ok {
@@ -1195,6 +1197,9 @@ func (w *JSWindowWrapper) fetch(call goja.FunctionCall) goja.Value {
 		if b, ok := options["body"]; ok && b != nil {
 			bodyStr := fmt.Sprintf("%v", b)
 			body = bytes.NewReader([]byte(bodyStr))
+		}
+		if c, ok := options["credentials"].(string); ok {
+			credentials = c
 		}
 	}
 
@@ -1221,14 +1226,27 @@ func (w *JSWindowWrapper) fetch(call goja.FunctionCall) goja.Value {
 	// Check if preflight is needed
 	needsPreflight := isCrossOrigin && !isSimpleRequest(method, headers)
 
-	// Get the window's HTTP client for per-window cookie isolation
-	httpClient := w.windowCtx.GetHTTPClient()
+	// Determine if cookies should be sent/received based on credentials mode
+	// credentials: "same-origin" (default) - cookies only for same-origin
+	// credentials: "include" - cookies for all requests
+	// credentials: "omit" - never send cookies
+	sendCredentials := !isCrossOrigin || credentials == "include"
+
+	// Get the appropriate HTTP client
+	// For cross-origin requests without credentials, use a client without cookie jar
+	var httpClient *http.Client
+	if sendCredentials {
+		httpClient = w.windowCtx.GetHTTPClient()
+	} else {
+		httpClient = &http.Client{} // No cookie jar
+	}
 
 	// Execute request asynchronously
 	go func() {
 		if needsPreflight {
-			// Send OPTIONS preflight request
-			preflightResp := sauce.MakeCORSRequestWithClient(httpClient, parsedURL, origin, "OPTIONS", nil, getPreflightHeaders(method, headers))
+			// Send OPTIONS preflight request (never sends credentials)
+			preflightClient := &http.Client{}
+			preflightResp := sauce.MakeCORSRequestWithClient(preflightClient, parsedURL, origin, "OPTIONS", nil, getPreflightHeaders(method, headers))
 			if !isCORSPreflightSuccessful(preflightResp) {
 				reject(w.runtime.NewGoError(errors.New("CORS preflight failed")))
 				return
@@ -1269,7 +1287,7 @@ func (w *JSWindowWrapper) XMLHttpRequest(call goja.FunctionCall) goja.Value {
 			response           interface{} = nil
 			onreadystatechange goja.Callable
 			eventListeners     = make(map[string][]goja.Callable)
-			httpClient         = w.windowCtx.GetHTTPClient()
+			withCredentials    = false // Default: false, cookies not sent for cross-origin
 		)
 
 		// Constants for readyState
@@ -1354,6 +1372,19 @@ func (w *JSWindowWrapper) XMLHttpRequest(call goja.FunctionCall) goja.Value {
 			return goja.Undefined()
 		})
 
+		// withCredentials property (default: false)
+		xhrObj.DefineAccessorProperty("withCredentials",
+			w.runtime.ToValue(func(call goja.FunctionCall) goja.Value {
+				return w.runtime.ToValue(withCredentials)
+			}),
+			w.runtime.ToValue(func(call goja.FunctionCall) goja.Value {
+				if len(call.Arguments) > 0 {
+					withCredentials = call.Arguments[0].ToBoolean()
+				}
+				return goja.Undefined()
+			}), 0, 0)
+
+		// setRequestHeader(header, value)
 		// setRequestHeader(header, value)
 		xhrObj.Set("setRequestHeader", func(call goja.FunctionCall) goja.Value {
 			if readyState != OPENED {
@@ -1508,13 +1539,13 @@ func (w *JSWindowWrapper) XMLHttpRequest(call goja.FunctionCall) goja.Value {
 
 		// onreadystatechange property
 		xhrObj.DefineAccessorProperty("onreadystatechange",
-			func(call goja.FunctionCall) goja.Value {
+			w.runtime.ToValue(func(call goja.FunctionCall) goja.Value {
 				if onreadystatechange != nil {
 					return w.runtime.ToValue(onreadystatechange)
 				}
 				return goja.Null()
-			},
-			func(call goja.FunctionCall) goja.Value {
+			}),
+			w.runtime.ToValue(func(call goja.FunctionCall) goja.Value {
 				if len(call.Arguments) > 0 {
 					if listenerFunc, ok := goja.AssertFunction(call.Arguments[0]); ok {
 						onreadystatechange = listenerFunc
@@ -1525,7 +1556,7 @@ func (w *JSWindowWrapper) XMLHttpRequest(call goja.FunctionCall) goja.Value {
 					onreadystatechange = nil
 				}
 				return goja.Undefined()
-			}, 0, 0)
+			}), 0, 0)
 
 		return xhrObj
 	}
