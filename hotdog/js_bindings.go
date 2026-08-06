@@ -1395,11 +1395,7 @@ func (w *JSWindowWrapper) XMLHttpRequest(call goja.FunctionCall) goja.Value {
 							eventObj := w.runtime.NewObject()
 							eventObj.Set("type", "error")
 							eventObj.Set("target", xhrObj)
-							call := goja.FunctionCall{
-								This:      xhrObj,
-								Arguments: []goja.Value{w.runtime.ToValue(eventObj)},
-							}
-							listener(call)
+							callListener(listener, eventObj)
 						}
 					}
 					return
@@ -1432,11 +1428,7 @@ func (w *JSWindowWrapper) XMLHttpRequest(call goja.FunctionCall) goja.Value {
 								eventObj := w.runtime.NewObject()
 								eventObj.Set("type", "error")
 								eventObj.Set("target", xhrObj)
-								call := goja.FunctionCall{
-									This:      xhrObj,
-									Arguments: []goja.Value{w.runtime.ToValue(eventObj)},
-								}
-								listener(call)
+								callListener(listener, eventObj)
 							}
 						}
 						return
@@ -1454,11 +1446,7 @@ func (w *JSWindowWrapper) XMLHttpRequest(call goja.FunctionCall) goja.Value {
 							eventObj := w.runtime.NewObject()
 							eventObj.Set("type", "error")
 							eventObj.Set("target", xhrObj)
-							call := goja.FunctionCall{
-								This:      xhrObj,
-								Arguments: []goja.Value{w.runtime.ToValue(eventObj)},
-							}
-							listener(call)
+							callListener(listener, eventObj)
 						}
 					}
 					return
