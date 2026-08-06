@@ -1,11 +1,14 @@
 package hotdog
 
 import (
+	"net/http"
 	"net/url"
 	"sync"
 
+	"github.com/danfragoso/thdwb/assets"
 	mustard "github.com/danfragoso/thdwb/mustard"
 	profiler "github.com/danfragoso/thdwb/profiler"
+	sauce "github.com/danfragoso/thdwb/sauce"
 	goja "github.com/dop251/goja"
 )
 
@@ -76,7 +79,7 @@ type WindowContext struct {
 
 	// Settings and build info (shared reference)
 	Settings  *Settings
-	BuildInfo *BuildInfo
+	BuildInfo *assets.BuildInfo
 
 	// Origin tracking for cookie partitioning and SOP
 	Origin *url.URL
@@ -97,6 +100,12 @@ type WindowContext struct {
 	// Session storage manager (per-window, origin-partitioned)
 	sessionStorage *SessionStorageManager
 
+	// Cookie jar for this window (per-window cookie isolation)
+	cookieJar *sauce.OriginCookieJar
+
+	// HTTP client for this window (with per-window cookie jar)
+	httpClient *http.Client
+
 	// Debug state
 	DebugFlag   bool
 	DebugWindow *mustard.Window
@@ -104,7 +113,7 @@ type WindowContext struct {
 }
 
 // NewWindowContext creates a new isolated window context.
-func NewWindowContext(settings *Settings, buildInfo *BuildInfo, profiler *profiler.Profiler) *WindowContext {
+func NewWindowContext(settings *Settings, buildInfo *assets.BuildInfo, profiler *profiler.Profiler) *WindowContext {
 	wc := &WindowContext{
 		ActiveDocument: &Document{},
 		Documents:      make([]*Document, 0),
@@ -120,6 +129,12 @@ func NewWindowContext(settings *Settings, buildInfo *BuildInfo, profiler *profil
 
 	// Initialize per-window Goja VM for JavaScript execution
 	wc.jsRuntime = goja.New()
+
+	// Initialize per-window cookie jar and HTTP client for cookie isolation
+	wc.cookieJar = sauce.NewOriginCookieJar()
+	wc.httpClient = &http.Client{
+		Jar: wc.cookieJar,
+	}
 
 	// Register this window for cross-window communication
 	RegisterWindow(wc)
@@ -222,6 +237,8 @@ func (wc *WindowContext) Destroy() {
 	wc.jsRuntime = nil // Allow Goja VM to be garbage collected
 	wc.sessionStorage.ClearAllSessionStorage()
 	wc.sessionStorage = nil
+	wc.cookieJar = nil
+	wc.httpClient = nil
 	wc.DebugWindow = nil
 	wc.DebugTree = nil
 
@@ -232,4 +249,14 @@ func (wc *WindowContext) Destroy() {
 // GetSessionStorageManager returns the session storage manager for this window.
 func (wc *WindowContext) GetSessionStorageManager() *SessionStorageManager {
 	return wc.sessionStorage
+}
+
+// GetCookieJar returns the cookie jar for this window context.
+func (wc *WindowContext) GetCookieJar() *sauce.OriginCookieJar {
+	return wc.cookieJar
+}
+
+// GetHTTPClient returns the HTTP client for this window context.
+func (wc *WindowContext) GetHTTPClient() *http.Client {
+	return wc.httpClient
 }

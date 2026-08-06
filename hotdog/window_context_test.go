@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/danfragoso/thdwb/assets"
 	"golang.org/x/net/html"
 
 	profiler "github.com/danfragoso/thdwb/profiler"
@@ -13,7 +14,7 @@ import (
 
 func TestWindowContextJSRuntimeIsolation(t *testing.T) {
 	settings := &Settings{}
-	buildInfo := &BuildInfo{}
+	buildInfo := &assets.BuildInfo{}
 	prof := profiler.CreateProfiler()
 
 	// Create two separate window contexts
@@ -52,7 +53,7 @@ func TestWindowContextJSRuntimeIsolation(t *testing.T) {
 
 func TestWindowContextJSRuntimeBasicExecution(t *testing.T) {
 	settings := &Settings{}
-	buildInfo := &BuildInfo{}
+	buildInfo := &assets.BuildInfo{}
 	prof := profiler.CreateProfiler()
 
 	wc := NewWindowContext(settings, buildInfo, prof)
@@ -85,7 +86,7 @@ func TestWindowContextJSRuntimeBasicExecution(t *testing.T) {
 
 func TestDOMMutationsFromJS(t *testing.T) {
 	settings := &Settings{}
-	buildInfo := &BuildInfo{}
+	buildInfo := &assets.BuildInfo{}
 	prof := profiler.CreateProfiler()
 
 	wc := NewWindowContext(settings, buildInfo, prof)
@@ -273,7 +274,7 @@ func convertHTMLNodeToNodeDOMForTest(htmlNode *html.Node, doc *Document, windowC
 
 func TestCrossOriginDOMAccess(t *testing.T) {
 	settings := &Settings{}
-	buildInfo := &BuildInfo{}
+	buildInfo := &assets.BuildInfo{}
 	prof := profiler.CreateProfiler()
 
 	wc1 := NewWindowContext(settings, buildInfo, prof)
@@ -414,7 +415,7 @@ func TestCrossOriginDOMAccess(t *testing.T) {
 
 func TestQuerySelectorRespectsIframeBoundaries(t *testing.T) {
 	settings := &Settings{}
-	buildInfo := &BuildInfo{}
+	buildInfo := &assets.BuildInfo{}
 	prof := profiler.CreateProfiler()
 
 	wc := NewWindowContext(settings, buildInfo, prof)
@@ -502,7 +503,7 @@ func TestQuerySelectorRespectsIframeBoundaries(t *testing.T) {
 
 func TestStoragePartitioningByOrigin(t *testing.T) {
 	settings := &Settings{}
-	buildInfo := &BuildInfo{}
+	buildInfo := &assets.BuildInfo{}
 	prof := profiler.CreateProfiler()
 
 	// Create two window contexts with the same origin
@@ -719,7 +720,7 @@ func TestStorageOriginKey(t *testing.T) {
 // TestPostMessageTargetOriginValidation tests postMessage targetOrigin validation and delivery.
 func TestPostMessageTargetOriginValidation(t *testing.T) {
 	settings := &Settings{}
-	buildInfo := &BuildInfo{}
+	buildInfo := &assets.BuildInfo{}
 	prof := profiler.CreateProfiler()
 
 	origin1, _ := url.Parse("https://example.com:443")
@@ -782,7 +783,7 @@ func TestPostMessageTargetOriginValidation(t *testing.T) {
 // TestPostMessageSpecificTargetOrigin tests specific targetOrigin delivery.
 func TestPostMessageSpecificTargetOrigin(t *testing.T) {
 	settings := &Settings{}
-	buildInfo := &BuildInfo{}
+	buildInfo := &assets.BuildInfo{}
 	prof := profiler.CreateProfiler()
 
 	origin1, _ := url.Parse("https://example.com:443")
@@ -842,7 +843,7 @@ func TestPostMessageSpecificTargetOrigin(t *testing.T) {
 // TestPostMessageNonMatchingTargetOrigin tests that non-matching targetOrigin does not deliver.
 func TestPostMessageNonMatchingTargetOrigin(t *testing.T) {
 	settings := &Settings{}
-	buildInfo := &BuildInfo{}
+	buildInfo := &assets.BuildInfo{}
 	prof := profiler.CreateProfiler()
 
 	origin1, _ := url.Parse("https://example.com:443")
@@ -895,7 +896,7 @@ func TestPostMessageNonMatchingTargetOrigin(t *testing.T) {
 // TestPostMessageInvalidTargetOrigin tests that invalid targetOrigin throws error.
 func TestPostMessageInvalidTargetOrigin(t *testing.T) {
 	settings := &Settings{}
-	buildInfo := &BuildInfo{}
+	buildInfo := &assets.BuildInfo{}
 	prof := profiler.CreateProfiler()
 
 	origin1, _ := url.Parse("https://example.com:443")
@@ -925,7 +926,7 @@ func TestPostMessageInvalidTargetOrigin(t *testing.T) {
 // TestPostMessageSameOrigin tests same-origin postMessage delivery.
 func TestPostMessageSameOrigin(t *testing.T) {
 	settings := &Settings{}
-	buildInfo := &BuildInfo{}
+	buildInfo := &assets.BuildInfo{}
 	prof := profiler.CreateProfiler()
 
 	origin1, _ := url.Parse("https://example.com:443")
@@ -984,7 +985,7 @@ func TestPostMessageSameOrigin(t *testing.T) {
 // TestPostMessageCrossWindowIsolation tests cross-window isolation with wildcard.
 func TestPostMessageCrossWindowIsolation(t *testing.T) {
 	settings := &Settings{}
-	buildInfo := &BuildInfo{}
+	buildInfo := &assets.BuildInfo{}
 	prof := profiler.CreateProfiler()
 
 	origin1, _ := url.Parse("https://example.com:443")

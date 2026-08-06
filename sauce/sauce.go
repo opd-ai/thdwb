@@ -101,14 +101,6 @@ func (h *History) Pop() {
 	}
 }
 
-// BuildInfo holds build information
-type BuildInfo struct {
-	GitRevision string
-	GitBranch   string
-	HostInfo    string
-	BuildTime   string
-}
-
 // Log prints a log message with component name
 func Log(component, msg string) {
 	str := "(" + "\033[95m" + component + "\033[0m" + ")"
@@ -198,7 +190,7 @@ func (c *ImgCache) GetImage(imageKey string) *CachedImage {
 }
 
 // GetResource - Makes an http request and returns a resource struct
-func GetResource(URL *url.URL, history *History, buildInfo *BuildInfo) *Resource {
+func GetResource(URL *url.URL, history *History, buildInfo *assets.BuildInfo) *Resource {
 	switch URL.Scheme {
 	case "thdwb":
 		return fetchInternalPage(URL, history, buildInfo)
@@ -212,7 +204,7 @@ func GetResource(URL *url.URL, history *History, buildInfo *BuildInfo) *Resource
 	return fetchExternalPage(URL)
 }
 
-func fetchInternalPage(URL *url.URL, history *History, buildInfo *BuildInfo) *Resource {
+func fetchInternalPage(URL *url.URL, history *History, buildInfo *assets.BuildInfo) *Resource {
 	switch URL.Host {
 	case "homepage":
 		return &Resource{
@@ -239,12 +231,16 @@ func fetchInternalPage(URL *url.URL, history *History, buildInfo *BuildInfo) *Re
 }
 
 func fetchExternalPage(URL *url.URL) *Resource {
-	return fetchExternalPageWithOptions(URL, "GET", nil, nil)
+	return fetchExternalPageWithOptions(nil, URL, "GET", nil, nil)
 }
 
-// fetchExternalPageWithOptions makes an HTTP request with custom method, headers, and body.
+// fetchExternalPageWithOptions makes an HTTP request with custom method, headers, and body using the provided client.
+// If client is nil, the default global client is used.
 // It handles CORS preflight automatically for cross-origin requests.
-func fetchExternalPageWithOptions(URL *url.URL, method string, body io.Reader, headers map[string]string) *Resource {
+func fetchExternalPageWithOptions(client *http.Client, URL *url.URL, method string, body io.Reader, headers map[string]string) *Resource {
+	if client == nil {
+		client = defaultClient()
+	}
 	url := URL.String()
 	go Log("sauce", "Downloading page "+url)
 
@@ -293,9 +289,28 @@ func fetchExternalPageWithOptions(URL *url.URL, method string, body io.Reader, h
 	return resource
 }
 
-// MakeCORSRequest makes an HTTP request with proper CORS handling.
+// defaultClient returns the default global HTTP client.
+func defaultClient() *http.Client {
+	return client
+}
+
+// FetchExternalPageWithOptions makes an HTTP request with the given options using the default global client.
+// Deprecated: Use fetchExternalPageWithOptions with a custom client for per-window cookie isolation.
+func FetchExternalPageWithOptions(URL *url.URL, method string, body io.Reader, headers map[string]string) *Resource {
+	return fetchExternalPageWithOptions(nil, URL, method, body, headers)
+}
+
+// MakeCORSRequest makes an HTTP request with proper CORS handling using the default global client.
 // It sends Origin header and handles preflight if needed.
+// Deprecated: Use MakeCORSRequestWithClient for per-window cookie isolation.
 func MakeCORSRequest(URL *url.URL, origin, method string, body io.Reader, headers map[string]string) *Resource {
+	return MakeCORSRequestWithClient(nil, URL, origin, method, body, headers)
+}
+
+// MakeCORSRequestWithClient makes an HTTP request with proper CORS handling using the provided client.
+// If client is nil, the default global client is used.
+// It sends Origin header and handles preflight if needed.
+func MakeCORSRequestWithClient(client *http.Client, URL *url.URL, origin, method string, body io.Reader, headers map[string]string) *Resource {
 	// Add Origin header to all CORS requests
 	if headers == nil {
 		headers = make(map[string]string)
@@ -307,7 +322,7 @@ func MakeCORSRequest(URL *url.URL, origin, method string, body io.Reader, header
 	// For now, we just make the request with Origin header
 	// The server should respond with Access-Control-Allow-Origin
 
-	return fetchExternalPageWithOptions(URL, method, body, headers)
+	return fetchExternalPageWithOptions(client, URL, method, body, headers)
 }
 
 func ParseURL(link string) *url.URL {

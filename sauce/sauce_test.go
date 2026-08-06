@@ -7,8 +7,6 @@ import (
 	"net/url"
 	"testing"
 
-	hotdog "github.com/danfragoso/thdwb/hotdog"
-
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -25,10 +23,10 @@ func TestGetResource(t *testing.T) {
 		t.Fatalf("unexpected error: %s", err)
 	}
 
-	resource := GetResource(url, nil)
-	var testResorce *hotdog.Resource
+	resource := GetResource(url, nil, nil)
+	var testResource *Resource
 
-	assert.IsType(t, testResorce, resource, "Expecting: Resource Struct")
+	assert.IsType(t, testResource, resource, "Expecting: Resource Struct")
 	assert.Equal(t, "OK!", resource.Body, "Expecting: OK!")
 }
 

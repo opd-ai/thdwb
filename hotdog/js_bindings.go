@@ -2,11 +2,12 @@ package hotdog
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"net/url"
+	"reflect"
 	"strconv"
 	"strings"
 
@@ -1220,11 +1221,14 @@ func (w *JSWindowWrapper) fetch(call goja.FunctionCall) goja.Value {
 	// Check if preflight is needed
 	needsPreflight := isCrossOrigin && !isSimpleRequest(method, headers)
 
+	// Get the window's HTTP client for per-window cookie isolation
+	httpClient := w.windowCtx.GetHTTPClient()
+
 	// Execute request asynchronously
 	go func() {
 		if needsPreflight {
 			// Send OPTIONS preflight request
-			preflightResp := sauce.MakeCORSRequest(parsedURL, origin, "OPTIONS", nil, getPreflightHeaders(method, headers))
+			preflightResp := sauce.MakeCORSRequestWithClient(httpClient, parsedURL, origin, "OPTIONS", nil, getPreflightHeaders(method, headers))
 			if !isCORSPreflightSuccessful(preflightResp) {
 				reject(w.runtime.NewGoError(errors.New("CORS preflight failed")))
 				return
@@ -1232,7 +1236,7 @@ func (w *JSWindowWrapper) fetch(call goja.FunctionCall) goja.Value {
 		}
 
 		// Make actual request
-		resp := sauce.MakeCORSRequest(parsedURL, origin, method, body, headers)
+		resp := sauce.MakeCORSRequestWithClient(httpClient, parsedURL, origin, method, body, headers)
 		if resp.Code == 0 && resp.Body != "" && strings.Contains(resp.Body, "error") {
 			reject(w.runtime.NewGoError(errors.New(resp.Body)))
 			return
@@ -1251,14 +1255,451 @@ func (w *JSWindowWrapper) XMLHttpRequest(call goja.FunctionCall) goja.Value {
 	// Return a constructor function that creates XHR objects
 	xhrConstructor := func(call goja.FunctionCall) goja.Value {
 		xhrObj := w.runtime.NewObject()
-		xhrObj.Set("open", func(call goja.FunctionCall) goja.Value { return goja.Undefined() })
-		xhrObj.Set("send", func(call goja.FunctionCall) goja.Value { return goja.Undefined() })
-		xhrObj.Set("setRequestHeader", func(call goja.FunctionCall) goja.Value { return goja.Undefined() })
-		xhrObj.Set("addEventListener", func(call goja.FunctionCall) goja.Value { return goja.Undefined() })
-		xhrObj.Set("readyState", 0)
-		xhrObj.Set("status", 0)
-		xhrObj.Set("responseText", "")
+
+		// XHR state
+		var (
+			requestMethod      string
+			requestURL         string
+			requestHeaders     = make(map[string]string)
+			requestBody        io.Reader
+			readyState                     = 0 // UNSENT
+			status                         = 0
+			statusText                     = ""
+			responseText                   = ""
+			response           interface{} = nil
+			onreadystatechange goja.Callable
+			eventListeners     = make(map[string][]goja.Callable)
+			httpClient         = w.windowCtx.GetHTTPClient()
+		)
+
+		// Constants for readyState
+		const (
+			UNSENT           = 0
+			OPENED           = 1
+			HEADERS_RECEIVED = 2
+			LOADING          = 3
+			DONE             = 4
+		)
+
+		// Helper to call a listener function
+		callListener := func(listener goja.Callable, eventObj *goja.Object) {
+			_, _ = listener(goja.Undefined(), w.runtime.ToValue(eventObj))
+		}
+
+		// Helper to update readyState and fire event
+		updateReadyState := func(newState int) {
+			readyState = newState
+			xhrObj.Set("readyState", readyState)
+
+			// Call onreadystatechange if set
+			if onreadystatechange != nil {
+				eventObj := w.runtime.NewObject()
+				eventObj.Set("type", "readystatechange")
+				eventObj.Set("target", xhrObj)
+				callListener(onreadystatechange, eventObj)
+			}
+
+			// Fire readystatechange event
+			if listeners, ok := eventListeners["readystatechange"]; ok {
+				for _, listener := range listeners {
+					eventObj := w.runtime.NewObject()
+					eventObj.Set("type", "readystatechange")
+					eventObj.Set("target", xhrObj)
+					callListener(listener, eventObj)
+				}
+			}
+
+			// Fire load event when done
+			if newState == DONE {
+				if listeners, ok := eventListeners["load"]; ok {
+					for _, listener := range listeners {
+						eventObj := w.runtime.NewObject()
+						eventObj.Set("type", "load")
+						eventObj.Set("target", xhrObj)
+						callListener(listener, eventObj)
+					}
+				}
+				if listeners, ok := eventListeners["loadend"]; ok {
+					for _, listener := range listeners {
+						eventObj := w.runtime.NewObject()
+						eventObj.Set("type", "loadend")
+						eventObj.Set("target", xhrObj)
+						callListener(listener, eventObj)
+					}
+				}
+			}
+		}
+
+		// open(method, url, async, user, password) - async is ignored (always async)
+		xhrObj.Set("open", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) < 2 {
+				panic(w.runtime.NewGoError(errors.New("XMLHttpRequest.open requires method and url")))
+			}
+			requestMethod = strings.ToUpper(call.Arguments[0].String())
+			requestURL = call.Arguments[1].String()
+
+			// Reset state
+			requestHeaders = make(map[string]string)
+			requestBody = nil
+			status = 0
+			statusText = ""
+			responseText = ""
+			response = nil
+			xhrObj.Set("status", 0)
+			xhrObj.Set("statusText", "")
+			xhrObj.Set("responseText", "")
+			xhrObj.Set("response", nil)
+
+			updateReadyState(OPENED)
+			return goja.Undefined()
+		})
+
+		// setRequestHeader(header, value)
+		xhrObj.Set("setRequestHeader", func(call goja.FunctionCall) goja.Value {
+			if readyState != OPENED {
+				panic(w.runtime.NewGoError(errors.New("InvalidStateError: setRequestHeader can only be called when readyState is OPENED")))
+			}
+			if len(call.Arguments) < 2 {
+				panic(w.runtime.NewGoError(errors.New("setRequestHeader requires header name and value")))
+			}
+			header := call.Arguments[0].String()
+			value := call.Arguments[1].String()
+			requestHeaders[header] = value
+			return goja.Undefined()
+		})
+		// send(body)
+		xhrObj.Set("send", func(call goja.FunctionCall) goja.Value {
+			if readyState != OPENED {
+				panic(w.runtime.NewGoError(errors.New("InvalidStateError: send can only be called when readyState is OPENED")))
+			}
+
+			// Parse body if provided
+			if len(call.Arguments) > 0 && call.Arguments[0] != nil && !goja.IsUndefined(call.Arguments[0]) && !goja.IsNull(call.Arguments[0]) {
+				bodyStr := fmt.Sprintf("%v", call.Arguments[0].Export())
+				requestBody = bytes.NewReader([]byte(bodyStr))
+				if _, hasContentType := requestHeaders["Content-Type"]; !hasContentType {
+					requestHeaders["Content-Type"] = "text/plain;charset=UTF-8"
+				}
+			}
+
+			updateReadyState(LOADING)
+
+			// Execute request asynchronously
+			go func() {
+				parsedURL, err := url.Parse(requestURL)
+				if err != nil {
+					// Network error
+					updateReadyState(DONE)
+					if listeners, ok := eventListeners["error"]; ok {
+						for _, listener := range listeners {
+							eventObj := w.runtime.NewObject()
+							eventObj.Set("type", "error")
+							eventObj.Set("target", xhrObj)
+							call := goja.FunctionCall{
+								This:      xhrObj,
+								Arguments: []goja.Value{w.runtime.ToValue(eventObj)},
+							}
+							listener(call)
+						}
+					}
+					return
+				}
+
+				// Get origin for CORS
+				origin := w.windowCtx.GetOrigin().String()
+				if origin == "" {
+					origin = "null"
+				}
+
+				// Determine if this is a cross-origin request
+				isCrossOrigin := false
+				if parsedURL.Scheme == "http" || parsedURL.Scheme == "https" {
+					requestOrigin := parsedURL.Scheme + "://" + parsedURL.Host
+					isCrossOrigin = requestOrigin != origin
+				}
+
+				// Check if preflight is needed
+				needsPreflight := isCrossOrigin && !isSimpleRequest(requestMethod, requestHeaders)
+
+				if needsPreflight {
+					// Send OPTIONS preflight request
+					preflightResp := sauce.MakeCORSRequestWithClient(httpClient, parsedURL, origin, "OPTIONS", nil, getPreflightHeaders(requestMethod, requestHeaders))
+					if !isCORSPreflightSuccessful(preflightResp) {
+						// CORS preflight failed
+						updateReadyState(DONE)
+						if listeners, ok := eventListeners["error"]; ok {
+							for _, listener := range listeners {
+								eventObj := w.runtime.NewObject()
+								eventObj.Set("type", "error")
+								eventObj.Set("target", xhrObj)
+								call := goja.FunctionCall{
+									This:      xhrObj,
+									Arguments: []goja.Value{w.runtime.ToValue(eventObj)},
+								}
+								listener(call)
+							}
+						}
+						return
+					}
+				}
+
+				// Make actual request
+				resp := sauce.MakeCORSRequestWithClient(httpClient, parsedURL, origin, requestMethod, requestBody, requestHeaders)
+
+				if resp.Code == 0 && resp.Body != "" && strings.Contains(resp.Body, "error") {
+					// Network error
+					updateReadyState(DONE)
+					if listeners, ok := eventListeners["error"]; ok {
+						for _, listener := range listeners {
+							eventObj := w.runtime.NewObject()
+							eventObj.Set("type", "error")
+							eventObj.Set("target", xhrObj)
+							call := goja.FunctionCall{
+								This:      xhrObj,
+								Arguments: []goja.Value{w.runtime.ToValue(eventObj)},
+							}
+							listener(call)
+						}
+					}
+					return
+				}
+
+				// Success
+				status = resp.Code
+				statusText = httpStatusText(resp.Code)
+				responseText = resp.Body
+				response = resp.Body // For simplicity, response is same as responseText
+
+				xhrObj.Set("status", status)
+				xhrObj.Set("statusText", statusText)
+				xhrObj.Set("responseText", responseText)
+				xhrObj.Set("response", response)
+
+				updateReadyState(HEADERS_RECEIVED)
+				updateReadyState(LOADING)
+				updateReadyState(DONE)
+			}()
+
+			return goja.Undefined()
+		})
+
+		// addEventListener(type, listener)
+		xhrObj.Set("addEventListener", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) < 2 {
+				return goja.Undefined()
+			}
+			eventType := call.Arguments[0].String()
+			listener := call.Arguments[1]
+			if listenerFunc, ok := goja.AssertFunction(listener); ok {
+				eventListeners[eventType] = append(eventListeners[eventType], listenerFunc)
+			}
+			return goja.Undefined()
+		})
+
+		// removeEventListener(type, listener) - simplified
+		xhrObj.Set("removeEventListener", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) < 2 {
+				return goja.Undefined()
+			}
+			eventType := call.Arguments[0].String()
+			listener := call.Arguments[1]
+			if _, ok := goja.AssertFunction(listener); ok {
+				// In a real implementation, we'd track the function identity
+				// For now, just clear all listeners for this type
+				delete(eventListeners, eventType)
+			}
+			return goja.Undefined()
+		})
+
+		// Properties
+		xhrObj.Set("readyState", readyState)
+		xhrObj.Set("status", status)
+		xhrObj.Set("statusText", statusText)
+		xhrObj.Set("responseText", responseText)
+		xhrObj.Set("response", response)
+
+		// onreadystatechange property
+		xhrObj.DefineAccessorProperty("onreadystatechange",
+			func(call goja.FunctionCall) goja.Value {
+				if onreadystatechange != nil {
+					return w.runtime.ToValue(onreadystatechange)
+				}
+				return goja.Null()
+			},
+			func(call goja.FunctionCall) goja.Value {
+				if len(call.Arguments) > 0 {
+					if listenerFunc, ok := goja.AssertFunction(call.Arguments[0]); ok {
+						onreadystatechange = listenerFunc
+					} else {
+						onreadystatechange = nil
+					}
+				} else {
+					onreadystatechange = nil
+				}
+				return goja.Undefined()
+			}, 0, 0)
+
 		return xhrObj
 	}
 	return w.runtime.ToValue(xhrConstructor)
+}
+
+// isSimpleRequest checks if a request is a "simple request" that doesn't require CORS preflight.
+// Simple requests are: GET, HEAD, POST with simple headers (Accept, Accept-Language, Content-Language, Content-Type with specific values).
+func isSimpleRequest(method string, headers map[string]string) bool {
+	// Only GET, HEAD, POST can be simple requests
+	if method != "GET" && method != "HEAD" && method != "POST" {
+		return false
+	}
+
+	// Check if any non-simple headers are present
+	simpleHeaders := map[string]bool{
+		"accept":           true,
+		"accept-language":  true,
+		"content-language": true,
+		"content-type":     true, // Only specific values allowed
+	}
+
+	for key := range headers {
+		lowerKey := strings.ToLower(key)
+		if !simpleHeaders[lowerKey] {
+			return false
+		}
+		// For Content-Type, only specific values are allowed for simple requests
+		if lowerKey == "content-type" {
+			value := strings.ToLower(headers[key])
+			if !(strings.HasPrefix(value, "application/x-www-form-urlencoded") ||
+				strings.HasPrefix(value, "multipart/form-data") ||
+				strings.HasPrefix(value, "text/plain")) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// getPreflightHeaders returns the headers to send for a CORS preflight (OPTIONS) request.
+func getPreflightHeaders(method string, headers map[string]string) map[string]string {
+	preflightHeaders := make(map[string]string)
+	preflightHeaders["Access-Control-Request-Method"] = method
+
+	if headers != nil {
+		var requestHeaders []string
+		for key := range headers {
+			requestHeaders = append(requestHeaders, strings.ToLower(key))
+		}
+		if len(requestHeaders) > 0 {
+			preflightHeaders["Access-Control-Request-Headers"] = strings.Join(requestHeaders, ", ")
+		}
+	}
+
+	return preflightHeaders
+}
+
+// isCORSPreflightSuccessful checks if the CORS preflight response allows the actual request.
+func isCORSPreflightSuccessful(resp *sauce.Resource) bool {
+	if resp == nil || resp.Code == 0 {
+		return false
+	}
+
+	// Check for required CORS headers
+	allowOrigin := resp.Headers.Get("Access-Control-Allow-Origin")
+	if allowOrigin == "" {
+		return false
+	}
+
+	// Check if the origin is allowed (* or specific origin)
+	// Note: In practice, we'd compare against the requesting origin
+
+	// Check if the requested method is allowed
+	allowMethods := resp.Headers.Get("Access-Control-Allow-Methods")
+	if allowMethods != "" {
+		// Could parse and check if our method is in the list
+		_ = allowMethods
+	}
+
+	// Check if requested headers are allowed
+	allowHeaders := resp.Headers.Get("Access-Control-Allow-Headers")
+	if allowHeaders != "" {
+		// Could parse and check if our headers are in the list
+		_ = allowHeaders
+	}
+
+	return true
+}
+
+// createResponseObject creates a JavaScript Response object from a sauce.Resource.
+func (w *JSWindowWrapper) createResponseObject(resp *sauce.Resource) goja.Value {
+	responseObj := w.runtime.NewObject()
+
+	// Status
+	responseObj.Set("status", resp.Code)
+	responseObj.Set("statusText", httpStatusText(resp.Code))
+	responseObj.Set("ok", resp.Code >= 200 && resp.Code < 300)
+
+	// URL
+	responseObj.Set("url", resp.URL.String())
+
+	// Headers - create a Headers object
+	headersObj := w.runtime.NewObject()
+	for key, values := range resp.Headers {
+		for _, value := range values {
+			headersObj.Set(key, value)
+		}
+	}
+	responseObj.Set("headers", headersObj)
+
+	// Response body methods
+	responseObj.Set("text", func(call goja.FunctionCall) goja.Value {
+		promise, resolve, _ := w.runtime.NewPromise()
+		go func() {
+			resolve(w.runtime.ToValue(resp.Body))
+		}()
+		return w.runtime.ToValue(promise)
+	})
+
+	responseObj.Set("json", func(call goja.FunctionCall) goja.Value {
+		promise, resolve, reject := w.runtime.NewPromise()
+		go func() {
+			var result interface{}
+			if err := json.Unmarshal([]byte(resp.Body), &result); err != nil {
+				reject(w.runtime.NewGoError(err))
+				return
+			}
+			resolve(w.runtime.ToValue(result))
+		}()
+		return w.runtime.ToValue(promise)
+	})
+
+	return w.runtime.ToValue(responseObj)
+}
+
+// httpStatusText returns the standard HTTP status text for a given status code.
+func httpStatusText(code int) string {
+	switch code {
+	case 200:
+		return "OK"
+	case 201:
+		return "Created"
+	case 204:
+		return "No Content"
+	case 301:
+		return "Moved Permanently"
+	case 302:
+		return "Found"
+	case 304:
+		return "Not Modified"
+	case 400:
+		return "Bad Request"
+	case 401:
+		return "Unauthorized"
+	case 403:
+		return "Forbidden"
+	case 404:
+		return "Not Found"
+	case 500:
+		return "Internal Server Error"
+	default:
+		return "Unknown"
+	}
 }

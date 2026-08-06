@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	cascadia "github.com/andybalholm/cascadia"
+	"github.com/danfragoso/thdwb/assets"
 	"github.com/danfragoso/thdwb/mustard"
 	profiler "github.com/danfragoso/thdwb/profiler"
 	"golang.org/x/net/html"
@@ -21,7 +22,7 @@ type WebBrowser struct {
 	History     *History
 	Window      *mustard.Window
 	Profiler    *profiler.Profiler
-	BuildInfo   *BuildInfo
+	BuildInfo   *assets.BuildInfo
 	Settings    *Settings
 }
 
@@ -45,13 +46,6 @@ type Document struct {
 	SelectedElement *NodeDOM
 
 	OffsetY int
-}
-type BuildInfo struct {
-	GitRevision string
-	GitBranch   string
-
-	HostInfo  string
-	BuildTime string
 }
 
 type History struct {

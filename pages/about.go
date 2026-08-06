@@ -1,10 +1,10 @@
 package pages
 
 import (
-	hotdog "github.com/danfragoso/thdwb/hotdog"
+	"github.com/danfragoso/thdwb/assets"
 )
 
-func RenderAboutPage(buildInfo *hotdog.BuildInfo) string {
+func RenderAboutPage(buildInfo *assets.BuildInfo) string {
 	var template string
 	template = `
 	<html lang="en">

@@ -5,6 +5,7 @@ import (
 	"runtime/debug"
 	"testing"
 
+	"github.com/danfragoso/thdwb/assets"
 	gg "github.com/danfragoso/thdwb/gg"
 	"github.com/danfragoso/thdwb/hotdog"
 	"github.com/danfragoso/thdwb/ketchup"
@@ -19,7 +20,7 @@ func TestRenderDocument_noBody(t *testing.T) {
 	}
 
 	settings := &hotdog.Settings{}
-	buildInfo := &hotdog.BuildInfo{}
+	buildInfo := &assets.BuildInfo{}
 	prof := profiler.CreateProfiler()
 	windowCtx := hotdog.NewWindowContext(settings, buildInfo, prof)
 
@@ -47,7 +48,7 @@ func TestRenderDocument_flexbox(t *testing.T) {
 	}
 
 	settings := &hotdog.Settings{}
-	buildInfo := &hotdog.BuildInfo{}
+	buildInfo := &assets.BuildInfo{}
 	prof := profiler.CreateProfiler()
 	windowCtx := hotdog.NewWindowContext(settings, buildInfo, prof)
 
@@ -122,7 +123,7 @@ func TestRenderDocument_complexNestedFlexbox(t *testing.T) {
 	}
 
 	settings := &hotdog.Settings{}
-	buildInfo := &hotdog.BuildInfo{}
+	buildInfo := &assets.BuildInfo{}
 	prof := profiler.CreateProfiler()
 	windowCtx := hotdog.NewWindowContext(settings, buildInfo, prof)
 
