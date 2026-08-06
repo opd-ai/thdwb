@@ -285,7 +285,21 @@ func (node *NodeDOM) isInSandboxedIframe() bool {
 	return false
 }
 
+// isInsideIframe checks if the node is a descendant of an iframe element.
+// This is used to enforce iframe boundaries for querySelector/querySelectorAll.
+func (node *NodeDOM) isInsideIframe() bool {
+	current := node.Parent
+	for current != nil {
+		if current.Type == NodeTypeElement && current.Element == "iframe" {
+			return true
+		}
+		current = current.Parent
+	}
+	return false
+}
+
 // QuerySelector returns the first element that matches the given CSS selector.
+// It respects iframe boundaries and does not match elements inside iframes.
 func (node *NodeDOM) QuerySelector(selector string) (*NodeDOM, error) {
 	if err := node.checkOrigin(); err != nil {
 		return nil, err
@@ -307,6 +321,10 @@ func (node *NodeDOM) QuerySelector(selector string) (*NodeDOM, error) {
 
 	result := node.findNodeDOMByHTMLNode(matched)
 	if result != nil {
+		// Check if result is inside an iframe - querySelector should not cross iframe boundaries
+		if result.isInsideIframe() {
+			return nil, nil
+		}
 		if err := result.checkOrigin(); err != nil {
 			return nil, err
 		}
@@ -315,6 +333,7 @@ func (node *NodeDOM) QuerySelector(selector string) (*NodeDOM, error) {
 }
 
 // QuerySelectorAll returns all elements that match the given CSS selector.
+// It respects iframe boundaries and does not match elements inside iframes.
 func (node *NodeDOM) QuerySelectorAll(selector string) ([]*NodeDOM, error) {
 	if err := node.checkOrigin(); err != nil {
 		return nil, err
@@ -333,6 +352,10 @@ func (node *NodeDOM) QuerySelectorAll(selector string) ([]*NodeDOM, error) {
 	results := make([]*NodeDOM, 0, len(matched))
 	for _, m := range matched {
 		if nd := node.findNodeDOMByHTMLNode(m); nd != nil {
+			// Check if result is inside an iframe - querySelectorAll should not cross iframe boundaries
+			if nd.isInsideIframe() {
+				continue
+			}
 			if err := nd.checkOrigin(); err == nil {
 				results = append(results, nd)
 			} else {

@@ -99,11 +99,24 @@ func (wc *WindowContext) InitJSRuntime() error {
 
 	// Block dangerous APIs unless CSP allows
 	runtime.Set("eval", func(call goja.FunctionCall) goja.Value {
-		// Check CSP for 'unsafe-eval' - for now, always block
+		// Check CSP for 'unsafe-eval' from the active document
+		if wc.ActiveDocument != nil && wc.ActiveDocument.CSP != nil {
+			if wc.ActiveDocument.CSP.AllowEval() {
+				// CSP allows eval, but we still don't implement it for security
+				// In a real browser, this would execute the code
+				return goja.Undefined()
+			}
+		}
 		panic(runtime.NewGoError(SecurityError("eval() is blocked by CSP")))
 	})
 	runtime.Set("Function", func(call goja.FunctionCall) goja.Value {
-		// Check CSP for 'unsafe-eval' - for now, always block
+		// Check CSP for 'unsafe-eval' from the active document
+		if wc.ActiveDocument != nil && wc.ActiveDocument.CSP != nil {
+			if wc.ActiveDocument.CSP.AllowEval() {
+				// CSP allows Function constructor, but we still don't implement it for security
+				return goja.Undefined()
+			}
+		}
 		panic(runtime.NewGoError(SecurityError("Function constructor is blocked by CSP")))
 	})
 
@@ -426,6 +439,21 @@ func (w *JSDOMWrapper) setAttribute(call goja.FunctionCall) goja.Value {
 	if err := w.node.checkOrigin(); err != nil {
 		panic(w.runtime.NewGoError(err))
 	}
+
+	// Check CSP for event handler attributes and style attribute
+	if w.node.Document != nil && w.node.Document.CSP != nil {
+		csp := w.node.Document.CSP
+		lowerName := strings.ToLower(name)
+		// Check for event handler attributes (onclick, onload, etc.)
+		if strings.HasPrefix(lowerName, "on") && !csp.AllowInlineScript() {
+			panic(w.runtime.NewGoError(SecurityError("event handler attribute blocked by CSP: inline scripts not allowed")))
+		}
+		// Check for style attribute
+		if lowerName == "style" && !csp.AllowInlineStyle() {
+			panic(w.runtime.NewGoError(SecurityError("style attribute blocked by CSP: inline styles not allowed")))
+		}
+	}
+
 	found := false
 	for _, attr := range w.node.Attributes {
 		if attr.Name == name {
@@ -596,6 +624,26 @@ func (w *JSDOMWrapper) setInnerHTML(call goja.FunctionCall) goja.Value {
 		panic(w.runtime.NewGoError(errors.New("innerHTML setter requires a value argument")))
 	}
 	htmlString := call.Arguments[0].String()
+
+	// Check CSP for inline scripts and styles
+	if w.node.Document != nil && w.node.Document.CSP != nil {
+		csp := w.node.Document.CSP
+		// Check if the HTML contains script tags or event handlers
+		if strings.Contains(strings.ToLower(htmlString), "<script") && !csp.AllowInlineScript() {
+			panic(w.runtime.NewGoError(SecurityError("innerHTML blocked by CSP: inline scripts not allowed")))
+		}
+		// Check for event handlers in HTML (onclick, onload, etc.)
+		if csp != nil && !csp.AllowInlineScript() {
+			lowerHTML := strings.ToLower(htmlString)
+			eventHandlers := []string{"onclick", "onload", "onerror", "onmouseover", "onmouseout", "onkeydown", "onkeyup", "onkeypress", "onchange", "onsubmit", "onfocus", "onblur"}
+			for _, handler := range eventHandlers {
+				if strings.Contains(lowerHTML, handler+"=") {
+					panic(w.runtime.NewGoError(SecurityError("innerHTML blocked by CSP: inline event handlers not allowed")))
+				}
+			}
+		}
+	}
+
 	if err := w.node.SetInnerHTML(htmlString); err != nil {
 		panic(w.runtime.NewGoError(err))
 	}

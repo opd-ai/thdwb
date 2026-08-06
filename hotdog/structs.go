@@ -3,6 +3,7 @@ package hotdog
 import (
 	"fmt"
 	"net/url"
+	"strings"
 
 	cascadia "github.com/andybalholm/cascadia"
 	"github.com/danfragoso/thdwb/mustard"
@@ -33,6 +34,9 @@ type Document struct {
 	HTMLRoot    *html.Node // Root of the parsed HTML tree for CSS selector queries
 
 	StyleSheets []*StyleElement // Parsed CSS stylesheets from <style> elements
+
+	// Content Security Policy
+	CSP *ContentSecurityPolicy
 
 	DebugFlag       bool
 	DebugWindow     *mustard.Window
@@ -268,4 +272,166 @@ func (cache *ImgCache) GetImage(imageKey string) *CachedImage {
 func Log(component, msg string) {
 	str := "(" + "\033[95m" + component + "\033[0m" + ")"
 	fmt.Println(str, msg)
+}
+
+// ContentSecurityPolicy represents a parsed Content Security Policy.
+// It enforces restrictions on resources, scripts, styles, etc.
+type ContentSecurityPolicy struct {
+	// Directive name -> list of allowed sources
+	directives map[string][]string
+	// Report URI for violations
+	ReportURI string
+	// Whether this is a report-only policy
+	ReportOnly bool
+}
+
+// CSPDirective represents a CSP directive with its allowed sources.
+type CSPDirective struct {
+	Name    string
+	Sources []string
+}
+
+// NewContentSecurityPolicy creates a new CSP from a policy string (e.g., from HTTP header).
+func NewContentSecurityPolicy(policy string) *ContentSecurityPolicy {
+	csp := &ContentSecurityPolicy{
+		directives: make(map[string][]string),
+	}
+	csp.parse(policy)
+	return csp
+}
+
+// parse parses a CSP policy string into directives.
+func (csp *ContentSecurityPolicy) parse(policy string) {
+	if policy == "" {
+		return
+	}
+	directives := strings.Split(policy, ";")
+	for _, directive := range directives {
+		directive = strings.TrimSpace(directive)
+		if directive == "" {
+			continue
+		}
+		parts := strings.Fields(directive)
+		if len(parts) == 0 {
+			continue
+		}
+		name := parts[0]
+		sources := parts[1:]
+		csp.directives[name] = sources
+	}
+}
+
+// AllowInlineScript checks if inline scripts are allowed by CSP.
+// This is used for eval(), Function(), and inline event handlers.
+func (csp *ContentSecurityPolicy) AllowInlineScript() bool {
+	if csp == nil {
+		return true // No CSP = allow all
+	}
+	sources := csp.directives["script-src"]
+	if sources == nil {
+		sources = csp.directives["default-src"]
+	}
+	if sources == nil {
+		return true // No script-src = allow all
+	}
+	for _, src := range sources {
+		if src == "'unsafe-inline'" || src == "'unsafe-eval'" {
+			return true
+		}
+	}
+	return false
+}
+
+// AllowEval checks if eval() and Function() are allowed by CSP.
+func (csp *ContentSecurityPolicy) AllowEval() bool {
+	if csp == nil {
+		return true
+	}
+	sources := csp.directives["script-src"]
+	if sources == nil {
+		sources = csp.directives["default-src"]
+	}
+	if sources == nil {
+		return true
+	}
+	for _, src := range sources {
+		if src == "'unsafe-eval'" {
+			return true
+		}
+	}
+	return false
+}
+
+// AllowInlineStyle checks if inline styles are allowed by CSP.
+func (csp *ContentSecurityPolicy) AllowInlineStyle() bool {
+	if csp == nil {
+		return true
+	}
+	sources := csp.directives["style-src"]
+	if sources == nil {
+		sources = csp.directives["default-src"]
+	}
+	if sources == nil {
+		return true
+	}
+	for _, src := range sources {
+		if src == "'unsafe-inline'" {
+			return true
+		}
+	}
+	return false
+}
+
+// CheckStyleSource checks if a style source is allowed by CSP.
+// Used for style attribute and <style> elements.
+func (csp *ContentSecurityPolicy) CheckStyleSource(source string) bool {
+	if csp == nil {
+		return true
+	}
+	sources := csp.directives["style-src"]
+	if sources == nil {
+		sources = csp.directives["default-src"]
+	}
+	if sources == nil {
+		return true
+	}
+	for _, src := range sources {
+		if src == "'self'" && source == "self" {
+			return true
+		}
+		if src == source {
+			return true
+		}
+		if src == "*" {
+			return true
+		}
+	}
+	return false
+}
+
+// CheckScriptSource checks if a script source is allowed by CSP.
+// Used for script src attributes and dynamic script creation.
+func (csp *ContentSecurityPolicy) CheckScriptSource(source string) bool {
+	if csp == nil {
+		return true
+	}
+	sources := csp.directives["script-src"]
+	if sources == nil {
+		sources = csp.directives["default-src"]
+	}
+	if sources == nil {
+		return true
+	}
+	for _, src := range sources {
+		if src == "'self'" && source == "self" {
+			return true
+		}
+		if src == source {
+			return true
+		}
+		if src == "*" {
+			return true
+		}
+	}
+	return false
 }

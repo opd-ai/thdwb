@@ -51,9 +51,9 @@ Introduce interactive scripting with per-window Goja isolation and security sand
 - [x] Cross-window runtime variable access impossible
 - [x] DOM operations from JS mutate Go DOM nodes within same origin
 - [x] Cross-origin DOM access attempts throw SecurityError
-- [ ] querySelector respects iframe boundaries
-- [ ] Element properties work correctly with CSP checks
-- [ ] console output logged with origin attribution
+- [x] querySelector respects iframe boundaries
+- [x] Element properties work correctly with CSP checks
+- [x] console output logged with origin attribution
 - [ ] Storage partitioned by origin, not window
 - [ ] postMessage validates targetOrigin
 - [ ] CORS preflight works for cross-origin requests

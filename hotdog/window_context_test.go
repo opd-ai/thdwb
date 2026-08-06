@@ -411,3 +411,91 @@ func TestCrossOriginDOMAccess(t *testing.T) {
 	wc1.Destroy()
 	wc2.Destroy()
 }
+
+func TestQuerySelectorRespectsIframeBoundaries(t *testing.T) {
+	settings := &Settings{}
+	buildInfo := &BuildInfo{}
+	prof := profiler.CreateProfiler()
+
+	wc := NewWindowContext(settings, buildInfo, prof)
+
+	// Parse HTML with an iframe containing content
+	htmlContent := `<html><head></head><body>
+		<div id="main-div">Main Content</div>
+		<iframe src="iframe.html" sandbox="allow-scripts">
+			<div id="iframe-div">Iframe Content</div>
+		</iframe>
+		<div id="after-iframe">After Iframe</div>
+	</body></html>`
+	parsedDoc, err := parseHTMLForTest(htmlContent, wc)
+	if err != nil {
+		t.Fatalf("Failed to parse HTML: %v", err)
+	}
+	wc.ActiveDocument = parsedDoc
+
+	// Initialize JS runtime with DOM bindings
+	err = wc.InitJSRuntime()
+	if err != nil {
+		t.Fatalf("Failed to init JS runtime: %v", err)
+	}
+
+	runtime := wc.GetJSRuntime()
+
+	// Test querySelector from document - should find main-div but not iframe-div
+	val, err := runtime.RunString(`document.querySelector("#main-div")`)
+	if err != nil {
+		t.Fatalf("Failed to querySelector #main-div: %v", err)
+	}
+	if goja.IsNull(val) || goja.IsUndefined(val) {
+		t.Fatal("Expected to find #main-div, got null")
+	}
+	t.Logf("Found #main-div: %v", val.ToObject(runtime).Get("id"))
+
+	// Should NOT find iframe-div (inside iframe)
+	val, err = runtime.RunString(`document.querySelector("#iframe-div")`)
+	if err != nil {
+		t.Fatalf("Failed to querySelector #iframe-div: %v", err)
+	}
+	if !goja.IsNull(val) && !goja.IsUndefined(val) {
+		t.Fatal("Expected NOT to find #iframe-div (inside iframe), but found it")
+	}
+	t.Log("Correctly did not find #iframe-div inside iframe")
+
+	// Should find after-iframe
+	val, err = runtime.RunString(`document.querySelector("#after-iframe")`)
+	if err != nil {
+		t.Fatalf("Failed to querySelector #after-iframe: %v", err)
+	}
+	if goja.IsNull(val) || goja.IsUndefined(val) {
+		t.Fatal("Expected to find #after-iframe, got null")
+	}
+	t.Logf("Found #after-iframe: %v", val.ToObject(runtime).Get("id"))
+
+	// Test querySelectorAll - should only find elements in main document
+	val, err = runtime.RunString(`document.querySelectorAll("div").length`)
+	if err != nil {
+		t.Fatalf("Failed to querySelectorAll div: %v", err)
+	}
+	length := val.ToInteger()
+	// Should find 2 divs: main-div, after-iframe
+	// But NOT the div inside the iframe, and iframe itself is not a div
+	if length != 2 {
+		t.Fatalf("Expected 2 div elements in main document, got %d", length)
+	}
+	t.Logf("Found %d div elements in main document (excluding iframe content)", length)
+
+	// Test querySelector from element - should not cross iframe boundary
+	val, err = runtime.RunString(`
+		var body = document.body;
+		body.querySelector("#iframe-div")
+	`)
+	if err != nil {
+		t.Fatalf("Failed to querySelector from body: %v", err)
+	}
+	if !goja.IsNull(val) && !goja.IsUndefined(val) {
+		t.Fatal("Expected NOT to find #iframe-div from body.querySelector, but found it")
+	}
+	t.Log("Correctly did not find #iframe-div from body.querySelector")
+
+	wc.Destroy()
+}
