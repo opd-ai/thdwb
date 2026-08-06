@@ -1,0 +1,7 @@
+feat(storage): Implement origin-partitioned storage with thread-safe localStorage and sessionStorage
+
+- Add storage.go with OriginStorageManager for localStorage (shared across windows)
+- Add SessionStorageManager for sessionStorage (per-window, origin-partitioned)
+- Update js_bindings.go to use new storage API in InitJSRuntime
+- Expose localStorage/sessionStorage as both window properties and global JS variables
+- Mark storage partitioning as complete in PLAN.md
