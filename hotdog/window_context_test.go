@@ -1,6 +1,7 @@
 package hotdog
 
 import (
+	"net/http"
 	"net/url"
 	"strings"
 	"testing"
@@ -85,6 +86,28 @@ func TestWindowContextJSRuntimeBasicExecution(t *testing.T) {
 	}
 
 	wc.Destroy()
+}
+
+func TestHttpOnlyCookiesAreNotExposedToJavaScript(t *testing.T) {
+	wc := NewWindowContext(&Settings{}, &assets.BuildInfo{}, profiler.CreateProfiler())
+	defer wc.Destroy()
+	if err := wc.SetOrigin("https://example.com"); err != nil {
+		t.Fatal(err)
+	}
+	if err := wc.InitJSRuntime(); err != nil {
+		t.Fatal(err)
+	}
+	wc.GetCookieJar().SetCookies(wc.GetOrigin(), []*http.Cookie{
+		{Name: "session", Value: "secret", HttpOnly: true, Path: "/"},
+	})
+
+	value, err := wc.RunJS("typeof document.cookie")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value.String() != "undefined" {
+		t.Fatalf("expected document.cookie to be unavailable, got %q", value.String())
+	}
 }
 
 func TestDirtyFlagTracksDOMMutation(t *testing.T) {
