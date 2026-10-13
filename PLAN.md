@@ -142,7 +142,7 @@ Implement secure network handling, cookie isolation, and storage partitioning pe
 * **Implement Same-Origin Policy:** At page load and resource requests (images, stylesheets, scripts, XHR/Fetch), verify request origin matches window's loaded origin. Block mismatches unless CORS headers permit.
 
 ### Phase 6 Completion Checklist
-- [ ] Cookies enforce Secure, HttpOnly, SameSite, and domain/path matching
+- [x] Cookies enforce Secure, HttpOnly, SameSite, and domain/path matching
 - [ ] HTTPS required; HSTS headers cached and enforced
 - [ ] Certificate validation blocks self-signed unless exempted and expired certs always
 - [ ] Easy self-signed HTTPS workflow for adding and removing TOFU self-signed certs
