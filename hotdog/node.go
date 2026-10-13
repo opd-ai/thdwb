@@ -249,11 +249,27 @@ func (node *NodeDOM) RequestRepaint() {
 }
 
 func (node *NodeDOM) RequestReflow() {
-	node.NeedsReflow = true
-	node.MarkDirty()
+	if node == nil {
+		return
+	}
+	root := node
+	if node.WindowCtx != nil {
+		var queued bool
+		root, queued = node.WindowCtx.queueReflow(node)
+		if !queued {
+			node.MarkDirty()
+			return
+		}
+	}
+	root.MarkDirty()
+	root.markReflowSubtree()
+}
 
+func (node *NodeDOM) markReflowSubtree() {
+	node.NeedsReflow = true
+	node.Dirty = true
 	for _, childNode := range node.Children {
-		childNode.RequestReflow()
+		childNode.markReflowSubtree()
 	}
 }
 

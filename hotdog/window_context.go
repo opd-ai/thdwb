@@ -92,8 +92,10 @@ type WindowContext struct {
 	// Origin tracking for cookie partitioning and SOP
 	Origin *url.URL
 
-	// Layout cache
-	layoutCache map[string]interface{}
+	// Layout cache and pending invalidations
+	layoutCache    map[string]interface{}
+	reflowMu       sync.Mutex
+	pendingReflows map[*NodeDOM]struct{}
 
 	// Focus and input state
 	focusedElement *NodeDOM
@@ -142,6 +144,7 @@ func NewWindowContext(settings *Settings, buildInfo *assets.BuildInfo, profiler 
 		Settings:          settings,
 		BuildInfo:         buildInfo,
 		layoutCache:       make(map[string]interface{}),
+		pendingReflows:    make(map[*NodeDOM]struct{}),
 		inputState:        make(map[string]interface{}),
 		eventRegistry:     make(map[string][]eventHandler),
 		nodeEventRegistry: make(map[*NodeDOM]map[string][]eventHandler),
@@ -358,6 +361,38 @@ func (wc *WindowContext) ClearLayoutCache() {
 	wc.layoutCache = make(map[string]interface{})
 }
 
+func (wc *WindowContext) queueReflow(node *NodeDOM) (*NodeDOM, bool) {
+	if node == nil {
+		return nil, false
+	}
+	root := node
+	for root.Parent != nil {
+		root = root.Parent
+	}
+	wc.reflowMu.Lock()
+	defer wc.reflowMu.Unlock()
+	if wc.pendingReflows == nil {
+		wc.pendingReflows = make(map[*NodeDOM]struct{})
+	}
+	if _, exists := wc.pendingReflows[root]; exists {
+		return root, false
+	}
+	wc.pendingReflows[root] = struct{}{}
+	return root, true
+}
+
+// DrainReflowQueue returns unique DOM roots invalidated since the previous drain.
+func (wc *WindowContext) DrainReflowQueue() []*NodeDOM {
+	wc.reflowMu.Lock()
+	defer wc.reflowMu.Unlock()
+	roots := make([]*NodeDOM, 0, len(wc.pendingReflows))
+	for root := range wc.pendingReflows {
+		roots = append(roots, root)
+	}
+	wc.pendingReflows = make(map[*NodeDOM]struct{})
+	return roots
+}
+
 // GetJSRuntime returns the Goja runtime for this window context.
 // The returned runtime must not be accessed concurrently; use RunJS and SetJSValue.
 func (wc *WindowContext) GetJSRuntime() *goja.Runtime {
@@ -418,6 +453,9 @@ func (wc *WindowContext) Destroy() {
 	wc.Profiler = nil
 	wc.Origin = nil
 	wc.ClearLayoutCache()
+	wc.reflowMu.Lock()
+	wc.pendingReflows = nil
+	wc.reflowMu.Unlock()
 	wc.inputState = nil
 	wc.eventRegistry = nil
 	wc.nodeEventRegistry = nil

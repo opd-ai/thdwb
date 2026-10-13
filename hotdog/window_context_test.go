@@ -124,6 +124,31 @@ func TestDirtyFlagTracksDOMMutation(t *testing.T) {
 	wc.Destroy()
 }
 
+func TestLayoutInvalidationsCoalescePerWindow(t *testing.T) {
+	wc := NewWindowContext(&Settings{}, &assets.BuildInfo{}, profiler.CreateProfiler())
+	defer wc.Destroy()
+	doc, err := parseHTMLForTest(`<html><body></body></html>`, wc)
+	if err != nil {
+		t.Fatalf("Failed to parse HTML: %v", err)
+	}
+	wc.ActiveDocument = doc
+	if err := wc.InitJSRuntime(); err != nil {
+		t.Fatalf("Failed to init JS runtime: %v", err)
+	}
+	if _, err := wc.RunJS(`var target = document.createElement("div"); document.body.appendChild(target); for (var i = 0; i < 12; i++) target.setAttribute("data-pass", i);`); err != nil {
+		t.Fatalf("Failed to mutate DOM: %v", err)
+	}
+	if roots := wc.DrainReflowQueue(); len(roots) != 1 || roots[0] != doc.DOM {
+		t.Fatalf("expected one invalidated document root, got %d", len(roots))
+	}
+	if _, err := wc.RunJS(`target.setAttribute("data-pass", "later");`); err != nil {
+		t.Fatalf("Failed to mutate DOM after draining: %v", err)
+	}
+	if roots := wc.DrainReflowQueue(); len(roots) != 1 || roots[0] != doc.DOM {
+		t.Fatalf("expected a fresh invalidation after drain, got %d", len(roots))
+	}
+}
+
 func TestWindowRequestAnimationFrameIsolation(t *testing.T) {
 	settings := &Settings{}
 	buildInfo := &assets.BuildInfo{}
