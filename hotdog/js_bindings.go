@@ -1567,14 +1567,9 @@ func (w *JSWindowWrapper) fetch(call goja.FunctionCall) goja.Value {
 }
 
 // XMLHttpRequest implements the XMLHttpRequest constructor.
-func (w *JSWindowWrapper) XMLHttpRequest(call goja.FunctionCall) goja.Value {
+func (w *JSWindowWrapper) XMLHttpRequest(call goja.ConstructorCall) *goja.Object {
 	// This is the constructor - when called with `new`, `call.This` will be the new object
-	// When called without `new`, we should still return an XHR object
-	var xhrObj *goja.Object
-	thisVal := call.This
-	if thisVal != nil && !goja.IsUndefined(thisVal) && !goja.IsNull(thisVal) {
-		xhrObj = thisVal.ToObject(w.runtime)
-	}
+	xhrObj := call.This
 	if xhrObj == nil {
 		xhrObj = w.runtime.NewObject()
 	}

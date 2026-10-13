@@ -149,8 +149,8 @@ Implement secure network handling, cookie isolation, and storage partitioning pe
 - [x] localStorage persists per-origin across windows
 - [x] sessionStorage is per-window and cleared on tab close
 - [x] CSP violations block inline scripts and log to console
-- [ ] CORS preflight requests work for cross-origin XHR/Fetch
-- [ ] SOP blocks cross-origin resource loads by default
+- [x] CORS preflight requests work for cross-origin XHR/Fetch
+- [x] SOP blocks cross-origin resource loads by default
 - [ ] No cross-window cookie leaks in test suite
 
 ---
