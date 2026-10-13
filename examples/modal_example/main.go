@@ -5,10 +5,10 @@ import (
 	"image"
 	"runtime"
 
+	assets "github.com/danfragoso/thdwb/assets"
 	hotdog "github.com/danfragoso/thdwb/hotdog"
 	mustard "github.com/danfragoso/thdwb/mustard"
 	profiler "github.com/danfragoso/thdwb/profiler"
-	assets "github.com/danfragoso/thdwb/assets"
 
 	"github.com/go-gl/gl/v3.2-core/gl"
 	"github.com/go-gl/glfw/v3.3/glfw"
