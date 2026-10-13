@@ -58,6 +58,9 @@ func fetchNodeImage(node *hotdog.NodeDOM) (image.Image, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := node.Document.CheckCSPResource("img", imgURL.String()); err != nil {
+		return nil, err
+	}
 
 	// Fetch the image (either from cache or network)
 	data, err := sauce.GetImage(imgURL)

@@ -11,6 +11,7 @@ import (
 	"github.com/danfragoso/thdwb/mustard"
 	profiler "github.com/danfragoso/thdwb/profiler"
 	"golang.org/x/net/html"
+	"golang.org/x/net/html/atom"
 )
 
 type WebBrowser struct {
@@ -38,7 +39,8 @@ type Document struct {
 	StyleSheets []*StyleElement // Parsed CSS stylesheets from <style> elements
 
 	// Content Security Policy
-	CSP *ContentSecurityPolicy
+	CSP             *ContentSecurityPolicy
+	ResponseHeaders http.Header
 
 	DebugFlag       bool
 	DebugWindow     *mustard.Window
@@ -275,6 +277,8 @@ func Log(component, msg string) {
 type ContentSecurityPolicy struct {
 	// Directive name -> list of allowed sources
 	directives map[string][]string
+	origin     *url.URL
+	additional []*ContentSecurityPolicy
 	// Report URI for violations
 	ReportURI string
 	// Whether this is a report-only policy
@@ -296,6 +300,23 @@ func NewContentSecurityPolicy(policy string) *ContentSecurityPolicy {
 	return csp
 }
 
+// ApplyContentSecurityPolicyHeaders parses an enforcing CSP response header.
+func (document *Document) ApplyContentSecurityPolicyHeaders(headers http.Header) {
+	document.ResponseHeaders = headers.Clone()
+	policies := headers.Values("Content-Security-Policy")
+	if len(policies) == 0 {
+		document.CSP = nil
+		return
+	}
+	document.CSP = NewContentSecurityPolicy(policies[0])
+	document.CSP.origin = document.URL
+	for _, policy := range policies[1:] {
+		additional := NewContentSecurityPolicy(policy)
+		additional.origin = document.URL
+		document.CSP.additional = append(document.CSP.additional, additional)
+	}
+}
+
 // parse parses a CSP policy string into directives.
 func (csp *ContentSecurityPolicy) parse(policy string) {
 	if policy == "" {
@@ -311,7 +332,10 @@ func (csp *ContentSecurityPolicy) parse(policy string) {
 		if len(parts) == 0 {
 			continue
 		}
-		name := parts[0]
+		name := strings.ToLower(parts[0])
+		if _, exists := csp.directives[name]; exists {
+			continue
+		}
 		sources := parts[1:]
 		csp.directives[name] = sources
 	}
@@ -323,6 +347,18 @@ func (csp *ContentSecurityPolicy) AllowInlineScript() bool {
 	if csp == nil {
 		return true // No CSP = allow all
 	}
+	if !csp.allowInlineScriptPolicy() {
+		return false
+	}
+	for _, additional := range csp.additional {
+		if !additional.AllowInlineScript() {
+			return false
+		}
+	}
+	return true
+}
+
+func (csp *ContentSecurityPolicy) allowInlineScriptPolicy() bool {
 	sources := csp.directives["script-src"]
 	if sources == nil {
 		sources = csp.directives["default-src"]
@@ -331,7 +367,7 @@ func (csp *ContentSecurityPolicy) AllowInlineScript() bool {
 		return true // No script-src = allow all
 	}
 	for _, src := range sources {
-		if src == "'unsafe-inline'" || src == "'unsafe-eval'" {
+		if strings.EqualFold(src, "'unsafe-inline'") {
 			return true
 		}
 	}
@@ -343,6 +379,18 @@ func (csp *ContentSecurityPolicy) AllowEval() bool {
 	if csp == nil {
 		return true
 	}
+	if !csp.allowEvalPolicy() {
+		return false
+	}
+	for _, additional := range csp.additional {
+		if !additional.AllowEval() {
+			return false
+		}
+	}
+	return true
+}
+
+func (csp *ContentSecurityPolicy) allowEvalPolicy() bool {
 	sources := csp.directives["script-src"]
 	if sources == nil {
 		sources = csp.directives["default-src"]
@@ -351,7 +399,7 @@ func (csp *ContentSecurityPolicy) AllowEval() bool {
 		return true
 	}
 	for _, src := range sources {
-		if src == "'unsafe-eval'" {
+		if strings.EqualFold(src, "'unsafe-eval'") {
 			return true
 		}
 	}
@@ -363,6 +411,18 @@ func (csp *ContentSecurityPolicy) AllowInlineStyle() bool {
 	if csp == nil {
 		return true
 	}
+	if !csp.allowInlineStylePolicy() {
+		return false
+	}
+	for _, additional := range csp.additional {
+		if !additional.AllowInlineStyle() {
+			return false
+		}
+	}
+	return true
+}
+
+func (csp *ContentSecurityPolicy) allowInlineStylePolicy() bool {
 	sources := csp.directives["style-src"]
 	if sources == nil {
 		sources = csp.directives["default-src"]
@@ -371,7 +431,7 @@ func (csp *ContentSecurityPolicy) AllowInlineStyle() bool {
 		return true
 	}
 	for _, src := range sources {
-		if src == "'unsafe-inline'" {
+		if strings.EqualFold(src, "'unsafe-inline'") {
 			return true
 		}
 	}
@@ -381,53 +441,223 @@ func (csp *ContentSecurityPolicy) AllowInlineStyle() bool {
 // CheckStyleSource checks if a style source is allowed by CSP.
 // Used for style attribute and <style> elements.
 func (csp *ContentSecurityPolicy) CheckStyleSource(source string) bool {
+	return csp.checkSource("style-src", source)
+}
+
+// CheckScriptSource checks if a script source is allowed by CSP.
+// Used for script src attributes and dynamic script creation.
+func (csp *ContentSecurityPolicy) CheckScriptSource(source string) bool {
+	return csp.checkSource("script-src", source)
+}
+
+// CheckImageSource checks whether an image source is permitted by img-src.
+func (csp *ContentSecurityPolicy) CheckImageSource(source string) bool {
+	return csp.checkSource("img-src", source)
+}
+
+func (csp *ContentSecurityPolicy) checkSource(directive, source string) bool {
 	if csp == nil {
 		return true
 	}
-	sources := csp.directives["style-src"]
+	if csp.origin != nil {
+		parsed, err := url.Parse(source)
+		if err == nil && !parsed.IsAbs() {
+			source = csp.origin.ResolveReference(parsed).String()
+		}
+	}
+	if !csp.checkSourcePolicy(directive, source) {
+		return false
+	}
+	for _, additional := range csp.additional {
+		if !additional.checkSource(directive, source) {
+			return false
+		}
+	}
+	return true
+}
+
+func (csp *ContentSecurityPolicy) checkSourcePolicy(directive, source string) bool {
+	sources := csp.directives[directive]
 	if sources == nil {
 		sources = csp.directives["default-src"]
 	}
 	if sources == nil {
 		return true
 	}
+	if len(sources) == 1 && strings.EqualFold(sources[0], "'none'") {
+		return false
+	}
 	for _, src := range sources {
-		if src == "'self'" && source == "self" {
+		switch {
+		case strings.EqualFold(src, "'self'") && csp.matchesOrigin(source):
 			return true
-		}
-		if src == source {
+		case src == "*" && allowsWildcardSource(source):
 			return true
-		}
-		if src == "*" {
+		case strings.HasSuffix(src, ":") && strings.EqualFold(src, schemeOf(source)):
+			return true
+		case matchesSourceURL(src, source):
 			return true
 		}
 	}
 	return false
 }
 
-// CheckScriptSource checks if a script source is allowed by CSP.
-// Used for script src attributes and dynamic script creation.
-func (csp *ContentSecurityPolicy) CheckScriptSource(source string) bool {
+func allowsWildcardSource(source string) bool {
+	switch schemeOf(source) {
+	case "http:", "https:", "ws:", "wss:":
+		return true
+	default:
+		return false
+	}
+}
+
+func matchesSourceURL(allowed, source string) bool {
+	allowedURL, allowedErr := url.Parse(allowed)
+	sourceURL, sourceErr := url.Parse(source)
+	if allowedErr != nil || sourceErr != nil || allowedURL.Host == "" || sourceURL.Host == "" {
+		return strings.EqualFold(allowed, source)
+	}
+	if originKey(allowedURL) != originKey(sourceURL) {
+		return false
+	}
+	allowedPath := allowedURL.EscapedPath()
+	sourcePath := sourceURL.EscapedPath()
+	if allowedPath == "" || allowedPath == "/" {
+		return true
+	}
+	if strings.HasSuffix(allowedPath, "/") {
+		return strings.HasPrefix(sourcePath, allowedPath)
+	}
+	return allowedPath == sourcePath
+}
+
+func (csp *ContentSecurityPolicy) matchesOrigin(source string) bool {
+	if csp.origin == nil {
+		return strings.EqualFold(source, "self")
+	}
+
+	parsed, err := url.Parse(source)
+	if err != nil {
+		return false
+	}
+	return originKey(parsed) == originKey(csp.origin)
+}
+
+func schemeOf(source string) string {
+	parsed, err := url.Parse(source)
+	if err != nil {
+		return ""
+	}
+	return parsed.Scheme + ":"
+}
+
+// CheckMarkup reports the first inline script, style, event handler, or resource denied by CSP.
+func (csp *ContentSecurityPolicy) CheckMarkup(markup string) (string, string) {
 	if csp == nil {
-		return true
+		return "", ""
 	}
-	sources := csp.directives["script-src"]
-	if sources == nil {
-		sources = csp.directives["default-src"]
+	contextNode := &html.Node{Type: html.ElementNode, Data: "div", DataAtom: atom.Div}
+	nodes, err := html.ParseFragment(strings.NewReader(markup), contextNode)
+	if err != nil {
+		return "", ""
 	}
-	if sources == nil {
-		return true
-	}
-	for _, src := range sources {
-		if src == "'self'" && source == "self" {
-			return true
-		}
-		if src == source {
-			return true
-		}
-		if src == "*" {
-			return true
+	for _, node := range nodes {
+		if directive, blocked := csp.checkMarkupNode(node); directive != "" {
+			return directive, blocked
 		}
 	}
-	return false
+	return "", ""
+}
+
+// ValidateMarkup applies this document's CSP to inline and resource markup.
+func (document *Document) ValidateMarkup(markup string) error {
+	if document == nil || document.CSP == nil {
+		return nil
+	}
+	directive, blocked := document.CSP.CheckMarkup(markup)
+	if directive == "" {
+		return nil
+	}
+	return document.reportCSPViolation(directive, blocked)
+}
+
+// CheckCSPResource validates a script, style, or image URL against the document policy.
+func (document *Document) CheckCSPResource(kind, source string) error {
+	if kind != "script" && kind != "style" && kind != "img" {
+		return fmt.Errorf("unsupported CSP resource type %q", kind)
+	}
+	if document == nil || document.CSP == nil {
+		return nil
+	}
+	directive := kind + "-src"
+	allowed := document.CSP.checkSource(directive, source)
+	if allowed {
+		return nil
+	}
+	return document.reportCSPViolation(directive, source)
+}
+
+func (document *Document) reportCSPViolation(directive, blocked string) error {
+	origin := "unknown"
+	if document.URL != nil {
+		origin = document.URL.String()
+	}
+	message := fmt.Sprintf("Content Security Policy blocked %q by %s", blocked, directive)
+	Log(fmt.Sprintf("[console.error] [origin: %s]", origin), message)
+	return SecurityError(message)
+}
+
+func (csp *ContentSecurityPolicy) checkMarkupNode(node *html.Node) (string, string) {
+	if node.Type == html.ElementNode {
+		if directive, blocked := csp.checkMarkupElement(node); directive != "" {
+			return directive, blocked
+		}
+	}
+	for child := node.FirstChild; child != nil; child = child.NextSibling {
+		if directive, blocked := csp.checkMarkupNode(child); directive != "" {
+			return directive, blocked
+		}
+	}
+	return "", ""
+}
+
+func (csp *ContentSecurityPolicy) checkMarkupElement(node *html.Node) (string, string) {
+	if node.Data == "script" {
+		if source := htmlAttribute(node, "src"); source != "" {
+			if !csp.CheckScriptSource(source) {
+				return "script-src", source
+			}
+		} else if !csp.AllowInlineScript() {
+			return "script-src", "inline script"
+		}
+	}
+	if node.Data == "style" && !csp.AllowInlineStyle() {
+		return "style-src", "inline style"
+	}
+	for _, attr := range node.Attr {
+		if strings.HasPrefix(strings.ToLower(attr.Key), "on") && !csp.AllowInlineScript() {
+			return "script-src", "inline event handler"
+		}
+		if strings.EqualFold(attr.Key, "style") && !csp.AllowInlineStyle() {
+			return "style-src", "style attribute"
+		}
+		if node.Data == "img" && strings.EqualFold(attr.Key, "src") && !csp.CheckImageSource(attr.Val) {
+			return "img-src", attr.Val
+		}
+		if node.Data == "link" && strings.EqualFold(attr.Key, "href") &&
+			strings.Contains(strings.ToLower(htmlAttribute(node, "rel")), "stylesheet") &&
+			!csp.CheckStyleSource(attr.Val) {
+			return "style-src", attr.Val
+		}
+	}
+	return "", ""
+}
+
+func htmlAttribute(node *html.Node, name string) string {
+	for _, attr := range node.Attr {
+		if strings.EqualFold(attr.Key, name) {
+			return attr.Val
+		}
+	}
+	return ""
 }

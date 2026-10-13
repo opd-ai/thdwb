@@ -148,7 +148,7 @@ Implement secure network handling, cookie isolation, and storage partitioning pe
 - [x] Easy self-signed HTTPS workflow for adding and removing TOFU self-signed certs
 - [x] localStorage persists per-origin across windows
 - [x] sessionStorage is per-window and cleared on tab close
-- [ ] CSP violations block inline scripts and log to console
+- [x] CSP violations block inline scripts and log to console
 - [ ] CORS preflight requests work for cross-origin XHR/Fetch
 - [ ] SOP blocks cross-origin resource loads by default
 - [ ] No cross-window cookie leaks in test suite

@@ -50,6 +50,10 @@ func trustSelfSignedCertificate(ctx context.Context) error {
 
 `localStorage` is shared by windows with the same origin and persisted under the user's OS configuration directory in `thdwb/local-storage.json`. The data file is restricted to the current user. `sessionStorage` remains per-window and is cleared when its window closes.
 
+### Content Security Policy
+
+Documents can apply enforcing `Content-Security-Policy` response headers with `Document.ApplyContentSecurityPolicyHeaders`. The browser checks inline script/style markup and event handlers, script/style/image sources in inserted markup and JavaScript DOM mutations, and image requests during rendering. Blocked operations return a `SecurityError` and log a console error attributed to the document origin.
+
 ### Getting started
 - Running
 

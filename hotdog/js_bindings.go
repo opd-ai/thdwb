@@ -148,6 +148,9 @@ func (wc *WindowContext) InitJSRuntime() error {
 	if _, err := getLocalStorageManager(); err != nil {
 		return fmt.Errorf("initialize localStorage: %w", err)
 	}
+	if wc.ActiveDocument != nil && wc.ActiveDocument.ResponseHeaders != nil {
+		wc.ActiveDocument.ApplyContentSecurityPolicyHeaders(wc.ActiveDocument.ResponseHeaders)
+	}
 	runtime.Set("Event", func(call goja.ConstructorCall) *goja.Object {
 		return newJSEvent(runtime, call)
 	})
@@ -645,18 +648,8 @@ func (w *JSDOMWrapper) setAttribute(call goja.FunctionCall) goja.Value {
 		panic(w.runtime.NewGoError(err))
 	}
 
-	// Check CSP for event handler attributes and style attribute
-	if w.node.Document != nil && w.node.Document.CSP != nil {
-		csp := w.node.Document.CSP
-		lowerName := strings.ToLower(name)
-		// Check for event handler attributes (onclick, onload, etc.)
-		if strings.HasPrefix(lowerName, "on") && !csp.AllowInlineScript() {
-			panic(w.runtime.NewGoError(SecurityError("event handler attribute blocked by CSP: inline scripts not allowed")))
-		}
-		// Check for style attribute
-		if lowerName == "style" && !csp.AllowInlineStyle() {
-			panic(w.runtime.NewGoError(SecurityError("style attribute blocked by CSP: inline styles not allowed")))
-		}
+	if err := w.checkCSPAttribute(name, value); err != nil {
+		panic(w.runtime.NewGoError(err))
 	}
 
 	found := false
@@ -675,6 +668,37 @@ func (w *JSDOMWrapper) setAttribute(call goja.FunctionCall) goja.Value {
 	w.node.RequestReflow()
 	w.node.RequestRepaint()
 	return goja.Undefined()
+}
+
+func (w *JSDOMWrapper) checkCSPAttribute(name, value string) error {
+	document := w.node.Document
+	if document == nil || document.CSP == nil {
+		return nil
+	}
+	lowerName := strings.ToLower(name)
+	if strings.HasPrefix(lowerName, "on") && !document.CSP.AllowInlineScript() {
+		return document.reportCSPViolation("script-src", "inline event handler")
+	}
+	if lowerName == "style" && !document.CSP.AllowInlineStyle() {
+		return document.reportCSPViolation("style-src", "style attribute")
+	}
+	if lowerName == "rel" && w.node.Element == "link" &&
+		strings.Contains(strings.ToLower(value), "stylesheet") {
+		return document.CheckCSPResource("style", w.node.Attr("href"))
+	}
+	if lowerName != "src" && lowerName != "href" {
+		return nil
+	}
+	switch {
+	case lowerName == "src" && w.node.Element == "script":
+		return document.CheckCSPResource("script", value)
+	case lowerName == "src" && w.node.Element == "img":
+		return document.CheckCSPResource("img", value)
+	case lowerName == "href" && w.node.Element == "link" &&
+		strings.Contains(strings.ToLower(w.node.Attr("rel")), "stylesheet"):
+		return document.CheckCSPResource("style", value)
+	}
+	return nil
 }
 
 // removeAttribute removes the specified attribute.
@@ -838,22 +862,9 @@ func (w *JSDOMWrapper) setInnerHTML(call goja.FunctionCall) goja.Value {
 	}
 	htmlString := call.Arguments[0].String()
 
-	// Check CSP for inline scripts and styles
-	if w.node.Document != nil && w.node.Document.CSP != nil {
-		csp := w.node.Document.CSP
-		// Check if the HTML contains script tags or event handlers
-		if strings.Contains(strings.ToLower(htmlString), "<script") && !csp.AllowInlineScript() {
-			panic(w.runtime.NewGoError(SecurityError("innerHTML blocked by CSP: inline scripts not allowed")))
-		}
-		// Check for event handlers in HTML (onclick, onload, etc.)
-		if csp != nil && !csp.AllowInlineScript() {
-			lowerHTML := strings.ToLower(htmlString)
-			eventHandlers := []string{"onclick", "onload", "onerror", "onmouseover", "onmouseout", "onkeydown", "onkeyup", "onkeypress", "onchange", "onsubmit", "onfocus", "onblur"}
-			for _, handler := range eventHandlers {
-				if strings.Contains(lowerHTML, handler+"=") {
-					panic(w.runtime.NewGoError(SecurityError("innerHTML blocked by CSP: inline event handlers not allowed")))
-				}
-			}
+	if w.node.Document != nil {
+		if err := w.node.Document.ValidateMarkup(htmlString); err != nil {
+			panic(w.runtime.NewGoError(err))
 		}
 	}
 
