@@ -109,7 +109,7 @@ Bind solved layout coordinates to the visual render pipeline and map hardware in
 
 ### Phase 5 Completion Checklist
 - [x] Layout coordinates flow from flexbox solver to mustard renderer
-- [ ] Paint applied only to changed regions
+- [x] Paint applied only to changed regions
 - [ ] Text renders within flexbox-computed boundaries
 - [ ] Hit testing identifies target elements correctly
 - [ ] Mouse clicks fire to correct elements in correct window
