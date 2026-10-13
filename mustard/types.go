@@ -49,6 +49,8 @@ type Window struct {
 
 	pointerPositionEventListeners []func(float64, float64)
 	pointerClickEventListeners    []func(float64, float64, MustardKey)
+	keyboardInputEventListeners   []func(KeyboardInput)
+	textInputEventListeners       []func(rune)
 	scrollEventListeners          []func(int)
 	clickEventListeners           []func(MustardKey)
 
@@ -212,6 +214,23 @@ const (
 	MouseLeft MustardKey = iota
 	MouseRight
 )
+
+type KeyboardAction int
+
+const (
+	KeyboardPress KeyboardAction = iota
+	KeyboardRepeat
+	KeyboardRelease
+)
+
+type KeyboardInput struct {
+	Key     string
+	Action  KeyboardAction
+	Control bool
+	Shift   bool
+	Alt     bool
+	Super   bool
+}
 
 // Frame - Layout frame type
 type Frame struct {

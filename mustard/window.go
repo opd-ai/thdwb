@@ -178,6 +178,7 @@ func (window *Window) addEvents() {
 	})
 
 	window.glw.SetCharCallback(func(w *glfw.Window, char rune) {
+		window.ProcessTextInput(char)
 		if window.activeInput != nil {
 			inputVal, cursorPos := window.activeInput.value, window.activeInput.cursorPosition
 
@@ -191,6 +192,9 @@ func (window *Window) addEvents() {
 	})
 
 	window.glw.SetKeyCallback(func(w *glfw.Window, key glfw.Key, sc int, action glfw.Action, mods glfw.ModifierKey) {
+		if input, ok := keyboardInputFromGLFW(key, sc, action, mods); ok {
+			window.ProcessKeyboardInput(input)
+		}
 		switch key {
 		case glfw.KeyBackspace:
 			if action == glfw.Repeat || action == glfw.Release {
@@ -382,6 +386,14 @@ func (window *Window) AttachClickEventListener(callback func(MustardKey)) {
 
 func (window *Window) AttachPointerClickEventListener(callback func(float64, float64, MustardKey)) {
 	window.pointerClickEventListeners = append(window.pointerClickEventListeners, callback)
+}
+
+func (window *Window) AttachKeyboardInputEventListener(callback func(KeyboardInput)) {
+	window.keyboardInputEventListeners = append(window.keyboardInputEventListeners, callback)
+}
+
+func (window *Window) AttachTextInputEventListener(callback func(rune)) {
+	window.textInputEventListeners = append(window.textInputEventListeners, callback)
 }
 
 func (window *Window) SetCursor(cursorType cursorType) {

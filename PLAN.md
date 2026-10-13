@@ -113,7 +113,7 @@ Bind solved layout coordinates to the visual render pipeline and map hardware in
 - [x] Text renders within flexbox-computed boundaries
 - [x] Hit testing identifies target elements correctly
 - [x] Mouse clicks fire to correct elements in correct window
-- [ ] Keyboard input routes to focused element in active window
+- [x] Keyboard input routes to focused element in active window
 - [ ] Focus ring renders and updates correctly per window
 - [ ] Scrollable content works without artifacts
 - [ ] No excessive paint/layout cycles per window

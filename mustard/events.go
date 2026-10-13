@@ -4,6 +4,65 @@ import (
 	"github.com/go-gl/glfw/v3.3/glfw"
 )
 
+func keyboardInputFromGLFW(key glfw.Key, scancode int, action glfw.Action, mods glfw.ModifierKey) (KeyboardInput, bool) {
+	input := KeyboardInput{Key: glfwKeyName(key, scancode)}
+	switch action {
+	case glfw.Press:
+		input.Action = KeyboardPress
+	case glfw.Repeat:
+		input.Action = KeyboardRepeat
+	case glfw.Release:
+		input.Action = KeyboardRelease
+	default:
+		return KeyboardInput{}, false
+	}
+	input.Control = mods&glfw.ModControl != 0
+	input.Shift = mods&glfw.ModShift != 0
+	input.Alt = mods&glfw.ModAlt != 0
+	input.Super = mods&glfw.ModSuper != 0
+	return input, true
+}
+
+func glfwKeyName(key glfw.Key, scancode int) string {
+	switch key {
+	case glfw.KeyBackspace:
+		return "Backspace"
+	case glfw.KeyDelete:
+		return "Delete"
+	case glfw.KeyEnter:
+		return "Enter"
+	case glfw.KeyEscape:
+		return "Escape"
+	case glfw.KeyTab:
+		return "Tab"
+	case glfw.KeyLeft:
+		return "ArrowLeft"
+	case glfw.KeyRight:
+		return "ArrowRight"
+	case glfw.KeyUp:
+		return "ArrowUp"
+	case glfw.KeyDown:
+		return "ArrowDown"
+	default:
+		if name := glfw.GetKeyName(key, scancode); name != "" {
+			return name
+		}
+		return "Unidentified"
+	}
+}
+
+func (window *Window) ProcessKeyboardInput(input KeyboardInput) {
+	for _, listener := range window.keyboardInputEventListeners {
+		listener(input)
+	}
+}
+
+func (window *Window) ProcessTextInput(char rune) {
+	for _, listener := range window.textInputEventListeners {
+		listener(char)
+	}
+}
+
 func (window *Window) ProcessPointerPosition() {
 	if window.hasActiveOverlay {
 		window.ProcessContextMenu()

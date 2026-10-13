@@ -441,6 +441,12 @@ func (wc *WindowContext) BindWindowInput(window *mustard.Window) {
 	window.AttachPointerClickEventListener(func(x, y float64, button mustard.MustardKey) {
 		wc.DispatchMouseClick(x, y, button)
 	})
+	window.AttachKeyboardInputEventListener(func(input mustard.KeyboardInput) {
+		wc.DispatchKeyboardInput(input)
+	})
+	window.AttachTextInputEventListener(func(char rune) {
+		wc.DispatchTextInput(char)
+	})
 }
 
 // DispatchMouseClick hit-tests this window’s active document and dispatches a DOM mouse event.
@@ -482,6 +488,59 @@ func (wc *WindowContext) dispatchMouseEventAt(target *NodeDOM, eventType string,
 	event.Set("clientX", x)
 	event.Set("clientY", y)
 	wrapper.dispatchDOMEvent(event)
+}
+
+func (wc *WindowContext) DispatchKeyboardInput(input mustard.KeyboardInput) *NodeDOM {
+	target := wc.focusedDOMNode()
+	if target == nil {
+		return nil
+	}
+	eventType := "keydown"
+	if input.Action == mustard.KeyboardRelease {
+		eventType = "keyup"
+	} else if input.Action != mustard.KeyboardPress && input.Action != mustard.KeyboardRepeat {
+		return nil
+	}
+	properties := map[string]interface{}{
+		"key": input.Key, "repeat": input.Action == mustard.KeyboardRepeat,
+		"ctrlKey": input.Control, "shiftKey": input.Shift, "altKey": input.Alt, "metaKey": input.Super,
+	}
+	wc.dispatchKeyboardEventAt(target, eventType, properties)
+	return target
+}
+
+func (wc *WindowContext) DispatchTextInput(char rune) *NodeDOM {
+	target := wc.focusedDOMNode()
+	if target == nil {
+		return nil
+	}
+	data := string(char)
+	wc.dispatchKeyboardEventAt(target, "keypress", map[string]interface{}{"key": data, "charCode": int(char)})
+	wc.dispatchKeyboardEventAt(target, "input", map[string]interface{}{"data": data, "inputType": "insertText"})
+	return target
+}
+
+func (wc *WindowContext) focusedDOMNode() *NodeDOM {
+	if wc == nil || wc.focusedElement == nil || wc.focusedElement.WindowCtx != wc {
+		return nil
+	}
+	return wc.focusedElement
+}
+
+func (wc *WindowContext) dispatchKeyboardEventAt(target *NodeDOM, eventType string, properties map[string]interface{}) {
+	wc.jsRuntimeMu.Lock()
+	defer wc.jsRuntimeMu.Unlock()
+	if wc.jsRuntime == nil {
+		return
+	}
+	options := wc.jsRuntime.NewObject()
+	options.Set("bubbles", true)
+	options.Set("cancelable", true)
+	event := newJSEvent(wc.jsRuntime, goja.ConstructorCall{Arguments: []goja.Value{wc.jsRuntime.ToValue(eventType), options}})
+	for name, value := range properties {
+		event.Set(name, value)
+	}
+	(&JSDOMWrapper{node: target, runtime: wc.jsRuntime, windowCtx: wc}).dispatchDOMEvent(event)
 }
 
 // SetFocusedElement sets the currently focused DOM element.

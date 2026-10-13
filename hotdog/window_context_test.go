@@ -559,6 +559,44 @@ func TestWindowPointerClickDispatchIsIsolated(t *testing.T) {
 	assertJSResult(t, wc2, `clickCount + ":" + clickWasCorrect`, "1:true")
 }
 
+func setupKeyboardTestWindow(t *testing.T) (*WindowContext, *mustard.Window) {
+	t.Helper()
+	wc := NewWindowContext(&Settings{}, &assets.BuildInfo{}, profiler.CreateProfiler())
+	doc, err := parseHTMLForTest(`<html><body><input id="target"></body></html>`, wc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wc.ActiveDocument = doc
+	if err := wc.InitJSRuntime(); err != nil {
+		t.Fatal(err)
+	}
+	target, err := doc.DOM.QuerySelector("#target")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wc.SetFocusedElement(target)
+	if _, err := wc.RunJS(`var keyboardEvents = []; var focused = document.querySelector("#target"); focused.addEventListener("keydown", function(e) { keyboardEvents.push("down:" + e.key + ":" + e.shiftKey + ":" + e.repeat); }); focused.addEventListener("keyup", function(e) { keyboardEvents.push("up:" + e.key + ":" + e.repeat); }); focused.addEventListener("keypress", function(e) { keyboardEvents.push("press:" + e.key); }); focused.addEventListener("input", function(e) { keyboardEvents.push("input:" + e.data); });`); err != nil {
+		t.Fatal(err)
+	}
+	window := &mustard.Window{}
+	wc.BindWindowInput(window)
+	return wc, window
+}
+
+func TestWindowKeyboardInputRoutesToFocusedElement(t *testing.T) {
+	wc1, window1 := setupKeyboardTestWindow(t)
+	wc2, window2 := setupKeyboardTestWindow(t)
+	defer wc1.Destroy()
+	defer wc2.Destroy()
+	window1.ProcessKeyboardInput(mustard.KeyboardInput{Key: "A", Action: mustard.KeyboardPress, Shift: true})
+	window1.ProcessTextInput('a')
+	assertJSResult(t, wc1, `keyboardEvents.join(",")`, "down:A:true:false,press:a,input:a")
+	assertJSResult(t, wc2, `keyboardEvents.join(",")`, "")
+	window2.ProcessKeyboardInput(mustard.KeyboardInput{Key: "Enter", Action: mustard.KeyboardRelease})
+	assertJSResult(t, wc1, `keyboardEvents.join(",")`, "down:A:true:false,press:a,input:a")
+	assertJSResult(t, wc2, `keyboardEvents.join(",")`, "up:Enter:false")
+}
+
 func assertJSResult(t *testing.T, wc *WindowContext, script, want string) {
 	t.Helper()
 	result, err := wc.RunJS(script)
