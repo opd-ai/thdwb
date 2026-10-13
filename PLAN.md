@@ -111,7 +111,7 @@ Bind solved layout coordinates to the visual render pipeline and map hardware in
 - [x] Layout coordinates flow from flexbox solver to mustard renderer
 - [x] Paint applied only to changed regions
 - [x] Text renders within flexbox-computed boundaries
-- [ ] Hit testing identifies target elements correctly
+- [x] Hit testing identifies target elements correctly
 - [ ] Mouse clicks fire to correct elements in correct window
 - [ ] Keyboard input routes to focused element in active window
 - [ ] Focus ring renders and updates correctly per window

@@ -149,6 +149,23 @@ func TestLayoutInvalidationsCoalescePerWindow(t *testing.T) {
 	}
 }
 
+func TestCalcPointIntersectionChoosesDeepestTopmostLaidOutNode(t *testing.T) {
+	root := &NodeDOM{RenderBox: &RenderBox{Width: 100, Height: 100}}
+	earlier := &NodeDOM{RenderBox: &RenderBox{Left: 10, Top: 10, Width: 30, Height: 30}}
+	inner := &NodeDOM{RenderBox: &RenderBox{Left: 12, Top: 12, Width: 6, Height: 6}}
+	later := &NodeDOM{RenderBox: &RenderBox{Left: 20, Top: 20, Width: 20, Height: 20}}
+	earlier.Children = []*NodeDOM{inner}
+	root.Children = []*NodeDOM{nil, {}, earlier, later}
+	for _, point := range []struct {
+		x, y float64
+		want *NodeDOM
+	}{{15, 15, inner}, {25, 25, later}, {10, 10, earlier}, {100, 100, nil}} {
+		if got := root.CalcPointIntersection(point.x, point.y); got != point.want {
+			t.Fatalf("hit at (%v,%v) = %p, want %p", point.x, point.y, got, point.want)
+		}
+	}
+}
+
 func TestWindowRequestAnimationFrameIsolation(t *testing.T) {
 	settings := &Settings{}
 	buildInfo := &assets.BuildInfo{}

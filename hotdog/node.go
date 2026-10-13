@@ -201,22 +201,22 @@ func escapeHTML(s string) string {
 }
 
 func (node *NodeDOM) CalcPointIntersection(x, y float64) *NodeDOM {
-	var intersectedNode *NodeDOM
-	if x > float64(node.RenderBox.Left) &&
-		x < float64(node.RenderBox.Left+node.RenderBox.Width) &&
-		y > float64(node.RenderBox.Top) &&
-		y < float64(node.RenderBox.Top+node.RenderBox.Height) {
-		intersectedNode = node
+	if node == nil {
+		return nil
 	}
-
-	for i := 0; i < len(node.Children); i++ {
-		tempNode := node.Children[i].CalcPointIntersection(x, y)
-		if tempNode != nil {
-			intersectedNode = tempNode
+	for i := len(node.Children) - 1; i >= 0; i-- {
+		if hit := node.Children[i].CalcPointIntersection(x, y); hit != nil {
+			return hit
 		}
 	}
-
-	return intersectedNode
+	box := node.RenderBox
+	if box == nil || box.Width <= 0 || box.Height <= 0 {
+		return nil
+	}
+	if x >= box.Left && x < box.Left+box.Width && y >= box.Top && y < box.Top+box.Height {
+		return node
+	}
+	return nil
 }
 
 func (node *NodeDOM) MarkDirty() {
