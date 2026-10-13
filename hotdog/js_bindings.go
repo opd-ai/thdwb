@@ -1591,272 +1591,272 @@ func (w *JSWindowWrapper) XMLHttpRequest(call goja.ConstructorCall) *goja.Object
 		withCredentials    = false // Default: false, cookies not sent for cross-origin
 	)
 
-		// Constants for readyState
-		const (
-			UNSENT           = 0
-			OPENED           = 1
-			HEADERS_RECEIVED = 2
-			LOADING          = 3
-			DONE             = 4
-		)
+	// Constants for readyState
+	const (
+		UNSENT           = 0
+		OPENED           = 1
+		HEADERS_RECEIVED = 2
+		LOADING          = 3
+		DONE             = 4
+	)
 
-		// Helper to call a listener function
-		callListener := func(listener goja.Callable, eventObj *goja.Object) {
-			if !w.windowCtx.IsActive() {
-				return
-			}
-			_, _ = listener(goja.Undefined(), w.runtime.ToValue(eventObj))
+	// Helper to call a listener function
+	callListener := func(listener goja.Callable, eventObj *goja.Object) {
+		if !w.windowCtx.IsActive() {
+			return
+		}
+		_, _ = listener(goja.Undefined(), w.runtime.ToValue(eventObj))
+	}
+
+	// Helper to update readyState and fire event
+	updateReadyState := func(newState int) {
+		if !w.windowCtx.IsActive() {
+			return
+		}
+		readyState = newState
+		xhrObj.Set("readyState", readyState)
+
+		// Call onreadystatechange if set
+		if onreadystatechange != nil {
+			eventObj := w.runtime.NewObject()
+			eventObj.Set("type", "readystatechange")
+			eventObj.Set("target", xhrObj)
+			callListener(onreadystatechange, eventObj)
 		}
 
-		// Helper to update readyState and fire event
-		updateReadyState := func(newState int) {
-			if !w.windowCtx.IsActive() {
-				return
-			}
-			readyState = newState
-			xhrObj.Set("readyState", readyState)
-
-			// Call onreadystatechange if set
-			if onreadystatechange != nil {
+		// Fire readystatechange event
+		if listeners, ok := eventListeners["readystatechange"]; ok {
+			for _, listener := range listeners {
 				eventObj := w.runtime.NewObject()
 				eventObj.Set("type", "readystatechange")
 				eventObj.Set("target", xhrObj)
-				callListener(onreadystatechange, eventObj)
+				callListener(listener, eventObj)
 			}
+		}
 
-			// Fire readystatechange event
-			if listeners, ok := eventListeners["readystatechange"]; ok {
+		// Fire load event when done
+		if newState == DONE {
+			if listeners, ok := eventListeners["load"]; ok {
 				for _, listener := range listeners {
 					eventObj := w.runtime.NewObject()
-					eventObj.Set("type", "readystatechange")
+					eventObj.Set("type", "load")
 					eventObj.Set("target", xhrObj)
 					callListener(listener, eventObj)
 				}
 			}
-
-			// Fire load event when done
-			if newState == DONE {
-				if listeners, ok := eventListeners["load"]; ok {
-					for _, listener := range listeners {
-						eventObj := w.runtime.NewObject()
-						eventObj.Set("type", "load")
-						eventObj.Set("target", xhrObj)
-						callListener(listener, eventObj)
-					}
-				}
-				if listeners, ok := eventListeners["loadend"]; ok {
-					for _, listener := range listeners {
-						eventObj := w.runtime.NewObject()
-						eventObj.Set("type", "loadend")
-						eventObj.Set("target", xhrObj)
-						callListener(listener, eventObj)
-					}
+			if listeners, ok := eventListeners["loadend"]; ok {
+				for _, listener := range listeners {
+					eventObj := w.runtime.NewObject()
+					eventObj.Set("type", "loadend")
+					eventObj.Set("target", xhrObj)
+					callListener(listener, eventObj)
 				}
 			}
 		}
+	}
 
-		// open(method, url, async, user, password) - async is ignored (always async)
-		xhrObj.Set("open", func(call goja.FunctionCall) goja.Value {
-			if len(call.Arguments) < 2 {
-				panic(w.runtime.NewGoError(errors.New("XMLHttpRequest.open requires method and url")))
+	// open(method, url, async, user, password) - async is ignored (always async)
+	xhrObj.Set("open", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 2 {
+			panic(w.runtime.NewGoError(errors.New("XMLHttpRequest.open requires method and url")))
+		}
+		requestMethod = strings.ToUpper(call.Arguments[0].String())
+		requestURL = call.Arguments[1].String()
+
+		// Reset state
+		requestHeaders = make(map[string]string)
+		requestBody = nil
+		status = 0
+		statusText = ""
+		responseText = ""
+		response = nil
+		xhrObj.Set("status", 0)
+		xhrObj.Set("statusText", "")
+		xhrObj.Set("responseText", "")
+		xhrObj.Set("response", nil)
+
+		updateReadyState(OPENED)
+		return goja.Undefined()
+	})
+
+	// withCredentials property (default: false)
+	xhrObj.DefineAccessorProperty("withCredentials",
+		w.runtime.ToValue(func(call goja.FunctionCall) goja.Value {
+			return w.runtime.ToValue(withCredentials)
+		}),
+		w.runtime.ToValue(func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) > 0 {
+				withCredentials = call.Arguments[0].ToBoolean()
 			}
-			requestMethod = strings.ToUpper(call.Arguments[0].String())
-			requestURL = call.Arguments[1].String()
-
-			// Reset state
-			requestHeaders = make(map[string]string)
-			requestBody = nil
-			status = 0
-			statusText = ""
-			responseText = ""
-			response = nil
-			xhrObj.Set("status", 0)
-			xhrObj.Set("statusText", "")
-			xhrObj.Set("responseText", "")
-			xhrObj.Set("response", nil)
-
-			updateReadyState(OPENED)
 			return goja.Undefined()
-		})
+		}), 0, 0)
 
-		// withCredentials property (default: false)
-		xhrObj.DefineAccessorProperty("withCredentials",
-			w.runtime.ToValue(func(call goja.FunctionCall) goja.Value {
-				return w.runtime.ToValue(withCredentials)
-			}),
-			w.runtime.ToValue(func(call goja.FunctionCall) goja.Value {
-				if len(call.Arguments) > 0 {
-					withCredentials = call.Arguments[0].ToBoolean()
-				}
-				return goja.Undefined()
-			}), 0, 0)
+	// setRequestHeader(header, value)
+	// setRequestHeader(header, value)
+	xhrObj.Set("setRequestHeader", func(call goja.FunctionCall) goja.Value {
+		if readyState != OPENED {
+			panic(w.runtime.NewGoError(errors.New("InvalidStateError: setRequestHeader can only be called when readyState is OPENED")))
+		}
+		if len(call.Arguments) < 2 {
+			panic(w.runtime.NewGoError(errors.New("setRequestHeader requires header name and value")))
+		}
+		header := call.Arguments[0].String()
+		value := call.Arguments[1].String()
+		requestHeaders[header] = value
+		return goja.Undefined()
+	})
+	// send(body)
+	xhrObj.Set("send", func(call goja.FunctionCall) goja.Value {
+		if readyState != OPENED {
+			panic(w.runtime.NewGoError(errors.New("InvalidStateError: send can only be called when readyState is OPENED")))
+		}
 
-		// setRequestHeader(header, value)
-		// setRequestHeader(header, value)
-		xhrObj.Set("setRequestHeader", func(call goja.FunctionCall) goja.Value {
-			if readyState != OPENED {
-				panic(w.runtime.NewGoError(errors.New("InvalidStateError: setRequestHeader can only be called when readyState is OPENED")))
+		// Parse body if provided
+		if len(call.Arguments) > 0 && call.Arguments[0] != nil && !goja.IsUndefined(call.Arguments[0]) && !goja.IsNull(call.Arguments[0]) {
+			bodyStr := fmt.Sprintf("%v", call.Arguments[0].Export())
+			requestBody = bytes.NewReader([]byte(bodyStr))
+			if _, hasContentType := requestHeaders["Content-Type"]; !hasContentType {
+				requestHeaders["Content-Type"] = "text/plain;charset=UTF-8"
 			}
-			if len(call.Arguments) < 2 {
-				panic(w.runtime.NewGoError(errors.New("setRequestHeader requires header name and value")))
-			}
-			header := call.Arguments[0].String()
-			value := call.Arguments[1].String()
-			requestHeaders[header] = value
-			return goja.Undefined()
-		})
-		// send(body)
-		xhrObj.Set("send", func(call goja.FunctionCall) goja.Value {
-			if readyState != OPENED {
-				panic(w.runtime.NewGoError(errors.New("InvalidStateError: send can only be called when readyState is OPENED")))
-			}
+		}
 
-			// Parse body if provided
-			if len(call.Arguments) > 0 && call.Arguments[0] != nil && !goja.IsUndefined(call.Arguments[0]) && !goja.IsNull(call.Arguments[0]) {
-				bodyStr := fmt.Sprintf("%v", call.Arguments[0].Export())
-				requestBody = bytes.NewReader([]byte(bodyStr))
-				if _, hasContentType := requestHeaders["Content-Type"]; !hasContentType {
-					requestHeaders["Content-Type"] = "text/plain;charset=UTF-8"
-				}
-			}
+		updateReadyState(LOADING)
 
-			updateReadyState(LOADING)
-
-			// Execute network work asynchronously; Goja callbacks run on this window's frame queue.
-			dispatchNetworkEvent := func(eventType string) {
-				w.windowCtx.ScheduleAnimationFrame(func() {
-					updateReadyState(DONE)
-					if listeners, ok := eventListeners[eventType]; ok {
-						for _, listener := range listeners {
-							eventObj := w.runtime.NewObject()
-							eventObj.Set("type", eventType)
-							eventObj.Set("target", xhrObj)
-							callListener(listener, eventObj)
-						}
+		// Execute network work asynchronously; Goja callbacks run on this window's frame queue.
+		dispatchNetworkEvent := func(eventType string) {
+			w.windowCtx.ScheduleAnimationFrame(func() {
+				updateReadyState(DONE)
+				if listeners, ok := eventListeners[eventType]; ok {
+					for _, listener := range listeners {
+						eventObj := w.runtime.NewObject()
+						eventObj.Set("type", eventType)
+						eventObj.Set("target", xhrObj)
+						callListener(listener, eventObj)
 					}
-				})
+				}
+			})
+		}
+		go func() {
+			parsedURL, err := url.Parse(requestURL)
+			if err != nil {
+				dispatchNetworkEvent("error")
+				return
 			}
-			go func() {
-				parsedURL, err := url.Parse(requestURL)
-				if err != nil {
+
+			// Get origin for CORS
+			origin := w.windowCtx.GetOrigin().String()
+			if origin == "" {
+				origin = "null"
+			}
+
+			// Determine if this is a cross-origin request
+			isCrossOrigin := false
+			if parsedURL.Scheme == "http" || parsedURL.Scheme == "https" {
+				requestOrigin := parsedURL.Scheme + "://" + parsedURL.Host
+				isCrossOrigin = requestOrigin != origin
+			}
+
+			// Check if preflight is needed
+			needsPreflight := isCrossOrigin && !isSimpleRequest(requestMethod, requestHeaders)
+			httpClient := w.windowCtx.GetHTTPClient()
+			if !withCredentials {
+				httpClient = &http.Client{}
+			}
+
+			if needsPreflight {
+				// Send OPTIONS preflight request
+				preflightResp := sauce.MakeCORSRequestWithClient(httpClient, parsedURL, origin, "OPTIONS", nil, getPreflightHeaders(requestMethod, requestHeaders))
+				if !isCORSPreflightSuccessful(preflightResp) {
 					dispatchNetworkEvent("error")
 					return
 				}
+			}
 
-				// Get origin for CORS
-				origin := w.windowCtx.GetOrigin().String()
-				if origin == "" {
-					origin = "null"
-				}
+			// Make actual request
+			resp := sauce.MakeCORSRequestWithClient(httpClient, parsedURL, origin, requestMethod, requestBody, requestHeaders)
 
-				// Determine if this is a cross-origin request
-				isCrossOrigin := false
-				if parsedURL.Scheme == "http" || parsedURL.Scheme == "https" {
-					requestOrigin := parsedURL.Scheme + "://" + parsedURL.Host
-					isCrossOrigin = requestOrigin != origin
-				}
+			if resp.Code == 0 && resp.Body != "" && strings.Contains(resp.Body, "error") {
+				dispatchNetworkEvent("error")
+				return
+			}
 
-				// Check if preflight is needed
-				needsPreflight := isCrossOrigin && !isSimpleRequest(requestMethod, requestHeaders)
-				httpClient := w.windowCtx.GetHTTPClient()
-				if !withCredentials {
-					httpClient = &http.Client{}
-				}
+			w.windowCtx.ScheduleAnimationFrame(func() {
+				status = resp.Code
+				statusText = httpStatusText(resp.Code)
+				responseText = resp.Body
+				response = resp.Body
 
-				if needsPreflight {
-					// Send OPTIONS preflight request
-					preflightResp := sauce.MakeCORSRequestWithClient(httpClient, parsedURL, origin, "OPTIONS", nil, getPreflightHeaders(requestMethod, requestHeaders))
-					if !isCORSPreflightSuccessful(preflightResp) {
-						dispatchNetworkEvent("error")
-						return
-					}
-				}
+				xhrObj.Set("status", status)
+				xhrObj.Set("statusText", statusText)
+				xhrObj.Set("responseText", responseText)
+				xhrObj.Set("response", response)
 
-				// Make actual request
-				resp := sauce.MakeCORSRequestWithClient(httpClient, parsedURL, origin, requestMethod, requestBody, requestHeaders)
+				updateReadyState(HEADERS_RECEIVED)
+				updateReadyState(LOADING)
+				updateReadyState(DONE)
+			})
+		}()
 
-				if resp.Code == 0 && resp.Body != "" && strings.Contains(resp.Body, "error") {
-					dispatchNetworkEvent("error")
-					return
-				}
+		return goja.Undefined()
+	})
 
-				w.windowCtx.ScheduleAnimationFrame(func() {
-					status = resp.Code
-					statusText = httpStatusText(resp.Code)
-					responseText = resp.Body
-					response = resp.Body
-
-					xhrObj.Set("status", status)
-					xhrObj.Set("statusText", statusText)
-					xhrObj.Set("responseText", responseText)
-					xhrObj.Set("response", response)
-
-					updateReadyState(HEADERS_RECEIVED)
-					updateReadyState(LOADING)
-					updateReadyState(DONE)
-				})
-			}()
-
+	// addEventListener(type, listener)
+	xhrObj.Set("addEventListener", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 2 {
 			return goja.Undefined()
-		})
+		}
+		eventType := call.Arguments[0].String()
+		listener := call.Arguments[1]
+		if listenerFunc, ok := goja.AssertFunction(listener); ok {
+			eventListeners[eventType] = append(eventListeners[eventType], listenerFunc)
+		}
+		return goja.Undefined()
+	})
 
-		// addEventListener(type, listener)
-		xhrObj.Set("addEventListener", func(call goja.FunctionCall) goja.Value {
-			if len(call.Arguments) < 2 {
-				return goja.Undefined()
-			}
-			eventType := call.Arguments[0].String()
-			listener := call.Arguments[1]
-			if listenerFunc, ok := goja.AssertFunction(listener); ok {
-				eventListeners[eventType] = append(eventListeners[eventType], listenerFunc)
-			}
+	// removeEventListener(type, listener) - simplified
+	xhrObj.Set("removeEventListener", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 2 {
 			return goja.Undefined()
-		})
+		}
+		eventType := call.Arguments[0].String()
+		listener := call.Arguments[1]
+		if _, ok := goja.AssertFunction(listener); ok {
+			// In a real implementation, we'd track the function identity
+			// For now, just clear all listeners for this type
+			delete(eventListeners, eventType)
+		}
+		return goja.Undefined()
+	})
 
-		// removeEventListener(type, listener) - simplified
-		xhrObj.Set("removeEventListener", func(call goja.FunctionCall) goja.Value {
-			if len(call.Arguments) < 2 {
-				return goja.Undefined()
+	// Properties
+	xhrObj.Set("readyState", readyState)
+	xhrObj.Set("status", status)
+	xhrObj.Set("statusText", statusText)
+	xhrObj.Set("responseText", responseText)
+	xhrObj.Set("response", response)
+
+	// onreadystatechange property
+	xhrObj.DefineAccessorProperty("onreadystatechange",
+		w.runtime.ToValue(func(call goja.FunctionCall) goja.Value {
+			if onreadystatechange != nil {
+				return w.runtime.ToValue(onreadystatechange)
 			}
-			eventType := call.Arguments[0].String()
-			listener := call.Arguments[1]
-			if _, ok := goja.AssertFunction(listener); ok {
-				// In a real implementation, we'd track the function identity
-				// For now, just clear all listeners for this type
-				delete(eventListeners, eventType)
-			}
-			return goja.Undefined()
-		})
-
-		// Properties
-		xhrObj.Set("readyState", readyState)
-		xhrObj.Set("status", status)
-		xhrObj.Set("statusText", statusText)
-		xhrObj.Set("responseText", responseText)
-		xhrObj.Set("response", response)
-
-		// onreadystatechange property
-		xhrObj.DefineAccessorProperty("onreadystatechange",
-			w.runtime.ToValue(func(call goja.FunctionCall) goja.Value {
-				if onreadystatechange != nil {
-					return w.runtime.ToValue(onreadystatechange)
-				}
-				return goja.Null()
-			}),
-			w.runtime.ToValue(func(call goja.FunctionCall) goja.Value {
-				if len(call.Arguments) > 0 {
-					if listenerFunc, ok := goja.AssertFunction(call.Arguments[0]); ok {
-						onreadystatechange = listenerFunc
-					} else {
-						onreadystatechange = nil
-					}
+			return goja.Null()
+		}),
+		w.runtime.ToValue(func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) > 0 {
+				if listenerFunc, ok := goja.AssertFunction(call.Arguments[0]); ok {
+					onreadystatechange = listenerFunc
 				} else {
 					onreadystatechange = nil
 				}
-				return goja.Undefined()
-			}), 0, 0)
+			} else {
+				onreadystatechange = nil
+			}
+			return goja.Undefined()
+		}), 0, 0)
 
-		return xhrObj
+	return xhrObj
 }
 
 // isSimpleRequest checks if a request is a "simple request" that doesn't require CORS preflight.

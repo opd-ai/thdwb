@@ -299,10 +299,12 @@ func (jar *OriginCookieJar) Cookies(u *url.URL) []*http.Cookie {
 
 // CookiesForRequest returns cookies for a request, applying SameSite rules.
 // Parameters:
-//   u - request URL
-//   initiator - initiating site URL (for SameSite comparison)
-//   topLevel - whether this is a top-level navigation
-//   method - HTTP method (GET, POST, etc.)
+//
+//	u - request URL
+//	initiator - initiating site URL (for SameSite comparison)
+//	topLevel - whether this is a top-level navigation
+//	method - HTTP method (GET, POST, etc.)
+//
 // Returns filtered cookies that should be sent with the request.
 // See: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Set-Cookie/SameSite
 func (jar *OriginCookieJar) CookiesForRequest(u, initiator *url.URL, topLevel bool, method string) []*http.Cookie {
@@ -762,9 +764,11 @@ func (c *ImgCache) GetImage(imageKey string) *CachedImage {
 // Handles internal schemes (thdwb://, file://) and external HTTP/HTTPS.
 // For external URLs, delegates to fetchExternalPage.
 // Parameters:
-//   URL - the URL to fetch
-//   history - navigation history (for internal pages)
-//   buildInfo - build information (for about page)
+//
+//	URL - the URL to fetch
+//	history - navigation history (for internal pages)
+//	buildInfo - build information (for about page)
+//
 // Returns a Resource with the response body and metadata.
 func GetResource(URL *url.URL, history *History, buildInfo *assets.BuildInfo) *Resource {
 	switch URL.Scheme {
@@ -820,11 +824,13 @@ func fetchExternalPage(URL *url.URL) *Resource {
 // If client is nil, the default global client is used.
 // Handles CORS by sending Origin header (caller responsible for preflight).
 // Parameters:
-//   client - HTTP client (nil = default global client)
-//   URL - target URL
-//   method - HTTP method (GET, POST, etc.)
-//   body - request body reader
-//   headers - custom headers (including Origin for CORS)
+//
+//	client - HTTP client (nil = default global client)
+//	URL - target URL
+//	method - HTTP method (GET, POST, etc.)
+//	body - request body reader
+//	headers - custom headers (including Origin for CORS)
+//
 // Returns a Resource with response data.
 func fetchExternalPageWithOptions(client *http.Client, URL *url.URL, method string, body io.Reader, headers map[string]string) *Resource {
 	URL = cloneURL(URL)
@@ -911,12 +917,14 @@ func MakeCORSRequest(URL *url.URL, origin, method string, body io.Reader, header
 // Sends Origin header. Does NOT automatically send preflight (OPTIONS) - caller must handle.
 // For methods requiring preflight (non-simple methods), caller should send OPTIONS first.
 // Parameters:
-//   client - HTTP client (nil = default global client)
-//   URL - target URL
-//   origin - Origin header value
-//   method - HTTP method
-//   body - request body
-//   headers - additional headers
+//
+//	client - HTTP client (nil = default global client)
+//	URL - target URL
+//	origin - Origin header value
+//	method - HTTP method
+//	body - request body
+//	headers - additional headers
+//
 // Returns a Resource with response data.
 // See: https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS
 func MakeCORSRequestWithClient(client *http.Client, URL *url.URL, origin, method string, body io.Reader, headers map[string]string) *Resource {
@@ -950,7 +958,9 @@ func ParseURL(link string) *url.URL {
 // Caches images in memory to avoid re-downloading and re-decoding.
 // Returns raw image bytes (not decoded image.Image).
 // Parameters:
-//   URL - image URL (http, https, or data: scheme)
+//
+//	URL - image URL (http, https, or data: scheme)
+//
 // Returns image bytes and error.
 func GetImage(URL *url.URL) ([]byte, error) {
 	URL = cloneURL(URL)

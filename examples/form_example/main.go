@@ -1,12 +1,10 @@
-//go:build ignore
-// +build ignore
-
 package main
 
 import (
 	"fmt"
 	"runtime"
 
+	assets "github.com/danfragoso/thdwb/assets"
 	hotdog "github.com/danfragoso/thdwb/hotdog"
 	mustard "github.com/danfragoso/thdwb/mustard"
 	profiler "github.com/danfragoso/thdwb/profiler"
@@ -38,7 +36,7 @@ func main() {
 	}
 
 	profilerInstance := profiler.CreateProfiler()
-	buildInfo := &hotdog.BuildInfo{
+	buildInfo := &assets.BuildInfo{
 		GitRevision: "example",
 		GitBranch:   "main",
 		HostInfo:    "example",
@@ -75,7 +73,7 @@ func main() {
 	usernameInput := mustard.CreateInputWidget()
 	usernameInput.SetWidth(300)
 	usernameInput.SetHeight(35)
-	usernameInput.SetPlaceholder("Enter username")
+	usernameInput.SetValue("")
 
 	// Password field
 	passwordLabel := mustard.CreateLabelWidget("Password:")
@@ -85,11 +83,10 @@ func main() {
 	passwordInput := mustard.CreateInputWidget()
 	passwordInput.SetWidth(300)
 	passwordInput.SetHeight(35)
-	passwordInput.SetPlaceholder("Enter password")
-	passwordInput.SetPasswordMode(true)
+	passwordInput.SetValue("")
 
 	// Submit button
-	submitButton := mustard.CreateButtonWidget("Login")
+	submitButton := mustard.CreateButtonWidget("Login", []byte{})
 	submitButton.SetWidth(300)
 	submitButton.SetHeight(40)
 	submitButton.SetBackgroundColor("#2196F3")
@@ -101,7 +98,7 @@ func main() {
 	statusLabel.SetFontSize(14)
 	statusLabel.SetFontColor("#FF0000")
 
-	submitButton.SetClickHandler(func() {
+	submitButton.onClick = func() {
 		username := usernameInput.GetValue()
 		password := passwordInput.GetValue()
 		if username == "" || password == "" {
@@ -112,7 +109,7 @@ func main() {
 			statusLabel.SetFontColor("#4CAF50")
 		}
 		statusLabel.RequestRepaint()
-	})
+	}
 
 	// Add widgets to frame
 	rootFrame.AttachWidget(title)

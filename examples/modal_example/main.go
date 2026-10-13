@@ -1,6 +1,3 @@
-//go:build ignore
-// +build ignore
-
 package main
 
 import (
@@ -10,6 +7,7 @@ import (
 	hotdog "github.com/danfragoso/thdwb/hotdog"
 	mustard "github.com/danfragoso/thdwb/mustard"
 	profiler "github.com/danfragoso/thdwb/profiler"
+	assets "github.com/danfragoso/thdwb/assets"
 
 	"github.com/go-gl/gl/v3.2-core/gl"
 	"github.com/go-gl/glfw/v3.3/glfw"
@@ -38,7 +36,7 @@ func main() {
 	}
 
 	profilerInstance := profiler.CreateProfiler()
-	buildInfo := &hotdog.BuildInfo{
+	buildInfo := &assets.BuildInfo{
 		GitRevision: "example",
 		GitBranch:   "main",
 		HostInfo:    "example",
@@ -68,7 +66,7 @@ func main() {
 	title.SetWidth(400)
 
 	// Open modal button
-	openModalButton := mustard.CreateButtonWidget("Open Modal")
+	openModalButton := mustard.CreateButtonWidget("Open Modal", []byte{})
 	openModalButton.SetWidth(200)
 	openModalButton.SetHeight(40)
 	openModalButton.SetBackgroundColor("#FF9800")
@@ -103,7 +101,7 @@ func main() {
 	modalButtons := mustard.CreateFrame(mustard.HorizontalFrame)
 
 	// Confirm button
-	confirmButton := mustard.CreateButtonWidget("Confirm")
+	confirmButton := mustard.CreateButtonWidget("Confirm", []byte{})
 	confirmButton.SetWidth(120)
 	confirmButton.SetHeight(35)
 	confirmButton.SetBackgroundColor("#F44336")
@@ -111,7 +109,7 @@ func main() {
 	confirmButton.SetFontSize(14)
 
 	// Cancel button
-	cancelButton := mustard.CreateButtonWidget("Cancel")
+	cancelButton := mustard.CreateButtonWidget("Cancel", []byte{})
 	cancelButton.SetWidth(120)
 	cancelButton.SetHeight(35)
 	cancelButton.SetBackgroundColor("#9E9E9E")
@@ -129,25 +127,25 @@ func main() {
 	window.AddOverlay(modalOverlay)
 
 	// Button handlers
-	openModalButton.SetClickHandler(func() {
+	openModalButton.onClick = func() {
 		modalOverlay.SetVisible(true)
 		modalOverlay.RequestRepaint()
 		window.RequestReflow()
-	})
+	}
 
-	confirmButton.SetClickHandler(func() {
+	confirmButton.onClick = func() {
 		modalOverlay.SetVisible(false)
 		statusLabel.SetContent("Action confirmed!")
 		statusLabel.SetFontColor("#4CAF50")
 		statusLabel.RequestRepaint()
-	})
+	}
 
-	cancelButton.SetClickHandler(func() {
+	cancelButton.onClick = func() {
 		modalOverlay.SetVisible(false)
 		statusLabel.SetContent("Action cancelled")
 		statusLabel.SetFontColor("#FF9800")
 		statusLabel.RequestRepaint()
-	})
+	}
 
 	// Add widgets to frame
 	rootFrame.AttachWidget(title)

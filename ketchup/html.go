@@ -91,7 +91,9 @@ func isVoidElement(tagName string) bool {
 // Creates the root html, head, and body nodes with default styles.
 // Used as fallback when parsing malformed HTML or for plain text documents.
 // Parameters:
-//   windowCtx - the window context for the new document
+//
+//	windowCtx - the window context for the new document
+//
 // Returns the root html NodeDOM.
 func CreateHTMLBase(windowCtx *hotdog.WindowContext) *hotdog.NodeDOM {
 	html := &hotdog.NodeDOM{
@@ -134,8 +136,10 @@ func CreateHTMLBase(windowCtx *hotdog.WindowContext) *hotdog.NodeDOM {
 // Wraps each line in <p> tags inside a basic HTML structure.
 // Used for text files, error pages, and non-HTML content.
 // Parameters:
-//   document - plain text content
-//   windowCtx - window context for the new document
+//
+//	document - plain text content
+//	windowCtx - window context for the new document
+//
 // Returns a Document with a basic DOM tree.
 func ParsePlainText(document string, windowCtx *hotdog.WindowContext) *hotdog.Document {
 	documentTitle := "Text Document"
@@ -200,8 +204,10 @@ func ParsePlainText(document string, windowCtx *hotdog.WindowContext) *hotdog.Do
 // Implements basic tokenization and tree construction.
 // Does NOT fully implement HTML5 parsing algorithm (no foster parenting, etc.).
 // Parameters:
-//   document - HTML source text
-//   windowCtx - window context for the new document
+//
+//	document - HTML source text
+//	windowCtx - window context for the new document
+//
 // Returns a Document with populated DOM tree and applied CSS inheritance.
 // See: https://html.spec.whatwg.org/multipage/parsing.html
 // See: https://searchfox.org/mozilla-central/source/parser/html

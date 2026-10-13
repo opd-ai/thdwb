@@ -38,20 +38,20 @@ const (
 // See: https://searchfox.org/mozilla-central/source/dom/base/nsINode.cpp
 type NodeDOM struct {
 	// Node identity
-	Type      NodeType       `json:"type"`       // Node type (element, text, comment, etc.)
-	Element   string         `json:"element"`    // Tag name (e.g., "div", "span", "html:text")
-	Content   string         `json:"content"`    // Text content (for text nodes, or inner text)
-	WindowCtx *WindowContext `json:"-"`          // Owning window context (for JS bindings)
+	Type      NodeType       `json:"type"`    // Node type (element, text, comment, etc.)
+	Element   string         `json:"element"` // Tag name (e.g., "div", "span", "html:text")
+	Content   string         `json:"content"` // Text content (for text nodes, or inner text)
+	WindowCtx *WindowContext `json:"-"`       // Owning window context (for JS bindings)
 
 	// Tree structure
-	Children    []*NodeDOM   `json:"children"`    // Child nodes
-	Attributes  []*Attribute `json:"attributes"`  // HTML attributes
-	Style       *Stylesheet  `json:"style"`       // Computed CSS styles
-	Parent      *NodeDOM     `json:"-"`           // Parent node (nil for root)
-	FirstChild  *NodeDOM     `json:"-"`           // First child (linked list)
-	NextSibling *NodeDOM     `json:"-"`           // Next sibling
-	PrevSibling *NodeDOM     `json:"-"`           // Previous sibling
-	RenderBox   *RenderBox   `json:"-"`           // Layout result: x, y, width, height
+	Children    []*NodeDOM   `json:"children"`   // Child nodes
+	Attributes  []*Attribute `json:"attributes"` // HTML attributes
+	Style       *Stylesheet  `json:"style"`      // Computed CSS styles
+	Parent      *NodeDOM     `json:"-"`          // Parent node (nil for root)
+	FirstChild  *NodeDOM     `json:"-"`          // First child (linked list)
+	NextSibling *NodeDOM     `json:"-"`          // Next sibling
+	PrevSibling *NodeDOM     `json:"-"`          // Previous sibling
+	RenderBox   *RenderBox   `json:"-"`          // Layout result: x, y, width, height
 
 	// Flexbox layout (kjk/flex) - used by experimental layout engine
 	FlexNode interface{} `json:"-"`

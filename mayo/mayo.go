@@ -17,24 +17,24 @@ import (
 // See: https://developer.mozilla.org/en-US/docs/Web/CSS/inheritance
 // See: https://searchfox.org/mozilla-central/source/layout/style/nsCSSProps.cpp
 var inheritableProperties = map[string]bool{
-	"color":           true,
-	"font-family":     true,
-	"font-size":       true,
-	"font-weight":     true,
-	"font-style":      true,
-	"line-height":     true,
-	"letter-spacing":  true,
-	"text-align":      true,
-	"text-indent":     true,
-	"text-transform":  true,
-	"visibility":      true,
-	"white-space":     true,
-	"word-spacing":    true,
-	"list-style":      true,
-	"cursor":          true,
-	"direction":       true,
-	"unicode-bidi":    true,
-	"opacity":         true,
+	"color":          true,
+	"font-family":    true,
+	"font-size":      true,
+	"font-weight":    true,
+	"font-style":     true,
+	"line-height":    true,
+	"letter-spacing": true,
+	"text-align":     true,
+	"text-indent":    true,
+	"text-transform": true,
+	"visibility":     true,
+	"white-space":    true,
+	"word-spacing":   true,
+	"list-style":     true,
+	"cursor":         true,
+	"direction":      true,
+	"unicode-bidi":   true,
+	"opacity":        true,
 }
 
 // getDefaultElementDisplay returns the default 'display' value for an HTML element.
@@ -112,8 +112,10 @@ func mapIntValue(intValue string) int {
 // Handles: color, background-color, font-size, and many others.
 // Properties not explicitly handled are stored in the Properties map for cascade.
 // Parameters:
-//   parsedStyleSheet - target Stylesheet to modify
-//   propSlice - [property, value] pair (e.g., ["color", "red"])
+//
+//	parsedStyleSheet - target Stylesheet to modify
+//	propSlice - [property, value] pair (e.g., ["color", "red"])
+//
 // Returns the modified Stylesheet.
 func mapPropToStylesheet(parsedStyleSheet *hotdog.Stylesheet, propSlice []string) *hotdog.Stylesheet {
 	propName := strings.TrimSpace(strings.ToLower(propSlice[0]))

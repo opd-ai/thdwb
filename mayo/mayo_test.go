@@ -410,8 +410,8 @@ func TestCascadeSourceOrder(t *testing.T) {
 
 func TestGetDefaultElementDisplay(t *testing.T) {
 	tests := []struct {
-		element    string
-		expected   string
+		element  string
+		expected string
 	}{
 		{"script", "none"},
 		{"style", "none"},
@@ -726,31 +726,31 @@ func TestReflowNode(t *testing.T) {
 
 func TestMergeStylesheet(t *testing.T) {
 	dest := &hotdog.Stylesheet{
-		Color: &hotdog.ColorRGBA{R: 1, G: 0, B: 0, A: 1}, // red
-		FontSize: 16,
+		Color:      &hotdog.ColorRGBA{R: 1, G: 0, B: 0, A: 1}, // red
+		FontSize:   16,
 		FontWeight: 400,
-		Display: "block",
+		Display:    "block",
 	}
 
 	src := &hotdog.Stylesheet{
-		Color: &hotdog.ColorRGBA{R: 0, G: 1, B: 0, A: 1}, // green (should override)
+		Color:           &hotdog.ColorRGBA{R: 0, G: 1, B: 0, A: 1}, // green (should override)
 		BackgroundColor: &hotdog.ColorRGBA{R: 0, G: 0, B: 1, A: 1}, // blue (new)
-		FontSize: 24, // should override
-		FontFamily: "Arial", // new
-		FontWeight: 600, // should override
-		LineHeight: 1.5, // new
-		TextAlign: "center", // new
-		Display: "flex", // should override
-		Position: "absolute", // new
-		FlexDirection: "column", // new
-		Width: 100, // new
-		Height: 200, // new
-		MarginTop: 10, // new
-		PaddingTop: 5, // new
-		BorderTopWidth: 2, // new
-		BorderTopColor: &hotdog.ColorRGBA{R: 0, G: 0, B: 0, A: 1}, // new
-		OverflowX: "auto", // new
-		Opacity: 0.5, // new
+		FontSize:        24,                                        // should override
+		FontFamily:      "Arial",                                   // new
+		FontWeight:      600,                                       // should override
+		LineHeight:      1.5,                                       // new
+		TextAlign:       "center",                                  // new
+		Display:         "flex",                                    // should override
+		Position:        "absolute",                                // new
+		FlexDirection:   "column",                                  // new
+		Width:           100,                                       // new
+		Height:          200,                                       // new
+		MarginTop:       10,                                        // new
+		PaddingTop:      5,                                         // new
+		BorderTopWidth:  2,                                         // new
+		BorderTopColor:  &hotdog.ColorRGBA{R: 0, G: 0, B: 0, A: 1}, // new
+		OverflowX:       "auto",                                    // new
+		Opacity:         0.5,                                       // new
 	}
 
 	mergeStylesheet(dest, src)
@@ -782,7 +782,7 @@ func TestMergeStylesheet(t *testing.T) {
 
 func TestMergeStylesheetNilSrc(t *testing.T) {
 	dest := &hotdog.Stylesheet{
-		Color: &hotdog.ColorRGBA{R: 1, G: 0, B: 0, A: 1},
+		Color:    &hotdog.ColorRGBA{R: 1, G: 0, B: 0, A: 1},
 		FontSize: 16,
 	}
 
@@ -800,16 +800,16 @@ func TestInheritFromParent(t *testing.T) {
 	}
 
 	parent := &hotdog.Stylesheet{
-		Color: &hotdog.ColorRGBA{R: 1, G: 0, B: 0, A: 1}, // red
-		FontFamily: "Arial",
-		FontSize: 16, // should NOT override child's 24
-		FontWeight: 600,
-		LineHeight: 1.5,
-		TextAlign: "center",
+		Color:          &hotdog.ColorRGBA{R: 1, G: 0, B: 0, A: 1}, // red
+		FontFamily:     "Arial",
+		FontSize:       16, // should NOT override child's 24
+		FontWeight:     600,
+		LineHeight:     1.5,
+		TextAlign:      "center",
 		TextDecoration: "underline",
-		WhiteSpace: "nowrap",
-		Visibility: "hidden",
-		Opacity: 0.5,
+		WhiteSpace:     "nowrap",
+		Visibility:     "hidden",
+		Opacity:        0.5,
 	}
 
 	inheritFromParent(child, parent)
@@ -847,9 +847,9 @@ func TestApplyInheritanceRecursive(t *testing.T) {
 	root := &hotdog.NodeDOM{
 		Element: "html",
 		Style: &hotdog.Stylesheet{
-			Color: &hotdog.ColorRGBA{R: 0, G: 0, B: 0, A: 1}, // black
+			Color:      &hotdog.ColorRGBA{R: 0, G: 0, B: 0, A: 1}, // black
 			FontFamily: "Times",
-			FontSize: 16,
+			FontSize:   16,
 			LineHeight: 1.2,
 		},
 		Children: []*hotdog.NodeDOM{},
@@ -858,9 +858,9 @@ func TestApplyInheritanceRecursive(t *testing.T) {
 	body := &hotdog.NodeDOM{
 		Element: "body",
 		Style: &hotdog.Stylesheet{
-			Color: &hotdog.ColorRGBA{R: 1, G: 0, B: 0, A: 1}, // red
+			Color:      &hotdog.ColorRGBA{R: 1, G: 0, B: 0, A: 1}, // red
 			FontFamily: "Arial",
-			FontSize: 18,
+			FontSize:   18,
 			LineHeight: 1.5,
 		},
 		Parent:   root,
@@ -937,9 +937,9 @@ func TestApplyInheritance(t *testing.T) {
 	root := &hotdog.NodeDOM{
 		Element: "html",
 		Style: &hotdog.Stylesheet{
-			Color: &hotdog.ColorRGBA{R: 0, G: 0, B: 0, A: 1},
+			Color:      &hotdog.ColorRGBA{R: 0, G: 0, B: 0, A: 1},
 			FontFamily: "Times",
-			FontSize: 16,
+			FontSize:   16,
 			LineHeight: 1.2,
 		},
 		Children: []*hotdog.NodeDOM{},
@@ -948,9 +948,9 @@ func TestApplyInheritance(t *testing.T) {
 	body := &hotdog.NodeDOM{
 		Element: "body",
 		Style: &hotdog.Stylesheet{
-			Color: &hotdog.ColorRGBA{R: 1, G: 0, B: 0, A: 1},
+			Color:      &hotdog.ColorRGBA{R: 1, G: 0, B: 0, A: 1},
 			FontFamily: "Arial",
-			FontSize: 18,
+			FontSize:   18,
 			LineHeight: 1.5,
 		},
 		Parent:   root,
@@ -987,23 +987,23 @@ func TestApplyInheritance(t *testing.T) {
 
 func TestFindNodeDOMByHTMLNode(t *testing.T) {
 	root := &hotdog.NodeDOM{
-		Element: "html",
-		Style: &hotdog.Stylesheet{},
+		Element:  "html",
+		Style:    &hotdog.Stylesheet{},
 		Children: []*hotdog.NodeDOM{},
 	}
 
 	body := &hotdog.NodeDOM{
-		Element: "body",
-		Style: &hotdog.Stylesheet{},
-		Parent: root,
+		Element:  "body",
+		Style:    &hotdog.Stylesheet{},
+		Parent:   root,
 		Children: []*hotdog.NodeDOM{},
 	}
 	root.Children = append(root.Children, body)
 
 	div := &hotdog.NodeDOM{
-		Element: "div",
-		Style: &hotdog.Stylesheet{},
-		Parent: body,
+		Element:  "div",
+		Style:    &hotdog.Stylesheet{},
+		Parent:   body,
 		Children: []*hotdog.NodeDOM{},
 	}
 	body.Children = append(body.Children, div)

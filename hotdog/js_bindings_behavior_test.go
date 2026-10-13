@@ -30,7 +30,7 @@ func TestDocumentBindingQueriesAndCreation(t *testing.T) {
 	wc.ActiveDocument.Title = "Page"
 	assertJSResult(t, wc, `document.querySelectorAll("p").length + ":" + document.getElementById("one").tagName + ":" + document.getElementsByClassName("entry").length + ":" + document.getElementsByTagName("p").length`, "2:P:2:2")
 	assertJSResult(t, wc, `document.documentElement.tagName + ":" + document.title()`, "HTML:Page")
-	
+
 	// Test createTextNode and appendChild - the text node will be appended after existing children
 	result, err := wc.RunJS(`var text = document.createTextNode("new"); document.body.appendChild(text); document.body.lastChild().textContent`)
 	if err != nil {
@@ -43,7 +43,7 @@ func TestDocumentBindingQueriesAndCreation(t *testing.T) {
 
 func TestElementBindingTraversalMutationAndStyle(t *testing.T) {
 	wc := newBindingTestContext(t, `<html><body><div id="target" class="old"></div></body></html>`)
-	
+
 	// Test full element binding traversal, mutation, and style
 	script := `var n=document.getElementById("target"), first=document.createElement("span"), last=document.createElement("span"); first.textContent="first"; last.textContent="last"; n.appendChild(first); n.appendChild(last); var before=document.createElement("b"); n.insertBefore(before,first); var replacement=document.createElement("i"); n.replaceChild(replacement,before); n.removeChild(replacement); var copy=n.cloneNode(true); n.setAttribute("data-x","yes"); var attr=n.getAttribute("data-x"); n.removeAttribute("class"); attr+":"+n.childNodes().length+":"+first.parentNode().tagName+":"+first.nextSibling().firstChild().textContent+":"+last.previousSibling().firstChild().textContent+":"+copy.childNodes().length+":"+(n.style()===null)`
 	if got, err := wc.RunJS(script); err != nil || got.String() != "yes:2:DIV:last:first:2:true" {
