@@ -48,7 +48,7 @@ func createRenderTree(root *hotdog.NodeDOM) *hotdog.NodeDOM {
 		Attributes: root.Attributes,
 	}
 
-	node.RenderBox = &hotdog.RenderBox{}
+	node.RenderBox = &hotdog.RenderBox{Node: root}
 	node.FlexNode = root.FlexNode // Use the flex node from original DOM
 
 	for _, child := range root.Children {
@@ -77,6 +77,9 @@ func layoutNode(ctx *gg.Context, node *hotdog.NodeDOM) {
 
 	// Copy layout results to RenderBox
 	copyFlexLayoutToRenderBox(flexNode, node.RenderBox)
+	if source := node.RenderBox.Node; source != nil && source.RenderBox != nil {
+		copyFlexLayoutToRenderBox(flexNode, source.RenderBox)
+	}
 
 	// Recursively process children for painting
 	for _, child := range node.Children {

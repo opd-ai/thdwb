@@ -13,6 +13,14 @@ import (
 	"github.com/kjk/flex"
 )
 
+type testCanvasContext struct {
+	context *gg.Context
+}
+
+func (canvas testCanvasContext) GetContext() *gg.Context {
+	return canvas.context
+}
+
 func TestRenderDocument_noBody(t *testing.T) {
 	html, err := ioutil.ReadFile("test-data/no-body.html")
 	if err != nil {
@@ -67,7 +75,9 @@ func TestRenderDocument_flexbox(t *testing.T) {
 	}()
 
 	// Test with experimental layout (flexbox)
-	RenderDocument(dctx, doc, true)
+	if err := RenderDocumentToCanvas(testCanvasContext{context: dctx}, doc, true); err != nil {
+		t.Fatalf("failed to render flexbox document to canvas: %v", err)
+	}
 
 	// Verify that flex nodes were created
 	body, err := doc.DOM.FindChildByName("body")
@@ -84,6 +94,10 @@ func TestRenderDocument_flexbox(t *testing.T) {
 	// Verify flex node exists
 	if flexContainer.FlexNode == nil {
 		t.Fatal("flex node not created for flex-container")
+	}
+	flexLayout := flexContainer.FlexNode.(*flex.Node)
+	if flexContainer.RenderBox == nil || flexContainer.RenderBox.Width <= 0 || flexContainer.RenderBox.Height <= 0 || flexContainer.RenderBox.Left != float64(flexLayout.LayoutGetLeft()) || flexContainer.RenderBox.Top != float64(flexLayout.LayoutGetTop()) || flexContainer.RenderBox.Width != float64(flexLayout.LayoutGetWidth()) || flexContainer.RenderBox.Height != float64(flexLayout.LayoutGetHeight()) {
+		t.Fatal("flexbox geometry was not copied back to the source DOM for rendering")
 	}
 
 	// Verify children have flex nodes

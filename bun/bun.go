@@ -50,6 +50,23 @@ func RenderDocument(ctx *gg.Context, document *hotdog.Document, experimentalLayo
 	return nil
 }
 
+// CanvasContext exposes the drawing context used by a canvas renderer.
+type CanvasContext interface {
+	GetContext() *gg.Context
+}
+
+// RenderDocumentToCanvas draws a document into a mustard-compatible canvas context.
+func RenderDocumentToCanvas(canvas CanvasContext, document *hotdog.Document, experimentalLayout bool) error {
+	if canvas == nil {
+		return fmt.Errorf("canvas has no drawing context")
+	}
+	context := canvas.GetContext()
+	if context == nil {
+		return fmt.Errorf("canvas has no drawing context")
+	}
+	return RenderDocument(context, document, experimentalLayout)
+}
+
 func getNodeContent(NodeDOM *hotdog.NodeDOM) string {
 	return NodeDOM.Content
 }

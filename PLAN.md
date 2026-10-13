@@ -108,7 +108,7 @@ Bind solved layout coordinates to the visual render pipeline and map hardware in
 * **Implement Tab Switching Logic:** Pause layout/event loop in inactive windows; resume in active window. Implement efficient viewport swapping.
 
 ### Phase 5 Completion Checklist
-- [ ] Layout coordinates flow from flexbox solver to mustard renderer
+- [x] Layout coordinates flow from flexbox solver to mustard renderer
 - [ ] Paint applied only to changed regions
 - [ ] Text renders within flexbox-computed boundaries
 - [ ] Hit testing identifies target elements correctly
