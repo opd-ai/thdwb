@@ -49,6 +49,7 @@ type NodeDOM struct {
 	// Used by the layout engine for flexbox calculations
 	FlexNode interface{} `json:"-"`
 
+	Dirty        bool `json:"-"`
 	NeedsReflow  bool `json:"-"`
 	NeedsRepaint bool `json:"-"`
 
@@ -218,16 +219,38 @@ func (node *NodeDOM) CalcPointIntersection(x, y float64) *NodeDOM {
 	return intersectedNode
 }
 
-func (node NodeDOM) RequestRepaint() {
+func (node *NodeDOM) MarkDirty() {
+	if node == nil {
+		return
+	}
+	node.Dirty = true
+	if node.Parent != nil {
+		node.Parent.MarkDirty()
+	}
+}
+
+func (node *NodeDOM) ClearDirty() {
+	if node == nil {
+		return
+	}
+	node.Dirty = false
+	for _, childNode := range node.Children {
+		childNode.ClearDirty()
+	}
+}
+
+func (node *NodeDOM) RequestRepaint() {
 	node.NeedsRepaint = true
+	node.MarkDirty()
 
 	for _, childNode := range node.Children {
 		childNode.RequestRepaint()
 	}
 }
 
-func (node NodeDOM) RequestReflow() {
+func (node *NodeDOM) RequestReflow() {
 	node.NeedsReflow = true
+	node.MarkDirty()
 
 	for _, childNode := range node.Children {
 		childNode.RequestReflow()
@@ -648,6 +671,7 @@ func (node *NodeDOM) SetInnerHTML(htmlString string) error {
 	}
 	node.Children = nil
 	node.FirstChild = nil
+	node.MarkDirty()
 
 	// Parse the HTML string
 	parsedNodes, err := parseHTMLFragment(htmlString, node.Document)
@@ -755,6 +779,7 @@ func (node *NodeDOM) SetTextContent(text string) {
 		node.appendChildNode(textNode)
 	}
 
+	node.MarkDirty()
 	node.RequestReflow()
 	node.RequestRepaint()
 }
@@ -792,6 +817,7 @@ func (node *NodeDOM) InsertBefore(newChild, referenceChild *NodeDOM) error {
 			}
 
 			node.Children = append(node.Children[:i], append([]*NodeDOM{newChild}, node.Children[i:]...)...)
+			node.MarkDirty()
 			node.RequestReflow()
 			node.RequestRepaint()
 			return nil
@@ -848,6 +874,7 @@ func (node *NodeDOM) ReplaceChild(newChild, oldChild *NodeDOM) (*NodeDOM, error)
 			oldChild.PrevSibling = nil
 			oldChild.NextSibling = nil
 
+			node.MarkDirty()
 			node.RequestReflow()
 			node.RequestRepaint()
 			return oldChild, nil

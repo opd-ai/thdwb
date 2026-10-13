@@ -84,6 +84,45 @@ func TestWindowContextJSRuntimeBasicExecution(t *testing.T) {
 	wc.Destroy()
 }
 
+func TestDirtyFlagTracksDOMMutation(t *testing.T) {
+	settings := &Settings{}
+	buildInfo := &assets.BuildInfo{}
+	prof := profiler.CreateProfiler()
+
+	wc := NewWindowContext(settings, buildInfo, prof)
+	htmlContent := `<html><head></head><body></body></html>`
+	parsedDoc, err := parseHTMLForTest(htmlContent, wc)
+	if err != nil {
+		t.Fatalf("Failed to parse HTML: %v", err)
+	}
+	wc.ActiveDocument = parsedDoc
+	if err := wc.InitJSRuntime(); err != nil {
+		t.Fatalf("Failed to init JS runtime: %v", err)
+	}
+
+	_, err = wc.GetJSRuntime().RunString(`
+		var div = document.createElement("div");
+		div.setAttribute("data-test", "value");
+		document.body.appendChild(div);
+	`)
+	if err != nil {
+		t.Fatalf("Failed to mutate DOM: %v", err)
+	}
+
+	body, err := parsedDoc.GetBody()
+	if err != nil {
+		t.Fatalf("Failed to get body: %v", err)
+	}
+	if !body.Dirty {
+		t.Fatal("Body should be marked dirty after DOM mutation")
+	}
+	if body.FirstChild == nil || !body.FirstChild.Dirty {
+		t.Fatal("Inserted child should be marked dirty after appendChild")
+	}
+
+	wc.Destroy()
+}
+
 func TestWindowEventListenerRemoval(t *testing.T) {
 	settings := &Settings{}
 	buildInfo := &assets.BuildInfo{}

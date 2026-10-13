@@ -482,6 +482,7 @@ func (w *JSDOMWrapper) setAttribute(call goja.FunctionCall) goja.Value {
 	if !found {
 		w.node.Attributes = append(w.node.Attributes, &Attribute{Name: name, Value: value})
 	}
+	w.node.MarkDirty()
 	w.node.RequestReflow()
 	w.node.RequestRepaint()
 	return goja.Undefined()
@@ -503,6 +504,7 @@ func (w *JSDOMWrapper) removeAttribute(call goja.FunctionCall) goja.Value {
 		}
 	}
 	w.node.Attributes = newAttrs
+	w.node.MarkDirty()
 	w.node.RequestReflow()
 	w.node.RequestRepaint()
 	return goja.Undefined()
@@ -533,6 +535,7 @@ func (w *JSDOMWrapper) appendChild(call goja.FunctionCall) goja.Value {
 		childNode.Parent.removeChildNode(childNode)
 	}
 	w.node.appendChildNode(childNode)
+	w.node.MarkDirty()
 	w.node.RequestReflow()
 	w.node.RequestRepaint()
 	return w.wrapNode(childNode)
@@ -560,6 +563,7 @@ func (w *JSDOMWrapper) removeChild(call goja.FunctionCall) goja.Value {
 		panic(w.runtime.NewGoError(err))
 	}
 	w.node.removeChildNode(childNode)
+	w.node.MarkDirty()
 	w.node.RequestReflow()
 	w.node.RequestRepaint()
 	return w.wrapNode(childNode)
@@ -664,6 +668,7 @@ func (w *JSDOMWrapper) setInnerHTML(call goja.FunctionCall) goja.Value {
 	if err := w.node.SetInnerHTML(htmlString); err != nil {
 		panic(w.runtime.NewGoError(err))
 	}
+	w.node.MarkDirty()
 	// Return the new innerHTML value
 	return w.runtime.ToValue(w.node.InnerHTML())
 }
@@ -678,6 +683,7 @@ func (w *JSDOMWrapper) setTextContent(call goja.FunctionCall) goja.Value {
 	}
 	text := call.Arguments[0].String()
 	w.node.SetTextContent(text)
+	w.node.MarkDirty()
 	// Return the new textContent value
 	return w.runtime.ToValue(w.node.GetTextContent())
 }
@@ -726,7 +732,7 @@ func (w *JSDOMWrapper) insertBefore(call goja.FunctionCall) goja.Value {
 	if err := w.node.InsertBefore(newNode, referenceNode); err != nil {
 		panic(w.runtime.NewGoError(err))
 	}
-
+	w.node.MarkDirty()
 	return w.wrapNode(newNode)
 }
 
@@ -772,7 +778,7 @@ func (w *JSDOMWrapper) replaceChild(call goja.FunctionCall) goja.Value {
 	if err != nil {
 		panic(w.runtime.NewGoError(err))
 	}
-
+	w.node.MarkDirty()
 	return w.wrapNode(replacedNode)
 }
 
@@ -915,6 +921,8 @@ func (node *NodeDOM) appendChildNode(child *NodeDOM) {
 		node.FirstChild = child
 	}
 	node.Children = append(node.Children, child)
+	node.MarkDirty()
+	child.MarkDirty()
 }
 
 // removeChildNode removes a child node from this node.
@@ -934,6 +942,8 @@ func (node *NodeDOM) removeChildNode(child *NodeDOM) {
 			child.Parent = nil
 			child.PrevSibling = nil
 			child.NextSibling = nil
+			node.MarkDirty()
+			child.MarkDirty()
 			break
 		}
 	}
