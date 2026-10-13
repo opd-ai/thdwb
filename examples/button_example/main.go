@@ -1,6 +1,3 @@
-//go:build ignore
-// +build ignore
-
 package main
 
 import (
@@ -10,6 +7,7 @@ import (
 	hotdog "github.com/danfragoso/thdwb/hotdog"
 	mustard "github.com/danfragoso/thdwb/mustard"
 	profiler "github.com/danfragoso/thdwb/profiler"
+	assets "github.com/danfragoso/thdwb/assets"
 
 	"github.com/go-gl/gl/v3.2-core/gl"
 	"github.com/go-gl/glfw/v3.3/glfw"
@@ -38,7 +36,7 @@ func main() {
 	}
 
 	profilerInstance := profiler.CreateProfiler()
-	buildInfo := &hotdog.BuildInfo{
+	buildInfo := &assets.BuildInfo{
 		GitRevision: "example",
 		GitBranch:   "main",
 		HostInfo:    "example",
@@ -61,8 +59,8 @@ func main() {
 	// Create root frame
 	rootFrame := mustard.CreateFrame(mustard.VerticalFrame)
 
-	// Create a button
-	button := mustard.CreateButtonWidget("Click Me!")
+	// Create a button (need to pass an asset for icon, use empty)
+	button := mustard.CreateButtonWidget("Click Me!", []byte{})
 	button.SetWidth(200)
 	button.SetHeight(50)
 	button.SetBackgroundColor("#4CAF50")
@@ -71,11 +69,11 @@ func main() {
 
 	// Add click handler
 	clickCount := 0
-	button.SetClickHandler(func() {
+	button.onClick = func() {
 		clickCount++
 		button.SetContent(fmt.Sprintf("Clicked %d times!", clickCount))
 		button.RequestRepaint()
-	})
+	}
 
 	// Create a label to show status
 	statusLabel := mustard.CreateLabelWidget("Button not clicked yet")
