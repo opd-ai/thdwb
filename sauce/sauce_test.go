@@ -71,3 +71,38 @@ func TestGetImage(t *testing.T) {
 		})
 	}
 }
+
+func TestOriginCookieJarMatchesSecureAndSameSiteRules(t *testing.T) {
+	jar := NewOriginCookieJar()
+
+	httpsURL, err := url.Parse("https://example.com/path")
+	require.NoError(t, err)
+
+	jar.SetCookies(httpsURL, []*http.Cookie{
+		{Name: "secure", Value: "1", Secure: true, Path: "/path"},
+		{Name: "same_site_none", Value: "1", SameSite: http.SameSiteNoneMode, Secure: true, Path: "/"},
+		{Name: "allowed", Value: "2", Path: "/"},
+	})
+
+	cookies := jar.Cookies(httpsURL)
+	require.Len(t, cookies, 3)
+	assert.Contains(t, []string{cookies[0].Name, cookies[1].Name, cookies[2].Name}, "allowed")
+	assert.Contains(t, []string{cookies[0].Name, cookies[1].Name, cookies[2].Name}, "secure")
+	assert.Contains(t, []string{cookies[0].Name, cookies[1].Name, cookies[2].Name}, "same_site_none")
+
+	httpURL, err := url.Parse("http://example.com/path")
+	require.NoError(t, err)
+	assert.Empty(t, jar.Cookies(httpURL))
+
+	badPathURL, err := url.Parse("https://example.com/other")
+	require.NoError(t, err)
+	pathCookies := jar.Cookies(badPathURL)
+	require.Len(t, pathCookies, 2)
+	assert.NotContains(t, []string{pathCookies[0].Name, pathCookies[1].Name}, "secure")
+
+	crossDomainURL, err := url.Parse("https://api.example.com/path")
+	require.NoError(t, err)
+	jar.SetCookies(crossDomainURL, []*http.Cookie{{Name: "subdomain", Value: "1", Domain: "example.com", Path: "/"}})
+	assert.Len(t, jar.Cookies(crossDomainURL), 1)
+	assert.Equal(t, "subdomain", jar.Cookies(crossDomainURL)[0].Name)
+}

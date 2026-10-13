@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/danfragoso/thdwb/assets"
 	pages "github.com/danfragoso/thdwb/pages"
@@ -28,6 +29,9 @@ func NewOriginCookieJar() *OriginCookieJar {
 }
 
 func originKey(u *url.URL) string {
+	if u == nil {
+		return ""
+	}
 	port := u.Port()
 	if port == "" {
 		if u.Scheme == "https" {
@@ -39,21 +43,136 @@ func originKey(u *url.URL) string {
 	return u.Scheme + "://" + u.Hostname() + ":" + port
 }
 
+func normalizeDomain(domain string) string {
+	domain = strings.TrimSpace(domain)
+	domain = strings.TrimPrefix(domain, ".")
+	return strings.ToLower(domain)
+}
+
+func domainMatches(host, domain string) bool {
+	host = normalizeDomain(host)
+	domain = normalizeDomain(domain)
+	if domain == "" {
+		return host != ""
+	}
+	if host == domain {
+		return true
+	}
+	return strings.HasSuffix(host, "."+domain)
+}
+
+func pathMatches(requestURL *url.URL, cookiePath string) bool {
+	if requestURL == nil {
+		return false
+	}
+	requestPath := requestURL.EscapedPath()
+	if requestPath == "" {
+		requestPath = "/"
+	}
+	if cookiePath == "" {
+		cookiePath = "/"
+	}
+	if cookiePath == "/" {
+		return true
+	}
+	if !strings.HasPrefix(requestPath, cookiePath) {
+		return false
+	}
+	if cookiePath[len(cookiePath)-1] == '/' {
+		return true
+	}
+	if requestPath == cookiePath {
+		return true
+	}
+	return strings.HasPrefix(requestPath, cookiePath+"/")
+}
+
+func isValidCookieForURL(u *url.URL, cookie *http.Cookie) bool {
+	if u == nil || cookie == nil {
+		return false
+	}
+	if cookie.Name == "" {
+		return false
+	}
+	if cookie.Secure && u.Scheme != "https" {
+		return false
+	}
+	if cookie.SameSite == http.SameSiteNoneMode && !cookie.Secure {
+		return false
+	}
+	if !domainMatches(u.Hostname(), cookie.Domain) {
+		return false
+	}
+	if !pathMatches(u, cookie.Path) {
+		return false
+	}
+	if !cookie.Expires.IsZero() && cookie.Expires.Before(time.Now()) {
+		return false
+	}
+	if cookie.MaxAge < 0 {
+		return false
+	}
+	return true
+}
+
 func (jar *OriginCookieJar) SetCookies(u *url.URL, cookies []*http.Cookie) {
 	jar.mu.Lock()
 	defer jar.mu.Unlock()
+	if u == nil {
+		return
+	}
 	key := originKey(u)
-	jar.cookies[key] = append(jar.cookies[key], cookies...)
+	if key == "" {
+		return
+	}
+	filtered := make([]*http.Cookie, 0, len(jar.cookies[key])+len(cookies))
+	seen := make(map[string]struct{}, len(jar.cookies[key]))
+	for _, existing := range jar.cookies[key] {
+		if existing == nil || !isValidCookieForURL(u, existing) {
+			continue
+		}
+		name := existing.Name + "|" + existing.Domain + "|" + existing.Path
+		seen[name] = struct{}{}
+		filtered = append(filtered, existing)
+	}
+	for _, cookie := range cookies {
+		if cookie == nil || !isValidCookieForURL(u, cookie) {
+			continue
+		}
+		name := cookie.Name + "|" + cookie.Domain + "|" + cookie.Path
+		if _, duplicate := seen[name]; duplicate {
+			for i, existing := range filtered {
+				if existing != nil && existing.Name == cookie.Name && existing.Domain == cookie.Domain && existing.Path == cookie.Path {
+					filtered[i] = cookie
+					break
+				}
+			}
+			continue
+		}
+		filtered = append(filtered, cookie)
+		seen[name] = struct{}{}
+	}
+	jar.cookies[key] = filtered
 }
 
 func (jar *OriginCookieJar) Cookies(u *url.URL) []*http.Cookie {
 	jar.mu.RLock()
 	defer jar.mu.RUnlock()
+	if u == nil {
+		return nil
+	}
 	key := originKey(u)
-	// Return a copy to avoid race conditions
 	cookies := jar.cookies[key]
-	result := make([]*http.Cookie, len(cookies))
-	copy(result, cookies)
+	if len(cookies) == 0 {
+		return nil
+	}
+	result := make([]*http.Cookie, 0, len(cookies))
+	for _, cookie := range cookies {
+		if cookie == nil || !isValidCookieForURL(u, cookie) {
+			continue
+		}
+		result = append(result, cookie)
+	}
 	return result
 }
 
