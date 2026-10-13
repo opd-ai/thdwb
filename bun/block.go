@@ -8,11 +8,7 @@ import (
 func paintBlockElement(ctx *gg.Context, node *hotdog.NodeDOM) {
 	// Text nodes don't have backgrounds or borders, just render their content
 	if node.Type == hotdog.NodeTypeText {
-		ctx.SetRGBA(node.Style.Color.R, node.Style.Color.G, node.Style.Color.B, node.Style.Color.A)
-		ctx.SetFont(sansSerif[node.Style.FontWeight], node.Style.FontSize)
-		textContent := node.GetTextContent()
-		ctx.DrawStringWrapped(textContent, node.RenderBox.Left, node.RenderBox.Top+1, 0, 0, node.RenderBox.Width, 1.5, gg.AlignLeft)
-		ctx.Fill()
+		paintTextWithinBounds(ctx, node, node.GetTextContent(), 1, 1.5)
 		return
 	}
 
@@ -20,10 +16,7 @@ func paintBlockElement(ctx *gg.Context, node *hotdog.NodeDOM) {
 	ctx.SetRGBA(node.Style.BackgroundColor.R, node.Style.BackgroundColor.G, node.Style.BackgroundColor.B, node.Style.BackgroundColor.A)
 	ctx.Fill()
 
-	ctx.SetRGBA(node.Style.Color.R, node.Style.Color.G, node.Style.Color.B, node.Style.Color.A)
-	ctx.SetFont(sansSerif[node.Style.FontWeight], node.Style.FontSize)
-	ctx.DrawStringWrapped(node.Content, node.RenderBox.Left, node.RenderBox.Top+1, 0, 0, node.RenderBox.Width, 1.5, gg.AlignLeft)
-	ctx.Fill()
+	paintTextWithinBounds(ctx, node, node.Content, 1, 1.5)
 }
 
 func calculateBlockLayout(ctx *gg.Context, node *hotdog.NodeDOM, childIdx int) {

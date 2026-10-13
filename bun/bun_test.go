@@ -3,6 +3,7 @@ package bun
 import (
 	"io/ioutil"
 	"runtime/debug"
+	"strings"
 	"testing"
 
 	"github.com/danfragoso/thdwb/assets"
@@ -112,6 +113,43 @@ func TestRenderDocument_flexbox(t *testing.T) {
 	}
 	if flexItemCount != 3 {
 		t.Fatalf("expected 3 flex items, got %d", flexItemCount)
+	}
+}
+
+func assertTextWithinRenderBox(t *testing.T, paint func(*gg.Context, *hotdog.NodeDOM)) {
+	t.Helper()
+	ctx := gg.NewContext(100, 80)
+	ctx.SetRGB(1, 1, 1)
+	ctx.Clear()
+	node := &hotdog.NodeDOM{
+		Type:      hotdog.NodeTypeText,
+		Content:   strings.Repeat("wrapped text ", 12),
+		Style:     &hotdog.Stylesheet{Color: &hotdog.ColorRGBA{A: 1}, FontSize: 18, FontWeight: 400},
+		RenderBox: &hotdog.RenderBox{Left: 5, Top: 5, Width: 30, Height: 8},
+	}
+	paint(ctx, node)
+	image := ctx.Image()
+	inside, outside := 0, 0
+	for y := 0; y < 80; y++ {
+		for x := 0; x < 100; x++ {
+			r, g, b, _ := image.At(x, y).RGBA()
+			if r < 0xffff || g < 0xffff || b < 0xffff {
+				if x >= 5 && x < 35 && y >= 5 && y < 13 {
+					inside++
+				} else {
+					outside++
+				}
+			}
+		}
+	}
+	if inside == 0 || outside != 0 {
+		t.Fatalf("text painted %d pixels inside and %d pixels outside its render box", inside, outside)
+	}
+}
+
+func TestTextPaintStaysWithinRenderBox(t *testing.T) {
+	for name, paint := range map[string]func(*gg.Context, *hotdog.NodeDOM){"inline": paintInlineElement, "block": paintBlockElement} {
+		t.Run(name, func(t *testing.T) { assertTextWithinRenderBox(t, paint) })
 	}
 }
 

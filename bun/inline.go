@@ -11,14 +11,24 @@ import (
 	"github.com/danfragoso/thdwb/sauce"
 )
 
+func paintTextWithinBounds(ctx *gg.Context, node *hotdog.NodeDOM, text string, topOffset, lineSpacing float64) {
+	box := node.RenderBox
+	if box == nil || box.Width <= 0 || box.Height <= 0 {
+		return
+	}
+	ctx.DrawRectangle(box.Left, box.Top, box.Width, box.Height)
+	ctx.Clip()
+	ctx.SetRGBA(node.Style.Color.R, node.Style.Color.G, node.Style.Color.B, node.Style.Color.A)
+	ctx.SetFont(sansSerif[node.Style.FontWeight], node.Style.FontSize)
+	ctx.DrawStringWrapped(text, box.Left, box.Top+topOffset, 0, 0, box.Width, lineSpacing, gg.AlignLeft)
+	ctx.Fill()
+	ctx.ResetClip()
+}
+
 func paintInlineElement(ctx *gg.Context, node *hotdog.NodeDOM) {
 	// Text nodes don't have backgrounds or borders, just render their content
 	if node.Type == hotdog.NodeTypeText {
-		ctx.SetRGBA(node.Style.Color.R, node.Style.Color.G, node.Style.Color.B, node.Style.Color.A)
-		ctx.SetFont(sansSerif[node.Style.FontWeight], node.Style.FontSize)
-		textContent := node.GetTextContent()
-		ctx.DrawStringWrapped(textContent, node.RenderBox.Left, node.RenderBox.Top, 0, 0, node.RenderBox.Width, 1, gg.AlignLeft)
-		ctx.Fill()
+		paintTextWithinBounds(ctx, node, node.GetTextContent(), 0, 1)
 		return
 	}
 
@@ -38,10 +48,7 @@ func paintInlineElement(ctx *gg.Context, node *hotdog.NodeDOM) {
 		ctx.DrawImage(im, int(node.RenderBox.Left), int(node.RenderBox.Top))
 	}
 
-	ctx.SetRGBA(node.Style.Color.R, node.Style.Color.G, node.Style.Color.B, node.Style.Color.A)
-	ctx.SetFont(sansSerif[node.Style.FontWeight], node.Style.FontSize)
-	ctx.DrawStringWrapped(node.Content, node.RenderBox.Left, node.RenderBox.Top, 0, 0, node.RenderBox.Width, 1, gg.AlignLeft)
-	ctx.Fill()
+	paintTextWithinBounds(ctx, node, node.Content, 0, 1)
 }
 
 func fetchNodeImage(node *hotdog.NodeDOM) (image.Image, error) {
