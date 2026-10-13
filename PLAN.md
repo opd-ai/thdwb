@@ -83,7 +83,7 @@ Enable interactive UIs with event handling, mutation tracking, and continuous la
 - [x] Dirty flag system marks nodes correctly on mutation
 - [x] Layout recalculation happens after DOM mutations
 - [x] requestAnimationFrame callbacks execute in correct order and isolation
-- [ ] Mutation observer reacts to DOM changes
+- [x] Mutation observer reacts to DOM changes
 - [ ] Interactive components respond to events
 - [ ] No layout thrashing
 - [ ] Viewport resize triggers relayout without artifacts

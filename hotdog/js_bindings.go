@@ -46,6 +46,53 @@ type JSConsoleWrapper struct {
 	runtime   *goja.Runtime
 }
 
+// MutationObserver wraps the DOM mutation observation API for JavaScript.
+type MutationObserver struct {
+	runtime   *goja.Runtime
+	windowCtx *WindowContext
+	callback  goja.Callable
+	observed  map[*NodeDOM]struct{}
+}
+
+func (mo *MutationObserver) observe(target *NodeDOM, options map[string]interface{}) {
+	if mo == nil || target == nil {
+		return
+	}
+	if mo.windowCtx != nil {
+		mo.windowCtx.RegisterMutationObserver(mo)
+	}
+	if mo.observed == nil {
+		mo.observed = make(map[*NodeDOM]struct{})
+	}
+	mo.observed[target] = struct{}{}
+}
+
+func (mo *MutationObserver) disconnect() {
+	if mo == nil {
+		return
+	}
+	mo.observed = make(map[*NodeDOM]struct{})
+}
+
+func (mo *MutationObserver) Trigger(target *NodeDOM, mutationType string) {
+	if mo == nil || mo.callback == nil || mo.runtime == nil {
+		return
+	}
+	if _, ok := mo.observed[target]; !ok {
+		return
+	}
+
+	records := mo.runtime.NewArray()
+	record := mo.runtime.NewObject()
+	record.Set("type", mutationType)
+	if target != nil {
+		docWrapper := &JSDocumentWrapper{doc: target.Document, runtime: mo.runtime, windowCtx: mo.windowCtx}
+		record.Set("target", docWrapper.wrapNode(target))
+	}
+	records.Set("0", record)
+	_, _ = mo.callback(goja.Undefined(), records)
+}
+
 // InitJSRuntime initializes the JavaScript runtime with DOM bindings
 func (wc *WindowContext) InitJSRuntime() error {
 	runtime := wc.GetJSRuntime()
@@ -99,6 +146,42 @@ func (wc *WindowContext) InitJSRuntime() error {
 	windowObj.Set("removeEventListener", windowWrapper.removeEventListener)
 	windowObj.Set("requestAnimationFrame", windowWrapper.requestAnimationFrame)
 	windowObj.Set("cancelAnimationFrame", windowWrapper.cancelAnimationFrame)
+	windowObj.Set("MutationObserver", func(call goja.ConstructorCall) *goja.Object {
+		if len(call.Arguments) < 1 {
+			panic(runtime.NewGoError(errors.New("MutationObserver requires a callback argument")))
+		}
+		cb, ok := goja.AssertFunction(call.Argument(0))
+		if !ok {
+			panic(runtime.NewGoError(errors.New("MutationObserver callback must be a function")))
+		}
+		observer := &MutationObserver{runtime: runtime, windowCtx: wc, callback: cb, observed: make(map[*NodeDOM]struct{})}
+		wc.RegisterMutationObserver(observer)
+		obj := runtime.NewObject()
+		obj.Set("observe", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) < 1 {
+				return goja.Undefined()
+			}
+			nodeObj := call.Arguments[0].ToObject(runtime)
+			if nodeObj == nil {
+				return goja.Undefined()
+			}
+			wrapper := (&JSDOMWrapper{runtime: runtime, windowCtx: wc}).getNodeFromJSObject(nodeObj)
+			if wrapper == nil {
+				return goja.Undefined()
+			}
+			observer.observe(wrapper.node, nil)
+			return goja.Undefined()
+		})
+		obj.Set("disconnect", func(call goja.FunctionCall) goja.Value {
+			observer.disconnect()
+			wc.UnregisterMutationObserver(observer)
+			return goja.Undefined()
+		})
+		obj.Set("takeRecords", func(call goja.FunctionCall) goja.Value {
+			return runtime.NewArray()
+		})
+		return obj
+	})
 	windowObj.Set("postMessage", windowWrapper.postMessage)
 	windowObj.Set("fetch", windowWrapper.fetch)
 	windowObj.Set("XMLHttpRequest", windowWrapper.XMLHttpRequest)
@@ -116,6 +199,7 @@ func (wc *WindowContext) InitJSRuntime() error {
 	runtime.Set("self", windowObj) // window.self === window
 	runtime.Set("requestAnimationFrame", windowWrapper.requestAnimationFrame)
 	runtime.Set("cancelAnimationFrame", windowWrapper.cancelAnimationFrame)
+	runtime.Set("MutationObserver", windowObj.Get("MutationObserver"))
 	runtime.Set("localStorage", localStorageObj)
 	runtime.Set("sessionStorage", sessionStorageObj)
 
@@ -487,6 +571,7 @@ func (w *JSDOMWrapper) setAttribute(call goja.FunctionCall) goja.Value {
 	if !found {
 		w.node.Attributes = append(w.node.Attributes, &Attribute{Name: name, Value: value})
 	}
+	w.windowCtx.NotifyMutationObservers(w.node, "attributes")
 	w.node.MarkDirty()
 	w.node.RequestReflow()
 	w.node.RequestRepaint()
@@ -509,6 +594,7 @@ func (w *JSDOMWrapper) removeAttribute(call goja.FunctionCall) goja.Value {
 		}
 	}
 	w.node.Attributes = newAttrs
+	w.windowCtx.NotifyMutationObservers(w.node, "attributes")
 	w.node.MarkDirty()
 	w.node.RequestReflow()
 	w.node.RequestRepaint()
@@ -540,6 +626,7 @@ func (w *JSDOMWrapper) appendChild(call goja.FunctionCall) goja.Value {
 		childNode.Parent.removeChildNode(childNode)
 	}
 	w.node.appendChildNode(childNode)
+	w.windowCtx.NotifyMutationObservers(w.node, "childList")
 	w.node.MarkDirty()
 	w.node.RequestReflow()
 	w.node.RequestRepaint()
@@ -568,6 +655,7 @@ func (w *JSDOMWrapper) removeChild(call goja.FunctionCall) goja.Value {
 		panic(w.runtime.NewGoError(err))
 	}
 	w.node.removeChildNode(childNode)
+	w.windowCtx.NotifyMutationObservers(w.node, "childList")
 	w.node.MarkDirty()
 	w.node.RequestReflow()
 	w.node.RequestRepaint()
@@ -673,6 +761,7 @@ func (w *JSDOMWrapper) setInnerHTML(call goja.FunctionCall) goja.Value {
 	if err := w.node.SetInnerHTML(htmlString); err != nil {
 		panic(w.runtime.NewGoError(err))
 	}
+	w.windowCtx.NotifyMutationObservers(w.node, "childList")
 	w.node.MarkDirty()
 	// Return the new innerHTML value
 	return w.runtime.ToValue(w.node.InnerHTML())
@@ -688,6 +777,7 @@ func (w *JSDOMWrapper) setTextContent(call goja.FunctionCall) goja.Value {
 	}
 	text := call.Arguments[0].String()
 	w.node.SetTextContent(text)
+	w.windowCtx.NotifyMutationObservers(w.node, "characterData")
 	w.node.MarkDirty()
 	// Return the new textContent value
 	return w.runtime.ToValue(w.node.GetTextContent())
@@ -737,6 +827,7 @@ func (w *JSDOMWrapper) insertBefore(call goja.FunctionCall) goja.Value {
 	if err := w.node.InsertBefore(newNode, referenceNode); err != nil {
 		panic(w.runtime.NewGoError(err))
 	}
+	w.windowCtx.NotifyMutationObservers(w.node, "childList")
 	w.node.MarkDirty()
 	return w.wrapNode(newNode)
 }
@@ -783,6 +874,7 @@ func (w *JSDOMWrapper) replaceChild(call goja.FunctionCall) goja.Value {
 	if err != nil {
 		panic(w.runtime.NewGoError(err))
 	}
+	w.windowCtx.NotifyMutationObservers(w.node, "childList")
 	w.node.MarkDirty()
 	return w.wrapNode(replacedNode)
 }

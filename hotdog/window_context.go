@@ -101,6 +101,10 @@ type WindowContext struct {
 	// Event registry for this window
 	eventRegistry map[string][]eventHandler
 
+	// Mutation observers for this window.
+	mutationObserverMu sync.Mutex
+	mutationObservers  map[*MutationObserver]struct{}
+
 	// Animation frame callbacks for this window, stored per-window for isolation.
 	animationFrameMu      sync.Mutex
 	animationFrameCounter uint64
@@ -134,10 +138,11 @@ func NewWindowContext(settings *Settings, buildInfo *assets.BuildInfo, profiler 
 		Settings:        settings,
 		BuildInfo:       buildInfo,
 		layoutCache:     make(map[string]interface{}),
-		inputState:      make(map[string]interface{}),
-		eventRegistry:   make(map[string][]eventHandler),
-		animationFrames: make(map[uint64]func()),
-		sessionStorage:  NewSessionStorageManager(),
+		inputState:       make(map[string]interface{}),
+		eventRegistry:    make(map[string][]eventHandler),
+		mutationObservers: make(map[*MutationObserver]struct{}),
+		animationFrames:  make(map[uint64]func()),
+		sessionStorage:   NewSessionStorageManager(),
 	}
 
 	// Initialize per-window Goja VM for JavaScript execution
@@ -217,6 +222,42 @@ func (wc *WindowContext) EmitEvent(eventName string, data interface{}) {
 		for _, handler := range handlers {
 			handler.handler(data)
 		}
+	}
+}
+
+func (wc *WindowContext) RegisterMutationObserver(observer *MutationObserver) {
+	if observer == nil {
+		return
+	}
+	wc.mutationObserverMu.Lock()
+	defer wc.mutationObserverMu.Unlock()
+	wc.mutationObservers[observer] = struct{}{}
+}
+
+func (wc *WindowContext) UnregisterMutationObserver(observer *MutationObserver) {
+	if observer == nil {
+		return
+	}
+	wc.mutationObserverMu.Lock()
+	defer wc.mutationObserverMu.Unlock()
+	delete(wc.mutationObservers, observer)
+}
+
+func (wc *WindowContext) NotifyMutationObservers(target *NodeDOM, mutationType string) {
+	if target == nil {
+		return
+	}
+	wc.mutationObserverMu.Lock()
+	observers := make([]*MutationObserver, 0, len(wc.mutationObservers))
+	for observer := range wc.mutationObservers {
+		if _, ok := observer.observed[target]; ok {
+			observers = append(observers, observer)
+		}
+	}
+	wc.mutationObserverMu.Unlock()
+
+	for _, observer := range observers {
+		observer.Trigger(target, mutationType)
 	}
 }
 
@@ -309,6 +350,12 @@ func (wc *WindowContext) Destroy() {
 	wc.ClearLayoutCache()
 	wc.inputState = nil
 	wc.eventRegistry = nil
+	wc.mutationObserverMu.Lock()
+	for observer := range wc.mutationObservers {
+		observer.disconnect()
+	}
+	wc.mutationObservers = nil
+	wc.mutationObserverMu.Unlock()
 	wc.animationFrameMu.Lock()
 	for id := range wc.animationFrames {
 		delete(wc.animationFrames, id)

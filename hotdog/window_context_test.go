@@ -187,6 +187,41 @@ func TestWindowRequestAnimationFrameIsolation(t *testing.T) {
 	wc2.Destroy()
 }
 
+func TestMutationObserverFiresOnDOMChanges(t *testing.T) {
+	settings := &Settings{}
+	buildInfo := &assets.BuildInfo{}
+	prof := profiler.CreateProfiler()
+
+	wc := NewWindowContext(settings, buildInfo, prof)
+	htmlContent := `<html><head></head><body><p>hello</p></body></html>`
+	parsedDoc, err := parseHTMLForTest(htmlContent, wc)
+	if err != nil {
+		t.Fatalf("Failed to parse HTML: %v", err)
+	}
+	wc.ActiveDocument = parsedDoc
+	if err := wc.InitJSRuntime(); err != nil {
+		t.Fatalf("Failed to init JS runtime: %v", err)
+	}
+
+	if _, err := wc.GetJSRuntime().RunString(`
+		var mutationCount = 0;
+		var observer = new MutationObserver(function(mutations) {
+			mutationCount = mutations.length;
+		});
+		observer.observe(document.body, { childList: true });
+		var div = document.createElement("div");
+		document.body.appendChild(div);
+	`); err != nil {
+		t.Fatalf("Failed to create mutation observer and mutate DOM: %v", err)
+	}
+
+	if got := wc.GetJSRuntime().Get("mutationCount").ToInteger(); got != 1 {
+		t.Fatalf("expected mutationCount=1 after appendChild, got %d", got)
+	}
+
+	wc.Destroy()
+}
+
 func TestWindowEventListenerRemoval(t *testing.T) {
 	settings := &Settings{}
 	buildInfo := &assets.BuildInfo{}
