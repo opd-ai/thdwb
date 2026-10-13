@@ -1,6 +1,7 @@
 package hotdog
 
 import (
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -1052,7 +1053,7 @@ func TestStoragePartitioningByOrigin(t *testing.T) {
 	prof := profiler.CreateProfiler()
 
 	// Create two window contexts with the same origin
-	origin1, _ := url.Parse("https://example.com:443")
+	origin1, _ := url.Parse(fmt.Sprintf("https://storage-test-%d.example.com:443", time.Now().UnixNano()))
 	origin2, _ := url.Parse("https://other.com:443")
 
 	wc1 := NewWindowContext(settings, buildInfo, prof)

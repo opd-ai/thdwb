@@ -146,7 +146,7 @@ Implement secure network handling, cookie isolation, and storage partitioning pe
 - [x] HTTPS required; HSTS headers cached and enforced
 - [x] Certificate validation blocks self-signed unless exempted and expired certs always
 - [x] Easy self-signed HTTPS workflow for adding and removing TOFU self-signed certs
-- [ ] localStorage persists per-origin across windows
+- [x] localStorage persists per-origin across windows
 - [ ] sessionStorage is per-window and cleared on tab close
 - [ ] CSP violations block inline scripts and log to console
 - [ ] CORS preflight requests work for cross-origin XHR/Fetch

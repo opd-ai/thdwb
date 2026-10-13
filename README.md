@@ -46,6 +46,10 @@ func trustSelfSignedCertificate(ctx context.Context) error {
 
 `TOFUStore.List` reports trusted hostnames and fingerprints. Remove a pin with `store.RemoveCertificate("example.test")`; removing is required before trusting a replacement certificate. Pins are stored under the user's OS configuration directory in `thdwb/tofu-certificates.json` with owner-only file permissions.
 
+### Web storage
+
+`localStorage` is shared by windows with the same origin and persisted under the user's OS configuration directory in `thdwb/local-storage.json`. The data file is restricted to the current user. `sessionStorage` remains per-window and is cleared when its window closes.
+
 ### Getting started
 - Running
 

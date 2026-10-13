@@ -145,6 +145,9 @@ func (wc *WindowContext) InitJSRuntime() error {
 	if runtime == nil {
 		return fmt.Errorf("no JavaScript runtime available")
 	}
+	if _, err := getLocalStorageManager(); err != nil {
+		return fmt.Errorf("initialize localStorage: %w", err)
+	}
 	runtime.Set("Event", func(call goja.ConstructorCall) *goja.Object {
 		return newJSEvent(runtime, call)
 	})
@@ -1222,69 +1225,95 @@ func (w *JSWindowWrapper) getSessionStorage(call goja.FunctionCall) goja.Value {
 
 // getStorage returns a Storage object for the given type.
 func (w *JSWindowWrapper) getStorage(storageType string) goja.Value {
-	storageObj := w.runtime.NewObject()
-	var storageMap StorageMap
-	origin := w.windowCtx.GetOrigin()
+	return w.buildStorageObject(w.storageOperations(storageType))
+}
 
-	if storageType == "localStorage" {
-		// localStorage is shared across all windows of the same origin
-		storageMap = GetLocalStorage(origin)
-	} else {
-		// sessionStorage is per-window but partitioned by origin
-		storageMap = w.windowCtx.GetSessionStorageManager().GetSessionStorage(origin)
+func (w *JSWindowWrapper) storageOperations(storageType string) storageOperations {
+	origin := w.windowCtx.GetOrigin()
+	if storageType != "localStorage" {
+		return sessionStorageOperations(w.windowCtx.GetSessionStorageManager(), origin)
 	}
-	storageObj.Set("length", len(storageMap))
-	storageObj.Set("key", func(call goja.FunctionCall) goja.Value {
+	manager, err := getLocalStorageManager()
+	if err != nil {
+		panic(w.runtime.NewGoError(err))
+	}
+	return localStorageOperations(manager, origin)
+}
+
+func (w *JSWindowWrapper) buildStorageObject(storage storageOperations) goja.Value {
+	storageObj := w.runtime.NewObject()
+	storageObj.DefineAccessorProperty("length", w.runtime.ToValue(func(goja.FunctionCall) goja.Value {
+		return w.runtime.ToValue(storage.length())
+	}), goja.Undefined(), 0, 0)
+	storageObj.Set("key", w.storageKey(storage))
+	storageObj.Set("getItem", w.storageGetItem(storage))
+	storageObj.Set("setItem", w.storageSetItem(storage))
+	storageObj.Set("removeItem", w.storageRemoveItem(storage))
+	storageObj.Set("clear", w.storageClear(storage))
+	return storageObj
+}
+
+func (w *JSWindowWrapper) storageKey(storage storageOperations) func(goja.FunctionCall) goja.Value {
+	return func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) < 1 {
 			return goja.Null()
 		}
 		index := int(call.Arguments[0].ToInteger())
-		keys := make([]string, 0, len(storageMap))
-		for k := range storageMap {
-			keys = append(keys, k)
-		}
-		if index < 0 || index >= len(keys) {
+		key, ok := storage.keyAt(index)
+		if !ok {
 			return goja.Null()
 		}
-		return w.runtime.ToValue(keys[index])
-	})
-	storageObj.Set("getItem", func(call goja.FunctionCall) goja.Value {
+		return w.runtime.ToValue(key)
+	}
+}
+
+func (w *JSWindowWrapper) storageGetItem(storage storageOperations) func(goja.FunctionCall) goja.Value {
+	return func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) < 1 {
 			return goja.Null()
 		}
 		key := call.Arguments[0].String()
-		if val, ok := storageMap[key]; ok {
+		if val, ok := storage.getItem(key); ok {
 			return w.runtime.ToValue(val)
 		}
 		return goja.Null()
-	})
-	storageObj.Set("setItem", func(call goja.FunctionCall) goja.Value {
+	}
+}
+
+func (w *JSWindowWrapper) storageSetItem(storage storageOperations) func(goja.FunctionCall) goja.Value {
+	return func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) < 2 {
 			panic(w.runtime.NewGoError(errors.New("setItem requires key and value arguments")))
 		}
 		key := call.Arguments[0].String()
 		value := call.Arguments[1].String()
-		storageMap[key] = value
-		storageObj.Set("length", len(storageMap))
+		if err := storage.setItem(key, value); err != nil {
+			panic(w.runtime.NewGoError(err))
+		}
 		return goja.Undefined()
-	})
-	storageObj.Set("removeItem", func(call goja.FunctionCall) goja.Value {
+	}
+}
+
+func (w *JSWindowWrapper) storageRemoveItem(storage storageOperations) func(goja.FunctionCall) goja.Value {
+	return func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) < 1 {
 			return goja.Undefined()
 		}
 		key := call.Arguments[0].String()
-		delete(storageMap, key)
-		storageObj.Set("length", len(storageMap))
-		return goja.Undefined()
-	})
-	storageObj.Set("clear", func(call goja.FunctionCall) goja.Value {
-		for k := range storageMap {
-			delete(storageMap, k)
+		if err := storage.remove(key); err != nil {
+			panic(w.runtime.NewGoError(err))
 		}
-		storageObj.Set("length", 0)
 		return goja.Undefined()
-	})
-	return storageObj
+	}
+}
+
+func (w *JSWindowWrapper) storageClear(storage storageOperations) func(goja.FunctionCall) goja.Value {
+	return func(goja.FunctionCall) goja.Value {
+		if err := storage.clear(); err != nil {
+			panic(w.runtime.NewGoError(err))
+		}
+		return goja.Undefined()
+	}
 }
 
 // === JSWindowWrapper methods for event handling and messaging ===
