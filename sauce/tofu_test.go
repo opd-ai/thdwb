@@ -90,14 +90,18 @@ func TestTOFUStoreRejectsInvalidCertificates(t *testing.T) {
 }
 
 func TestTOFUStoreRemove(t *testing.T) {
-	store, err := NewTOFUStore("")
+	path := filepath.Join(t.TempDir(), "tofu.json")
+	store, err := NewTOFUStore(path)
 	require.NoError(t, err)
 	cert := tofuTestCertificate(t, "example.com", time.Now().Add(-time.Hour), time.Now().Add(time.Hour))
 	require.ErrorIs(t, store.RemoveCertificate("example.com"), ErrTOFUHostNotFound)
 	require.NoError(t, store.TrustCertificate("example.com", cert))
 	require.NoError(t, store.RemoveCertificate("EXAMPLE.COM."))
 	require.Empty(t, store.List())
-	require.ErrorIs(t, store.RemoveCertificate("example.com"), ErrTOFUHostNotFound)
+	reloaded, err := NewTOFUStore(path)
+	require.NoError(t, err)
+	require.Empty(t, reloaded.List())
+	require.ErrorIs(t, reloaded.RemoveCertificate("example.com"), ErrTOFUHostNotFound)
 }
 
 func TestTOFUStoreConcurrentAccess(t *testing.T) {

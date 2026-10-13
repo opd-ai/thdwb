@@ -244,20 +244,27 @@ func normalizeTOFUHost(host string) (string, error) {
 		return "", fmt.Errorf("invalid TOFU hostname %q: %w", host, err)
 	}
 	asciiHost = strings.ToLower(asciiHost)
+	if err := validateTOFUDNSHost(host, asciiHost); err != nil {
+		return "", err
+	}
+	return asciiHost, nil
+}
+
+func validateTOFUDNSHost(originalHost, asciiHost string) error {
 	if len(asciiHost) > 253 {
-		return "", fmt.Errorf("invalid TOFU DNS hostname %q", host)
+		return fmt.Errorf("invalid TOFU DNS hostname %q", originalHost)
 	}
 	for _, label := range strings.Split(asciiHost, ".") {
 		if len(label) == 0 || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
-			return "", fmt.Errorf("invalid TOFU DNS hostname %q", host)
+			return fmt.Errorf("invalid TOFU DNS hostname %q", originalHost)
 		}
 		for _, r := range label {
 			if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '-' {
-				return "", fmt.Errorf("invalid TOFU DNS hostname %q", host)
+				return fmt.Errorf("invalid TOFU DNS hostname %q", originalHost)
 			}
 		}
 	}
-	return asciiHost, nil
+	return nil
 }
 
 func certificateFingerprint(host string, cert *x509.Certificate) (string, error) {

@@ -18,6 +18,34 @@ The main goal of this project is to learn how web browsers work under the hood b
 - bun (css layout calculator)
 - [gg](https://github.com/fogleman/gg) (drawing routines and text rendering)
 
+### HTTPS and self-signed certificates
+
+HTTPS requests validate certificates against the system trust store. Expired certificates are always rejected. To explicitly trust a self-signed certificate, inspect its fingerprint first, verify it through a separate trusted channel, then add it to the persistent TOFU store:
+
+```go
+import (
+    "context"
+    "fmt"
+
+    "github.com/danfragoso/thdwb/sauce"
+)
+
+func trustSelfSignedCertificate(ctx context.Context) error {
+    store, err := sauce.DefaultTOFUStore()
+    if err != nil {
+        return err
+    }
+    certificate, fingerprint, err := sauce.InspectTOFUCertificate(ctx, "example.test:443")
+    if err != nil {
+        return err
+    }
+    fmt.Println(fingerprint) // Verify this fingerprint before trusting the certificate.
+    return store.TrustCertificate("example.test", certificate)
+}
+```
+
+`TOFUStore.List` reports trusted hostnames and fingerprints. Remove a pin with `store.RemoveCertificate("example.test")`; removing is required before trusting a replacement certificate. Pins are stored under the user's OS configuration directory in `thdwb/tofu-certificates.json` with owner-only file permissions.
+
 ### Getting started
 - Running
 
