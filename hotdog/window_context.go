@@ -117,7 +117,7 @@ type WindowContext struct {
 	animationFrames       map[uint64]func()
 	animationFrameTimer   *time.Timer
 	active                bool
-	destroyed            bool
+	destroyed             bool
 
 	// JS runtime (Goja VM) - per window isolation
 	jsRuntimeMu sync.Mutex
