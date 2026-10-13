@@ -258,6 +258,8 @@ func (wc *WindowContext) InitJSRuntime() error {
 	runtime.Set("MutationObserver", windowObj.Get("MutationObserver"))
 	runtime.Set("localStorage", localStorageObj)
 	runtime.Set("sessionStorage", sessionStorageObj)
+	runtime.Set("fetch", windowWrapper.fetch)
+	runtime.Set("XMLHttpRequest", windowWrapper.XMLHttpRequest)
 
 	// Block dangerous APIs unless CSP allows
 	runtime.Set("eval", func(call goja.FunctionCall) goja.Value {
@@ -1566,25 +1568,32 @@ func (w *JSWindowWrapper) fetch(call goja.FunctionCall) goja.Value {
 
 // XMLHttpRequest implements the XMLHttpRequest constructor.
 func (w *JSWindowWrapper) XMLHttpRequest(call goja.FunctionCall) goja.Value {
-	// Return a constructor function that creates XHR objects
-	xhrConstructor := func(call goja.FunctionCall) goja.Value {
-		xhrObj := w.runtime.NewObject()
+	// This is the constructor - when called with `new`, `call.This` will be the new object
+	// When called without `new`, we should still return an XHR object
+	var xhrObj *goja.Object
+	thisVal := call.This
+	if thisVal != nil && !goja.IsUndefined(thisVal) && !goja.IsNull(thisVal) {
+		xhrObj = thisVal.ToObject(w.runtime)
+	}
+	if xhrObj == nil {
+		xhrObj = w.runtime.NewObject()
+	}
 
-		// XHR state
-		var (
-			requestMethod      string
-			requestURL         string
-			requestHeaders     = make(map[string]string)
-			requestBody        io.Reader
-			readyState                     = 0 // UNSENT
-			status                         = 0
-			statusText                     = ""
-			responseText                   = ""
-			response           interface{} = nil
-			onreadystatechange goja.Callable
-			eventListeners     = make(map[string][]goja.Callable)
-			withCredentials    = false // Default: false, cookies not sent for cross-origin
-		)
+	// XHR state
+	var (
+		requestMethod      string
+		requestURL         string
+		requestHeaders     = make(map[string]string)
+		requestBody        io.Reader
+		readyState                     = 0 // UNSENT
+		status                         = 0
+		statusText                     = ""
+		responseText                   = ""
+		response           interface{} = nil
+		onreadystatechange goja.Callable
+		eventListeners     = make(map[string][]goja.Callable)
+		withCredentials    = false // Default: false, cookies not sent for cross-origin
+	)
 
 		// Constants for readyState
 		const (
@@ -1852,8 +1861,6 @@ func (w *JSWindowWrapper) XMLHttpRequest(call goja.FunctionCall) goja.Value {
 			}), 0, 0)
 
 		return xhrObj
-	}
-	return w.runtime.ToValue(xhrConstructor)
 }
 
 // isSimpleRequest checks if a request is a "simple request" that doesn't require CORS preflight.
