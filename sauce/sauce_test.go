@@ -2,9 +2,11 @@ package sauce
 
 import (
 	"encoding/base64"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -175,6 +177,93 @@ func TestOriginCookieJarValidatesCookieDomainAndDefaultPath(t *testing.T) {
 	outOfScope, err := url.Parse("https://shop.example.com/catalogue")
 	require.NoError(t, err)
 	assert.Empty(t, jar.Cookies(outOfScope))
+}
+
+func TestHSTSStoreRequiresSecureResponseAndAppliesSubdomains(t *testing.T) {
+	store := NewHSTSStore()
+	store.ProcessHeader("example.com", "max-age=3600; includeSubDomains", false)
+	assert.False(t, store.ShouldUpgrade("example.com"))
+
+	store.ProcessHeader("example.com", "max-age=3600; includeSubDomains", true)
+	assert.True(t, store.ShouldUpgrade("example.com"))
+	assert.True(t, store.ShouldUpgrade("shop.example.com"))
+	assert.False(t, store.ShouldUpgrade("notexample.com"))
+
+	store.ProcessHeader("example.com", "max-age=0", true)
+	assert.False(t, store.ShouldUpgrade("example.com"))
+	assert.False(t, store.ShouldUpgrade("shop.example.com"))
+}
+
+func TestHSTSStoreRejectsInvalidPolicies(t *testing.T) {
+	store := NewHSTSStore()
+	for _, header := range []string{"includeSubDomains", "max-age=-1", "max-age=invalid"} {
+		store.ProcessHeader("example.com", header, true)
+	}
+	store.ProcessHeader("com", "max-age=3600", true)
+	store.ProcessHeader("127.0.0.1", "max-age=3600", true)
+	assert.False(t, store.ShouldUpgrade("example.com"))
+	assert.False(t, store.ShouldUpgrade("127.0.0.1"))
+}
+
+func TestUpgradeHTTPURLRequiresHTTPSExceptLoopback(t *testing.T) {
+	testCases := []struct {
+		input string
+		want  string
+	}{
+		{"http://example.com/path", "https://example.com/path"},
+		{"http://example.com:80/path", "https://example.com:443/path"},
+		{"http://example.com:8080/path", "https://example.com:8080/path"},
+		{"http://localhost/path", "http://localhost/path"},
+		{"http://127.0.0.1/path", "http://127.0.0.1/path"},
+		{"https://example.com/path", "https://example.com/path"},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.input, func(t *testing.T) {
+			requestURL, err := url.Parse(tc.input)
+			require.NoError(t, err)
+			upgradeHTTPURL(requestURL, NewHSTSStore())
+			assert.Equal(t, tc.want, requestURL.String())
+		})
+	}
+}
+
+func TestHSTSUpgradesLoopbackWhenExplicitlySet(t *testing.T) {
+	store := NewHSTSStore()
+	store.ProcessHeader("localhost", "max-age=3600", true)
+	requestURL, err := url.Parse("http://localhost/resource")
+	require.NoError(t, err)
+	upgradeHTTPURL(requestURL, store)
+	assert.Equal(t, "https://localhost/resource", requestURL.String())
+}
+
+func TestHTTPTransportUpgradesURLAndCachesHSTS(t *testing.T) {
+	store := NewHSTSStore()
+	var receivedURL string
+	transport := &originCookieTransport{
+		hsts: store,
+		base: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+			receivedURL = request.URL.String()
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Strict-Transport-Security": []string{"max-age=3600"}},
+				Body:       io.NopCloser(strings.NewReader("ok")),
+				Request:    request,
+			}, nil
+		}),
+	}
+	request, err := http.NewRequest(http.MethodGet, "http://example.com:80/resource", nil)
+	require.NoError(t, err)
+	response, err := (&http.Client{Transport: transport}).Do(request)
+	require.NoError(t, err)
+	require.NoError(t, response.Body.Close())
+	assert.Equal(t, "https://example.com:443/resource", receivedURL)
+	assert.True(t, store.ShouldUpgrade("example.com"))
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (roundTrip roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return roundTrip(request)
 }
 
 func assertCookieNames(t *testing.T, cookies []*http.Cookie, want ...string) {

@@ -6,8 +6,10 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -24,9 +26,122 @@ type OriginCookieJar struct {
 	cookies map[string][]*http.Cookie // key: origin (scheme://host:port)
 }
 
+type hstsEntry struct {
+	expires           time.Time
+	includeSubdomains bool
+}
+
+// HSTSStore caches Strict-Transport-Security policies by hostname.
+type HSTSStore struct {
+	mu      sync.Mutex
+	entries map[string]hstsEntry
+}
+
+// NewHSTSStore creates an empty HSTS policy store.
+func NewHSTSStore() *HSTSStore {
+	return &HSTSStore{entries: make(map[string]hstsEntry)}
+}
+
+var hstsStore = NewHSTSStore()
+
 func NewOriginCookieJar() *OriginCookieJar {
 	return &OriginCookieJar{
 		cookies: make(map[string][]*http.Cookie),
+	}
+}
+
+// ProcessHeader records a valid HSTS header received over a secure connection.
+func (store *HSTSStore) ProcessHeader(host, header string, secure bool) {
+	if store == nil || !secure {
+		return
+	}
+	host = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(host)), ".")
+	if host == "" {
+		return
+	}
+	if net.ParseIP(host) != nil {
+		return
+	}
+	if !strings.EqualFold(host, "localhost") {
+		if _, err := publicsuffix.EffectiveTLDPlusOne(host); err != nil {
+			return
+		}
+	}
+	var maxAge *int64
+	includeSubdomains := false
+	for _, directive := range strings.Split(header, ";") {
+		name, value, hasValue := strings.Cut(strings.TrimSpace(directive), "=")
+		switch strings.ToLower(strings.TrimSpace(name)) {
+		case "max-age":
+			if !hasValue {
+				return
+			}
+			seconds, err := strconv.ParseInt(strings.Trim(strings.TrimSpace(value), `"`), 10, 64)
+			if err != nil || seconds < 0 {
+				return
+			}
+			maxAge = &seconds
+		case "includesubdomains":
+			if !hasValue {
+				includeSubdomains = true
+			}
+		}
+	}
+	if maxAge == nil {
+		return
+	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if *maxAge == 0 {
+		delete(store.entries, host)
+		return
+	}
+	lifetime := time.Duration(*maxAge) * time.Second
+	if *maxAge > int64((1<<63-1)/int64(time.Second)) {
+		lifetime = time.Duration(1<<63 - 1)
+	}
+	store.entries[host] = hstsEntry{
+		expires:           time.Now().Add(lifetime),
+		includeSubdomains: includeSubdomains,
+	}
+}
+
+// ShouldUpgrade reports whether HSTS applies to host.
+func (store *HSTSStore) ShouldUpgrade(host string) bool {
+	if store == nil {
+		return false
+	}
+	host = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(host)), ".")
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	now := time.Now()
+	for domain, entry := range store.entries {
+		if !entry.expires.After(now) {
+			delete(store.entries, domain)
+		}
+	}
+	for domain, entry := range store.entries {
+		if host == domain || entry.includeSubdomains && strings.HasSuffix(host, "."+domain) {
+			return true
+		}
+	}
+	return false
+}
+
+func upgradeHTTPURL(requestURL *url.URL, store *HSTSStore) {
+	if requestURL == nil || !strings.EqualFold(requestURL.Scheme, "http") {
+		return
+	}
+	host := requestURL.Hostname()
+	ip := net.ParseIP(host)
+	localHost := strings.EqualFold(host, "localhost") || ip != nil && ip.IsLoopback()
+	if !localHost || store != nil && store.ShouldUpgrade(host) {
+		requestURL.Scheme = "https"
+		if requestURL.Port() == "80" {
+			requestURL.Host = net.JoinHostPort(host, "443")
+		} else if port := requestURL.Port(); port != "" {
+			requestURL.Host = net.JoinHostPort(host, port)
+		}
 	}
 }
 
@@ -277,19 +392,34 @@ type originCookieTransport struct {
 	jar       *OriginCookieJar
 	initiator *url.URL
 	topLevel  bool
+	hsts      *HSTSStore
 	base      http.RoundTripper
 }
 
 func (transport *originCookieTransport) RoundTrip(request *http.Request) (*http.Response, error) {
-	request.Header.Del("Cookie")
-	if request.Method != http.MethodOptions && transport.jar != nil {
-		for _, cookie := range transport.jar.CookiesForRequest(request.URL, transport.initiator, transport.topLevel, request.Method) {
-			request.AddCookie(cookie)
+	request = request.Clone(request.Context())
+	request.URL = cloneURL(request.URL)
+	store := transport.hsts
+	if store == nil {
+		store = hstsStore
+	}
+	upgradeHTTPURL(request.URL, store)
+	if transport.jar != nil {
+		request.Header.Del("Cookie")
+		if request.Method != http.MethodOptions {
+			for _, cookie := range transport.jar.CookiesForRequest(request.URL, transport.initiator, transport.topLevel, request.Method) {
+				request.AddCookie(cookie)
+			}
 		}
 	}
 	response, err := transport.base.RoundTrip(request)
 	if err != nil {
 		return nil, err
+	}
+	if strings.EqualFold(request.URL.Scheme, "https") {
+		for _, header := range response.Header.Values("Strict-Transport-Security") {
+			store.ProcessHeader(request.URL.Hostname(), header, true)
+		}
 	}
 	if transport.jar != nil {
 		transport.jar.SetCookies(request.URL, response.Cookies())
@@ -297,16 +427,26 @@ func (transport *originCookieTransport) RoundTrip(request *http.Request) (*http.
 	return response, nil
 }
 
+func cloneURL(requestURL *url.URL) *url.URL {
+	if requestURL == nil {
+		return nil
+	}
+	clone := *requestURL
+	return &clone
+}
+
 func requestClient(client *http.Client, requestURL *url.URL, origin string) *http.Client {
 	if client == nil || requestURL == nil {
 		return client
 	}
 	jar, ok := client.Jar.(*OriginCookieJar)
-	if !ok || jar == nil {
-		return client
+	if !ok {
+		jar = nil
 	}
 	clone := *client
-	clone.Jar = nil
+	if jar != nil {
+		clone.Jar = nil
+	}
 	initiator, err := url.Parse(origin)
 	topLevel := origin == ""
 	if err != nil {
@@ -316,7 +456,9 @@ func requestClient(client *http.Client, requestURL *url.URL, origin string) *htt
 	if base == nil {
 		base = http.DefaultTransport
 	}
-	clone.Transport = &originCookieTransport{jar: jar, initiator: initiator, topLevel: topLevel, base: base}
+	clone.Transport = &originCookieTransport{
+		jar: jar, initiator: initiator, topLevel: topLevel, hsts: hstsStore, base: base,
+	}
 	return &clone
 }
 
@@ -501,6 +643,8 @@ func fetchExternalPage(URL *url.URL) *Resource {
 // If client is nil, the default global client is used.
 // It handles CORS preflight automatically for cross-origin requests.
 func fetchExternalPageWithOptions(client *http.Client, URL *url.URL, method string, body io.Reader, headers map[string]string) *Resource {
+	URL = cloneURL(URL)
+	upgradeHTTPURL(URL, hstsStore)
 	if client == nil {
 		client = defaultClient()
 	}
@@ -603,6 +747,8 @@ func ParseURL(link string) *url.URL {
 }
 
 func GetImage(URL *url.URL) ([]byte, error) {
+	URL = cloneURL(URL)
+	upgradeHTTPURL(URL, hstsStore)
 	imgUrl := URL.String()
 
 	cachedImage := imageCache.GetImage(imgUrl)
@@ -629,7 +775,7 @@ func GetImage(URL *url.URL) ([]byte, error) {
 
 		req.Header.Set("User-Agent", "THDWB (The HotDog Web Browser);")
 
-		resp, err := client.Do(req)
+		resp, err := requestClient(client, URL, "").Do(req)
 		if err != nil {
 			return nil, fmt.Errorf("Failed to fetch image (%s)", err)
 		}
