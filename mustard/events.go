@@ -1,6 +1,8 @@
 package mustard
 
 import (
+	"math"
+
 	"github.com/go-gl/glfw/v3.3/glfw"
 )
 
@@ -108,7 +110,29 @@ func (window *Window) ProcessPointerClick(button glfw.MouseButton) {
 }
 
 func (window *Window) ProcessScroll(x, y float64) {
+	if y != 0 && window.rootFrame != nil {
+		scrollWidgetAt(window.rootFrame, window.cursorX, window.cursorY, -int(math.Round(y*40)))
+	}
 	window.fireScrollEvents(x, y)
+}
+
+func scrollWidgetAt(widget Widget, x, y float64, delta int) bool {
+	if widget == nil || !widget.BaseWidget().IsPointInside(x, y) {
+		return false
+	}
+	children := widget.Widgets()
+	for i := len(children) - 1; i >= 0; i-- {
+		if scrollWidgetAt(children[i], x, y, delta) {
+			return true
+		}
+	}
+	canvas, ok := widget.(*CanvasWidget)
+	if !ok || !canvas.scrollable {
+		return false
+	}
+	offset := canvas.offset
+	canvas.SetOffset(offset + delta)
+	return canvas.offset != offset
 }
 
 func (window *Window) ProcessReturnKey() {

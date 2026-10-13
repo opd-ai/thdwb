@@ -115,7 +115,7 @@ Bind solved layout coordinates to the visual render pipeline and map hardware in
 - [x] Mouse clicks fire to correct elements in correct window
 - [x] Keyboard input routes to focused element in active window
 - [x] Focus ring renders and updates correctly per window
-- [ ] Scrollable content works without artifacts
+- [x] Scrollable content works without artifacts
 - [ ] No excessive paint/layout cycles per window
 - [ ] Inactive windows do not execute JS or recalculate layout
 - [ ] Tab switching is smooth with no layout stalls

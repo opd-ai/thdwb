@@ -49,11 +49,22 @@ func (canvas *CanvasWidget) EnableScrolling() {
 
 func (canvas *CanvasWidget) DisableScrolling() {
 	canvas.scrollable = false
-	canvas.offset = 0
+	canvas.SetOffset(0)
 }
 
 func (canvas *CanvasWidget) SetOffset(offset int) {
+	if offset < 0 {
+		offset = 0
+	}
+	if maxOffset, known := canvas.maxOffset(); known && offset > maxOffset {
+		offset = maxOffset
+	}
+	if canvas.offset == offset {
+		return
+	}
 	canvas.offset = offset
+	canvas.needsRepaint = true
+	canvas.RequestReflow()
 }
 
 func (canvas *CanvasWidget) GetOffset() int {
@@ -75,22 +86,45 @@ func (cavas *CanvasWidget) SetDrawingRepaint(repaint bool) {
 func (ctx *CanvasWidget) draw() {
 	context := ctx.window.context
 	top, left, width, height := ctx.computedBox.GetCoords()
-	currentContextSize := ctx.context.Image().Bounds().Size()
-
-	if currentContextSize.X != int(width) || currentContextSize.Y != int(height) {
-		ctx.context = gg.NewContext(int(width), int(height))
-		ctx.drawingContext = gg.NewContext(int(width), 12000)
-		ctx.drawingRepaint = true
-	}
+	ctx.ensureContexts(int(width), int(height))
 
 	if ctx.drawingRepaint {
 		ctx.renderer(ctx)
 		ctx.drawingRepaint = false
 	}
 
-	ctx.context.DrawImage(ctx.drawingContext.Image(), int(left), ctx.offset)
+	ctx.context.SetRGBA(0, 0, 0, 0)
+	ctx.context.Clear()
+	ctx.context.DrawImage(ctx.drawingContext.Image(), 0, -ctx.offset)
 	context.DrawImage(ctx.context.Image(), int(left), int(top))
 	copyWidgetToBuffer(ctx, context.Image())
+}
+
+func (canvas *CanvasWidget) maxOffset() (int, bool) {
+	if canvas.drawingContext == nil || canvas.drawingContext.Height() == 0 {
+		return 0, false
+	}
+	viewportHeight := int(canvas.computedBox.height)
+	if viewportHeight <= 0 && canvas.context != nil {
+		viewportHeight = canvas.context.Height()
+	}
+	if viewportHeight <= 0 {
+		return 0, false
+	}
+	if canvas.drawingContext.Height() <= viewportHeight {
+		return 0, true
+	}
+	return canvas.drawingContext.Height() - viewportHeight, true
+}
+
+func (canvas *CanvasWidget) ensureContexts(width, height int) {
+	currentSize := canvas.context.Image().Bounds().Size()
+	if currentSize.X != width || currentSize.Y != height {
+		canvas.context = gg.NewContext(width, height)
+		canvas.drawingContext = gg.NewContext(width, 12000)
+		canvas.drawingRepaint = true
+	}
+	canvas.SetOffset(canvas.offset)
 }
 
 func createCtxScrollBar(ctx *CanvasWidget) {
