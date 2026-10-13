@@ -178,7 +178,7 @@ Build comprehensive test coverage, user-facing documentation, and performance op
 - [ ] Migration guide covers all breaking API changes
 - [x] No static analysis warnings in main codebase
 - [x] Example gallery builds and runs successfully
-- [ ] Security tests verify SOP, CORS, CSP, cookie isolation
+- [x] Security tests verify SOP, CORS, CSP, cookie isolation
 
 ---
 
