@@ -196,7 +196,7 @@ Decouple from all CGo dependencies by moving the browser render stack onto Ebite
 * **Port Font Rendering:** Replace FreeType with pure Go font rasterizer using `golang.org/x/image/font` and `golang.org/x/image/vector` for TrueType/OpenType glyph rendering.
 * **Replace Image Codecs:** Swap CGo image libraries for pure Go implementations (`image/png`, `image/jpeg`, `golang.org/x/image/webp`, `kolesa-team/go-avif`).
 * **Build Platform Abstraction Layer:** Create thin interface layer (`platform.Renderer`, `platform.Window`, `platform.Input`) with native implementations per OS.
-* **Implement WebView:** Add an embeddable native WebView layer for Android/iOS and desktop fallback surfaces, enabling in-app browsing with sandboxed execution and shared browser policy enforcement.
+* **Implement WebView:** Add an embeddable native WebView layer in ./webview for Android/iOS and desktop fallback surfaces, enabling in-app browsing with sandboxed execution and shared browser policy enforcement.
 * **Implement GPU Command Buffer Abstraction:** Define platform-agnostic command buffer format; translate into native GPU APIs at runtime.
 * **Add Software Fallback Renderer:** Implement pure Go CPU-based renderer using `golang.org/x/image/draw` as fallback for headless/GPU-restricted environments.
 * **Create Build Tags:** Use conditional compilation (`// +build cgo,nocgo`) allowing users to choose CGo or pure Go rendering at compile time; default to pure Go.
