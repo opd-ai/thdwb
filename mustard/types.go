@@ -10,8 +10,10 @@ import (
 )
 
 type App struct {
-	name    string
-	windows []*Window
+	name         string
+	windows      []*Window
+	activeWindow *Window
+	tabbedMode   bool
 }
 
 type Window struct {
@@ -23,6 +25,8 @@ type Window struct {
 
 	needsReflow bool
 	visible     bool
+	active      bool
+	activeSet   bool
 	// This flag is active when drawing is happening on a thread that is not the
 	// main one; When the asyncFlag is active the window frame processor function
 	// should pool the status of the drawing routine and when it ends reflow? the
@@ -53,6 +57,7 @@ type Window struct {
 	textInputEventListeners       []func(rune)
 	scrollEventListeners          []func(int)
 	clickEventListeners           []func(MustardKey)
+	activeChangeListeners         []func(bool)
 
 	overlays         []*Overlay
 	hasActiveOverlay bool

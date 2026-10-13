@@ -41,6 +41,7 @@ func CreateNewWindow(title string, width, height int, hiDPI bool) *Window {
 		height: int(float32(height) / yscale),
 		hiDPI:  hiDPI,
 		glw:    glw,
+		active: true,
 
 		defaultCursor: glfw.CreateStandardCursor(glfw.ArrowCursor),
 		pointerCursor: glfw.CreateStandardCursor(glfw.HandCursor),
@@ -86,6 +87,33 @@ func (window *Window) Show() {
 	window.needsReflow = true
 	window.visible = true
 	window.glw.Show()
+}
+
+// AttachActiveChangeListener registers a callback and immediately reports the current state.
+func (window *Window) AttachActiveChangeListener(callback func(bool)) {
+	if callback == nil {
+		return
+	}
+	window.activeChangeListeners = append(window.activeChangeListeners, callback)
+	callback(window.IsActive())
+}
+
+// IsActive reports whether this window is active; new unmanaged windows default to active.
+func (window *Window) IsActive() bool {
+	return !window.activeSet || window.active
+}
+
+func (window *Window) setActive(active bool) {
+	wasActive := window.IsActive()
+	window.activeSet = true
+	if wasActive == active {
+		window.active = active
+		return
+	}
+	window.active = active
+	for _, listener := range append([]func(bool){}, window.activeChangeListeners...) {
+		listener(active)
+	}
 }
 
 // SetRootFrame - Sets the window root frame

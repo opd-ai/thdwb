@@ -526,6 +526,7 @@ func (wc *WindowContext) BindWindowInput(window *mustard.Window) {
 		return
 	}
 	wc.Window = window
+	window.AttachActiveChangeListener(wc.SetActive)
 	window.AttachPointerClickEventListener(func(x, y float64, button mustard.MustardKey) {
 		wc.DispatchMouseClick(x, y, button)
 	})

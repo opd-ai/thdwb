@@ -178,6 +178,32 @@ func TestInactiveWindowBlocksScriptsAndDefersReflow(t *testing.T) {
 	}
 }
 
+func TestAppTabActivationControlsBoundWindowContexts(t *testing.T) {
+	app := mustard.CreateNewApp("tabs")
+	firstWindow, secondWindow := &mustard.Window{}, &mustard.Window{}
+	app.AddWindow(firstWindow)
+	app.AddWindow(secondWindow)
+	firstContext := NewWindowContext(&Settings{}, &assets.BuildInfo{}, profiler.CreateProfiler())
+	secondContext := NewWindowContext(&Settings{}, &assets.BuildInfo{}, profiler.CreateProfiler())
+	defer firstContext.Destroy()
+	defer secondContext.Destroy()
+	firstContext.BindWindowInput(firstWindow)
+	secondContext.BindWindowInput(secondWindow)
+
+	if err := app.ActivateWindow(firstWindow); err != nil {
+		t.Fatal(err)
+	}
+	if firstContext.IsActive() != true || secondContext.IsActive() {
+		t.Fatal("activating the first tab did not pause the other window context")
+	}
+	if err := app.ActivateWindow(secondWindow); err != nil {
+		t.Fatal(err)
+	}
+	if firstContext.IsActive() || !secondContext.IsActive() {
+		t.Fatal("activating the second tab did not resume only its window context")
+	}
+}
+
 func TestInactiveWindowPausesAnimationFramesUntilActivation(t *testing.T) {
 	wc := NewWindowContext(&Settings{}, &assets.BuildInfo{}, profiler.CreateProfiler())
 	defer wc.Destroy()
