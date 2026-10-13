@@ -119,7 +119,7 @@ Bind solved layout coordinates to the visual render pipeline and map hardware in
 - [x] No excessive paint/layout cycles per window
 - [x] Inactive windows do not execute JS or recalculate layout
 - [x] Tab switching is smooth with no layout stalls
-- [ ] Each window can have different viewport dimensions
+- [x] Each window can have different viewport dimensions
 
 ---
 
