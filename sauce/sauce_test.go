@@ -106,3 +106,82 @@ func TestOriginCookieJarMatchesSecureAndSameSiteRules(t *testing.T) {
 	assert.Len(t, jar.Cookies(crossDomainURL), 1)
 	assert.Equal(t, "subdomain", jar.Cookies(crossDomainURL)[0].Name)
 }
+
+func TestOriginCookieJarAppliesSameSiteRequestContext(t *testing.T) {
+	jar := NewOriginCookieJar()
+	target, err := url.Parse("https://api.example.com/data")
+	require.NoError(t, err)
+	site, err := url.Parse("https://www.example.com")
+	require.NoError(t, err)
+	crossSite, err := url.Parse("https://attacker.test")
+	require.NoError(t, err)
+
+	jar.SetCookies(target, []*http.Cookie{
+		{Name: "strict", Value: "1", SameSite: http.SameSiteStrictMode, Path: "/"},
+		{Name: "lax", Value: "1", SameSite: http.SameSiteLaxMode, Path: "/"},
+		{Name: "default", Value: "1", Path: "/"},
+		{Name: "none", Value: "1", SameSite: http.SameSiteNoneMode, Secure: true, Path: "/"},
+	})
+
+	require.Len(t, jar.CookiesForRequest(target, site, false, http.MethodPost), 4)
+	assertCookieNames(t, jar.CookiesForRequest(target, crossSite, false, http.MethodGet), "none")
+	assertCookieNames(t, jar.CookiesForRequest(target, crossSite, true, http.MethodGet), "lax", "default", "none")
+	assertCookieNames(t, jar.CookiesForRequest(target, crossSite, true, http.MethodPost), "none")
+}
+
+func TestOriginCookieTransportFiltersCrossSiteCookies(t *testing.T) {
+	received := make(chan string, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		received <- r.Header.Get("Cookie")
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	target, err := url.Parse(server.URL + "/resource")
+	require.NoError(t, err)
+	initiator, err := url.Parse("https://attacker.test")
+	require.NoError(t, err)
+	jar := NewOriginCookieJar()
+	jar.SetCookies(target, []*http.Cookie{{Name: "lax", Value: "1", SameSite: http.SameSiteLaxMode, Path: "/"}})
+
+	client := requestClient(&http.Client{Jar: jar}, target, initiator.String())
+	response, err := client.Get(target.String())
+	require.NoError(t, err)
+	require.NoError(t, response.Body.Close())
+	assert.Empty(t, <-received)
+}
+
+func TestOriginCookieJarDeletesExpiredCookies(t *testing.T) {
+	jar := NewOriginCookieJar()
+	target, err := url.Parse("https://example.com/path")
+	require.NoError(t, err)
+	jar.SetCookies(target, []*http.Cookie{{Name: "session", Value: "active", Path: "/"}})
+	jar.SetCookies(target, []*http.Cookie{{Name: "session", Path: "/", MaxAge: -1}})
+	assert.Empty(t, jar.Cookies(target))
+}
+
+func TestOriginCookieJarValidatesCookieDomainAndDefaultPath(t *testing.T) {
+	jar := NewOriginCookieJar()
+	target, err := url.Parse("https://shop.example.com/catalog/item")
+	require.NoError(t, err)
+	jar.SetCookies(target, []*http.Cookie{
+		{Name: "public_suffix", Value: "bad", Domain: "com", Path: "/"},
+		{Name: "catalog", Value: "good", Domain: "example.com", Path: "invalid"},
+	})
+
+	inScope, err := url.Parse("https://shop.example.com/catalog/child")
+	require.NoError(t, err)
+	assertCookieNames(t, jar.Cookies(inScope), "catalog")
+	outOfScope, err := url.Parse("https://shop.example.com/catalogue")
+	require.NoError(t, err)
+	assert.Empty(t, jar.Cookies(outOfScope))
+}
+
+func assertCookieNames(t *testing.T, cookies []*http.Cookie, want ...string) {
+	t.Helper()
+	names := make([]string, 0, len(cookies))
+	for _, cookie := range cookies {
+		names = append(names, cookie.Name)
+	}
+	assert.ElementsMatch(t, want, names)
+}

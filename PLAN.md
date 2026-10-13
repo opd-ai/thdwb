@@ -182,7 +182,7 @@ Build comprehensive test coverage, user-facing documentation, and performance op
 
 ---
 
-## Phase 8: Stretch Goal – CGo-Free Hardware-Accelerated Rendering Path with Ebitengine, Android/iOS, and WebView
+## Phase 8: Cross-Platform Hardware-Accelerated Rendering Path with Ebitengine, Android/iOS, and WebView
 
 Decouple from all CGo dependencies by moving the browser render stack onto Ebitengine, while maintaining or improving hardware acceleration and broadening the target surface to Android and iOS as first-class platforms. Add a native WebView integration path for embedded browsing and hybrid app workflows without reintroducing CGo-based render dependencies.
 

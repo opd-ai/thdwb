@@ -12,6 +12,8 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/net/publicsuffix"
+
 	"github.com/danfragoso/thdwb/assets"
 	pages "github.com/danfragoso/thdwb/pages"
 )
@@ -94,7 +96,7 @@ func isValidCookieForURL(u *url.URL, cookie *http.Cookie) bool {
 	if cookie.Name == "" {
 		return false
 	}
-	if cookie.Secure && u.Scheme != "https" {
+	if cookie.Secure && !strings.EqualFold(u.Scheme, "https") {
 		return false
 	}
 	if cookie.SameSite == http.SameSiteNoneMode && !cookie.Secure {
@@ -116,8 +118,6 @@ func isValidCookieForURL(u *url.URL, cookie *http.Cookie) bool {
 }
 
 func (jar *OriginCookieJar) SetCookies(u *url.URL, cookies []*http.Cookie) {
-	jar.mu.Lock()
-	defer jar.mu.Unlock()
 	if u == nil {
 		return
 	}
@@ -125,37 +125,30 @@ func (jar *OriginCookieJar) SetCookies(u *url.URL, cookies []*http.Cookie) {
 	if key == "" {
 		return
 	}
-	filtered := make([]*http.Cookie, 0, len(jar.cookies[key])+len(cookies))
-	seen := make(map[string]struct{}, len(jar.cookies[key]))
-	for _, existing := range jar.cookies[key] {
-		if existing == nil || !isValidCookieForURL(u, existing) {
-			continue
-		}
-		name := existing.Name + "|" + existing.Domain + "|" + existing.Path
-		seen[name] = struct{}{}
-		filtered = append(filtered, existing)
-	}
+	jar.mu.Lock()
+	defer jar.mu.Unlock()
 	for _, cookie := range cookies {
-		if cookie == nil || !isValidCookieForURL(u, cookie) {
+		candidate, ok := prepareCookie(u, cookie)
+		if !ok {
 			continue
 		}
-		name := cookie.Name + "|" + cookie.Domain + "|" + cookie.Path
-		if _, duplicate := seen[name]; duplicate {
-			for i, existing := range filtered {
-				if existing != nil && existing.Name == cookie.Name && existing.Domain == cookie.Domain && existing.Path == cookie.Path {
-					filtered[i] = cookie
-					break
-				}
-			}
+		if candidate.MaxAge < 0 || (!candidate.Expires.IsZero() && !candidate.Expires.After(time.Now())) {
+			jar.removeCookie(key, candidate)
 			continue
 		}
-		filtered = append(filtered, cookie)
-		seen[name] = struct{}{}
+		if !isValidCookieForURL(u, candidate) {
+			continue
+		}
+		jar.upsertCookie(key, candidate)
 	}
-	jar.cookies[key] = filtered
 }
 
 func (jar *OriginCookieJar) Cookies(u *url.URL) []*http.Cookie {
+	return jar.CookiesForRequest(u, u, true, http.MethodGet)
+}
+
+// CookiesForRequest applies SameSite rules using the initiating site and request type.
+func (jar *OriginCookieJar) CookiesForRequest(u, initiator *url.URL, topLevel bool, method string) []*http.Cookie {
 	jar.mu.RLock()
 	defer jar.mu.RUnlock()
 	if u == nil {
@@ -168,12 +161,163 @@ func (jar *OriginCookieJar) Cookies(u *url.URL) []*http.Cookie {
 	}
 	result := make([]*http.Cookie, 0, len(cookies))
 	for _, cookie := range cookies {
-		if cookie == nil || !isValidCookieForURL(u, cookie) {
+		if !isValidCookieForURL(u, cookie) || !sameSiteAllows(cookie, u, initiator, topLevel, method) {
 			continue
 		}
-		result = append(result, cookie)
+		result = append(result, cloneCookie(cookie))
 	}
 	return result
+}
+
+func prepareCookie(u *url.URL, cookie *http.Cookie) (*http.Cookie, bool) {
+	if u == nil || cookie == nil || cookie.Name == "" {
+		return nil, false
+	}
+	candidate := cloneCookie(cookie)
+	candidate.Domain = normalizeDomain(candidate.Domain)
+	if candidate.Path == "" || !strings.HasPrefix(candidate.Path, "/") {
+		candidate.Path = defaultCookiePath(u.EscapedPath())
+	}
+	if candidate.SameSite == http.SameSiteNoneMode && !candidate.Secure {
+		return nil, false
+	}
+	return candidate, validCookieDomain(u.Hostname(), candidate.Domain)
+}
+
+func validCookieDomain(host, domain string) bool {
+	if !domainMatches(host, domain) {
+		return false
+	}
+	if domain == "" || normalizeDomain(host) == domain {
+		return true
+	}
+	_, err := publicsuffix.EffectiveTLDPlusOne(domain)
+	return err == nil
+}
+
+func defaultCookiePath(requestPath string) string {
+	if requestPath == "" || requestPath[0] != '/' {
+		return "/"
+	}
+	if lastSlash := strings.LastIndex(requestPath, "/"); lastSlash > 0 {
+		return requestPath[:lastSlash]
+	}
+	return "/"
+}
+
+func cloneCookie(cookie *http.Cookie) *http.Cookie {
+	if cookie == nil {
+		return nil
+	}
+	clone := *cookie
+	return &clone
+}
+
+func cookieIdentity(a, b *http.Cookie) bool {
+	return a != nil && b != nil && a.Name == b.Name &&
+		a.Domain == b.Domain && a.Path == b.Path
+}
+
+func (jar *OriginCookieJar) removeCookie(key string, cookie *http.Cookie) {
+	kept := jar.cookies[key][:0]
+	for _, existing := range jar.cookies[key] {
+		if !cookieIdentity(existing, cookie) {
+			kept = append(kept, existing)
+		}
+	}
+	jar.cookies[key] = kept
+}
+
+func (jar *OriginCookieJar) upsertCookie(key string, cookie *http.Cookie) {
+	for i, existing := range jar.cookies[key] {
+		if cookieIdentity(existing, cookie) {
+			jar.cookies[key][i] = cookie
+			return
+		}
+	}
+	jar.cookies[key] = append(jar.cookies[key], cookie)
+}
+
+func sameSiteAllows(cookie *http.Cookie, requestURL, initiator *url.URL, topLevel bool, method string) bool {
+	if cookie.SameSite == http.SameSiteNoneMode {
+		return true
+	}
+	if sameSite(requestURL, initiator) {
+		return true
+	}
+	return cookie.SameSite != http.SameSiteStrictMode && topLevel && isSafeMethod(method)
+}
+
+func sameSite(a, b *url.URL) bool {
+	if a == nil || b == nil || !strings.EqualFold(a.Scheme, b.Scheme) {
+		return false
+	}
+	return registrableDomain(a.Hostname()) == registrableDomain(b.Hostname())
+}
+
+func registrableDomain(host string) string {
+	host = strings.TrimSuffix(strings.ToLower(host), ".")
+	domain, err := publicsuffix.EffectiveTLDPlusOne(host)
+	if err != nil {
+		return host
+	}
+	return domain
+}
+
+func isSafeMethod(method string) bool {
+	switch strings.ToUpper(method) {
+	case http.MethodGet, http.MethodHead, http.MethodOptions, http.MethodTrace:
+		return true
+	default:
+		return false
+	}
+}
+
+type originCookieTransport struct {
+	jar       *OriginCookieJar
+	initiator *url.URL
+	topLevel  bool
+	base      http.RoundTripper
+}
+
+func (transport *originCookieTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	request.Header.Del("Cookie")
+	if request.Method != http.MethodOptions && transport.jar != nil {
+		for _, cookie := range transport.jar.CookiesForRequest(request.URL, transport.initiator, transport.topLevel, request.Method) {
+			request.AddCookie(cookie)
+		}
+	}
+	response, err := transport.base.RoundTrip(request)
+	if err != nil {
+		return nil, err
+	}
+	if transport.jar != nil {
+		transport.jar.SetCookies(request.URL, response.Cookies())
+	}
+	return response, nil
+}
+
+func requestClient(client *http.Client, requestURL *url.URL, origin string) *http.Client {
+	if client == nil || requestURL == nil {
+		return client
+	}
+	jar, ok := client.Jar.(*OriginCookieJar)
+	if !ok || jar == nil {
+		return client
+	}
+	clone := *client
+	clone.Jar = nil
+	initiator, err := url.Parse(origin)
+	topLevel := origin == ""
+	if err != nil {
+		initiator = nil
+	}
+	base := client.Transport
+	if base == nil {
+		base = http.DefaultTransport
+	}
+	clone.Transport = &originCookieTransport{jar: jar, initiator: initiator, topLevel: topLevel, base: base}
+	return &clone
 }
 
 // History represents navigation history
@@ -360,6 +504,11 @@ func fetchExternalPageWithOptions(client *http.Client, URL *url.URL, method stri
 	if client == nil {
 		client = defaultClient()
 	}
+	origin := ""
+	if headers != nil {
+		origin = headers["Origin"]
+	}
+	client = requestClient(client, URL, origin)
 	url := URL.String()
 	go Log("sauce", "Downloading page "+url)
 
@@ -385,7 +534,7 @@ func fetchExternalPageWithOptions(client *http.Client, URL *url.URL, method stri
 	// The actual preflight is handled by the caller (JS layer) which sends OPTIONS first
 	// This function just makes the actual request
 
-	resp, err := client.Do(req)
+	resp, err := requestClient(client, URL, "").Do(req)
 	if err != nil {
 		resource.Body = loadErrorPage(err.Error())
 		return resource
