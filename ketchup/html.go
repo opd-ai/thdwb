@@ -8,15 +8,35 @@ import (
 	mayo "github.com/danfragoso/thdwb/mayo"
 )
 
+// Regular expressions for HTML tokenization.
+// These patterns identify tags, attributes, and content in HTML text.
+// Note: This is a simplified parser for learning purposes. A full HTML5 parser
+// would use a state machine per the HTML spec.
+// See: https://html.spec.whatwg.org/multipage/parsing.html
+// See: https://searchfox.org/mozilla-central/source/parser/html/HTMLTokenizer.cpp
 var (
-	xmlTag         = regexp.MustCompile(`(\<.+?\>)|(\<//?\w+\>\\?)`)
-	clTag          = regexp.MustCompile(`\<\/\w+\>`)
+	// xmlTag matches any tag: <tag>, </tag>, <tag/>, <tag attr="val">
+	xmlTag = regexp.MustCompile(`(\<.+?\>)|(\<//?\w+\>\\?)`)
+
+	// clTag matches closing tags: </tag>
+	clTag = regexp.MustCompile(`\<\/\w+\>`)
+
+	// selfClosingTag matches self-closing tags: <tag/>
 	selfClosingTag = regexp.MustCompile(`\<.+\/\>`)
-	tagContent     = regexp.MustCompile(`(.+?)\<\/`)
-	tagName        = regexp.MustCompile(`(\<\w+)`)
-	attr           = regexp.MustCompile(`\w+=".+?"`)
+
+	// tagContent matches content between opening and closing tags
+	tagContent = regexp.MustCompile(`(.+?)\<\/`)
+
+	// tagName matches the tag name in an opening tag: <tagname
+	tagName = regexp.MustCompile(`(\<\w+)`)
+
+	// attr matches attributes: name="value"
+	attr = regexp.MustCompile(`\w+=".+?"`)
 )
 
+// extractAttributes parses attributes from a tag string.
+// Returns a slice of Attribute pointers.
+// Example: 'class="foo" id="bar"' -> [{Name: "class", Value: "foo"}, {Name: "id", Value: "bar"}]
 func extractAttributes(tag string) []*hotdog.Attribute {
 	rawAttrArray := attr.FindAllString(tag, -1)
 	elementAttrs := []*hotdog.Attribute{}
@@ -34,6 +54,11 @@ func extractAttributes(tag string) []*hotdog.Attribute {
 	return elementAttrs
 }
 
+// isVoidElement checks if an HTML element is a void element (self-closing).
+// Void elements cannot have children and don't have closing tags.
+// List matches HTML5 void elements per spec.
+// See: https://developer.mozilla.org/en-US/docs/Glossary/Void_element
+// See: https://searchfox.org/mozilla-central/source/parser/html/HTMLTreeBuilder.cpp#1200
 func isVoidElement(tagName string) bool {
 	var isVoid bool
 	switch tagName {
@@ -61,6 +86,13 @@ func isVoidElement(tagName string) bool {
 	return isVoid
 }
 
+// CreateHTMLBase builds the minimal HTML document structure:
+// <html><head></head><body></body></html>
+// Creates the root html, head, and body nodes with default styles.
+// Used as fallback when parsing malformed HTML or for plain text documents.
+// Parameters:
+//   windowCtx - the window context for the new document
+// Returns the root html NodeDOM.
 func CreateHTMLBase(windowCtx *hotdog.WindowContext) *hotdog.NodeDOM {
 	html := &hotdog.NodeDOM{
 		Element:      "html",
@@ -98,6 +130,13 @@ func CreateHTMLBase(windowCtx *hotdog.WindowContext) *hotdog.NodeDOM {
 	return html
 }
 
+// ParsePlainText creates a minimal document for plain text (no HTML tags).
+// Wraps each line in <p> tags inside a basic HTML structure.
+// Used for text files, error pages, and non-HTML content.
+// Parameters:
+//   document - plain text content
+//   windowCtx - window context for the new document
+// Returns a Document with a basic DOM tree.
 func ParsePlainText(document string, windowCtx *hotdog.WindowContext) *hotdog.Document {
 	documentTitle := "Text Document"
 	textDocument := &hotdog.Document{
@@ -156,6 +195,16 @@ func ParsePlainText(document string, windowCtx *hotdog.WindowContext) *hotdog.Do
 	return textDocument
 }
 
+// ParseHTML parses a full HTML document string into a Document.
+// Uses the custom ketchup parser (regex-based, simplified).
+// Implements basic tokenization and tree construction.
+// Does NOT fully implement HTML5 parsing algorithm (no foster parenting, etc.).
+// Parameters:
+//   document - HTML source text
+//   windowCtx - window context for the new document
+// Returns a Document with populated DOM tree and applied CSS inheritance.
+// See: https://html.spec.whatwg.org/multipage/parsing.html
+// See: https://searchfox.org/mozilla-central/source/parser/html
 func ParseHTML(document string, windowCtx *hotdog.WindowContext) *hotdog.Document {
 	HTMLDocument := &hotdog.Document{}
 

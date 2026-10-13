@@ -14,47 +14,56 @@ import (
 )
 
 // NodeType represents the type of a DOM node.
+// Mirrors the DOM Level 3 Node interface nodeType constants.
+// See: https://developer.mozilla.org/en-US/docs/Web/API/Node/nodeType
 type NodeType int
 
 const (
-	// NodeTypeElement represents an HTML element node.
+	// NodeTypeElement represents an HTML element node (e.g., <div>, <span>).
 	NodeTypeElement NodeType = iota
-	// NodeTypeText represents a text node.
+	// NodeTypeText represents a text node (text content inside elements).
 	NodeTypeText
-	// NodeTypeComment represents a comment node.
+	// NodeTypeComment represents a comment node (<!-- comment -->).
 	NodeTypeComment
-	// NodeTypeDoctype represents a doctype node.
+	// NodeTypeDoctype represents a doctype node (<!DOCTYPE html>).
 	NodeTypeDoctype
-	// NodeTypeRaw represents a raw HTML node.
+	// NodeTypeRaw represents a raw HTML node (unparsed HTML).
 	NodeTypeRaw
 )
 
-// NodeDOM "DOM Node Struct definition"
+// NodeDOM represents a single node in the DOM tree.
+// This is thdwb's internal DOM node implementation, similar to browser's internal Node.
+// Contains tree structure (parent, children, siblings), styling, layout, and JS bindings.
+// See: https://developer.mozilla.org/en-US/docs/Web/API/Node
+// See: https://searchfox.org/mozilla-central/source/dom/base/nsINode.cpp
 type NodeDOM struct {
-	Type      NodeType       `json:"type"`
-	Element   string         `json:"element"`
-	Content   string         `json:"content"`
-	WindowCtx *WindowContext `json:"-"`
+	// Node identity
+	Type      NodeType       `json:"type"`       // Node type (element, text, comment, etc.)
+	Element   string         `json:"element"`    // Tag name (e.g., "div", "span", "html:text")
+	Content   string         `json:"content"`    // Text content (for text nodes, or inner text)
+	WindowCtx *WindowContext `json:"-"`          // Owning window context (for JS bindings)
 
-	Children    []*NodeDOM   `json:"children"`
-	Attributes  []*Attribute `json:"attributes"`
-	Style       *Stylesheet  `json:"style"`
-	Parent      *NodeDOM     `json:"-"`
-	FirstChild  *NodeDOM     `json:"-"`
-	NextSibling *NodeDOM     `json:"-"`
-	PrevSibling *NodeDOM     `json:"-"`
-	RenderBox   *RenderBox   `json:"-"`
+	// Tree structure
+	Children    []*NodeDOM   `json:"children"`    // Child nodes
+	Attributes  []*Attribute `json:"attributes"`  // HTML attributes
+	Style       *Stylesheet  `json:"style"`       // Computed CSS styles
+	Parent      *NodeDOM     `json:"-"`           // Parent node (nil for root)
+	FirstChild  *NodeDOM     `json:"-"`           // First child (linked list)
+	NextSibling *NodeDOM     `json:"-"`           // Next sibling
+	PrevSibling *NodeDOM     `json:"-"`           // Previous sibling
+	RenderBox   *RenderBox   `json:"-"`           // Layout result: x, y, width, height
 
-	// FlexNode holds a reference to the flexbox layout node (kjk/flex)
-	// Used by the layout engine for flexbox calculations
+	// Flexbox layout (kjk/flex) - used by experimental layout engine
 	FlexNode interface{} `json:"-"`
 
-	Dirty        bool `json:"-"`
-	NeedsReflow  bool `json:"-"`
-	NeedsRepaint bool `json:"-"`
+	// Dirty flags for incremental updates
+	Dirty        bool `json:"-"` // General dirty flag
+	NeedsReflow  bool `json:"-"` // Needs layout recalculation
+	NeedsRepaint bool `json:"-"` // Needs repaint
 
-	Document *Document  `json:"-"`
-	HTMLNode *html.Node `json:"-"` // Reference to original html.Node for CSS selector queries
+	// Document ownership
+	Document *Document  `json:"-"` // Owner document
+	HTMLNode *html.Node `json:"-"` // Reference to stdlib html.Node (for CSS selectors)
 
 	// Iframe-specific fields
 	IframeDocument *Document    `json:"-"` // Parsed document for iframe content
@@ -62,6 +71,14 @@ type NodeDOM struct {
 	IframeSrc      string       `json:"-"` // Source URL for iframe
 }
 
+// Print prints the DOM tree structure for debugging.
+// Indents each level with dashes. Shows element name and text content.
+// Example output:
+// |> html []
+// |-> head []
+// |--> title [My Page]
+// |-> body []
+// |--> h1 [Hello]
 func (node *NodeDOM) Print(d int) {
 	spacing := strings.Repeat("-", d)
 	fmt.Printf("|%s> %s [%s]\n", spacing, node.Element, node.Content)
@@ -71,6 +88,9 @@ func (node *NodeDOM) Print(d int) {
 	}
 }
 
+// JSON returns the node and its subtree as indented JSON.
+// Useful for debugging and serialization.
+// Returns "{}" on marshal error.
 func (node *NodeDOM) JSON() string {
 	res, err := json.MarshalIndent(node, "", "  ")
 	if err != nil {
@@ -80,6 +100,9 @@ func (node *NodeDOM) JSON() string {
 	return string(res)
 }
 
+// FindByXPath finds a descendant node by XPath expression.
+// Returns the first matching node or NoSuchElementError.
+// XPath is computed from the node's position in the tree.
 func (node *NodeDOM) FindByXPath(xPath string) (*NodeDOM, error) {
 	if node.GetXPath() == xPath {
 		return node, nil
@@ -104,10 +127,15 @@ func (node *NodeDOM) FindByXPath(xPath string) (*NodeDOM, error) {
 	return nil, NoSuchElementError(xPath)
 }
 
+// GetXPath returns the XPath of this node in the document tree.
+// Format: /html/body/div[1]/p[2] etc.
 func (node *NodeDOM) GetXPath() string {
 	return getXPath(node)
 }
 
+// FindChildByName finds the first direct child with the given element name.
+// Returns the child node or NoSuchElementError.
+// Only searches direct children, not descendants.
 func (node *NodeDOM) FindChildByName(childName string) (*NodeDOM, error) {
 	if node.Element == childName {
 		return node, nil
@@ -132,6 +160,8 @@ func (node *NodeDOM) FindChildByName(childName string) (*NodeDOM, error) {
 	return nil, NoSuchElementError(childName)
 }
 
+// Attr returns the value of an attribute by name.
+// Returns empty string if attribute not found.
 func (node *NodeDOM) Attr(attrName string) string {
 	for _, attribute := range node.Attributes {
 		if attribute.Name == attrName {
@@ -143,6 +173,8 @@ func (node *NodeDOM) Attr(attrName string) string {
 }
 
 // InnerHTML returns the HTML content of the node's children.
+// For text nodes, returns the text content.
+// For elements, serializes all children to HTML string.
 func (node *NodeDOM) InnerHTML() string {
 	if node.Type == NodeTypeText {
 		return node.Content
@@ -156,6 +188,7 @@ func (node *NodeDOM) InnerHTML() string {
 }
 
 // toHTML converts a NodeDOM to its HTML string representation.
+// Internal method used by InnerHTML. Handles all node types.
 func (node *NodeDOM) toHTML() string {
 	switch node.Type {
 	case NodeTypeText:
@@ -190,7 +223,8 @@ func (node *NodeDOM) toHTML() string {
 	}
 }
 
-// escapeHTML escapes special HTML characters.
+// escapeHTML escapes special HTML characters for safe output.
+// Replaces &, <, > with HTML entities.
 func escapeHTML(s string) string {
 	s = strings.ReplaceAll(s, "&", "&")
 	s = strings.ReplaceAll(s, "<", "<")
@@ -200,6 +234,10 @@ func escapeHTML(s string) string {
 	return s
 }
 
+// CalcPointIntersection finds the deepest node at the given coordinates.
+// Used for hit testing (mouse clicks, hover).
+// Searches children in reverse order (top-most first).
+// Returns the node whose render box contains the point, or nil.
 func (node *NodeDOM) CalcPointIntersection(x, y float64) *NodeDOM {
 	if node == nil {
 		return nil
@@ -219,6 +257,9 @@ func (node *NodeDOM) CalcPointIntersection(x, y float64) *NodeDOM {
 	return nil
 }
 
+// MarkDirty marks this node and all ancestors as dirty.
+// Called when node content, attributes, or style changes.
+// Triggers reflow/repaint up the tree.
 func (node *NodeDOM) MarkDirty() {
 	if node == nil {
 		return
@@ -229,6 +270,8 @@ func (node *NodeDOM) MarkDirty() {
 	}
 }
 
+// ClearDirty clears the dirty flag on this node and all descendants.
+// Called after successful reflow/repaint.
 func (node *NodeDOM) ClearDirty() {
 	if node == nil {
 		return
@@ -239,6 +282,9 @@ func (node *NodeDOM) ClearDirty() {
 	}
 }
 
+// RequestRepaint marks this node and all descendants as needing repaint.
+// Called when visual properties change (color, visibility, etc.).
+// Also marks dirty to trigger reflow if needed.
 func (node *NodeDOM) RequestRepaint() {
 	node.NeedsRepaint = true
 	node.MarkDirty()
@@ -248,6 +294,9 @@ func (node *NodeDOM) RequestRepaint() {
 	}
 }
 
+// RequestReflow requests a layout recalculation for this node and its subtree.
+// Queues the reflow in the window context's reflow queue.
+// If queueing fails, marks the subtree dirty immediately.
 func (node *NodeDOM) RequestReflow() {
 	if node == nil {
 		return
@@ -265,6 +314,8 @@ func (node *NodeDOM) RequestReflow() {
 	root.markReflowSubtree()
 }
 
+// markReflowSubtree marks this node and all descendants as needing reflow.
+// Internal method called by RequestReflow after successful queueing.
 func (node *NodeDOM) markReflowSubtree() {
 	node.NeedsReflow = true
 	node.Dirty = true
@@ -274,6 +325,8 @@ func (node *NodeDOM) markReflowSubtree() {
 }
 
 // SecurityError represents a security violation error.
+// Used for same-origin policy violations, CSP violations, etc.
+// See: https://developer.mozilla.org/en-US/docs/Web/Security/Same-origin_policy
 type SecurityError string
 
 func (e SecurityError) Error() string {
@@ -281,7 +334,11 @@ func (e SecurityError) Error() string {
 }
 
 // checkOrigin validates that the node belongs to the same origin as the window context.
+// Enforces same-origin policy for DOM access from JavaScript.
 // Returns a SecurityError if the origin check fails.
+// Checks:
+// - Document URL vs WindowContext origin (scheme, host, port)
+// - Iframe sandbox restrictions (allow-same-origin)
 func (node *NodeDOM) checkOrigin() error {
 	if node.WindowCtx == nil || node.WindowCtx.Origin == nil {
 		// No origin set, allow access (for backward compatibility)
@@ -310,6 +367,8 @@ func (node *NodeDOM) checkOrigin() error {
 }
 
 // isInSandboxedIframe checks if the node is inside an iframe that doesn't allow same-origin access.
+// Returns true if any ancestor iframe has sandbox attribute without allow-same-origin.
+// See: https://developer.mozilla.org/en-US/docs/Web/HTML/Element/iframe#attr-sandbox
 func (node *NodeDOM) isInSandboxedIframe() bool {
 	current := node
 	for current != nil {
@@ -325,7 +384,8 @@ func (node *NodeDOM) isInSandboxedIframe() bool {
 }
 
 // isInsideIframe checks if the node is a descendant of an iframe element.
-// This is used to enforce iframe boundaries for querySelector/querySelectorAll.
+// Used to enforce iframe boundaries for querySelector/querySelectorAll.
+// Returns true if any ancestor is an iframe element.
 func (node *NodeDOM) isInsideIframe() bool {
 	current := node.Parent
 	for current != nil {

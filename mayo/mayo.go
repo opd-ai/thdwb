@@ -11,28 +11,37 @@ import (
 	"golang.org/x/net/html"
 )
 
-// Inheritable properties - CSS properties that inherit by default
+// Inheritable properties - CSS properties that inherit by default from parent to child.
+// When a child element doesn't have its own value for these properties, it uses the parent's value.
+// Matches CSS spec inheritance behavior.
+// See: https://developer.mozilla.org/en-US/docs/Web/CSS/inheritance
+// See: https://searchfox.org/mozilla-central/source/layout/style/nsCSSProps.cpp
 var inheritableProperties = map[string]bool{
-	"color":          true,
-	"font-family":    true,
-	"font-size":      true,
-	"font-weight":    true,
-	"font-style":     true,
-	"line-height":    true,
-	"letter-spacing": true,
-	"text-align":     true,
-	"text-indent":    true,
-	"text-transform": true,
-	"visibility":     true,
-	"white-space":    true,
-	"word-spacing":   true,
-	"list-style":     true,
-	"cursor":         true,
-	"direction":      true,
-	"unicode-bidi":   true,
-	"opacity":        true,
+	"color":           true,
+	"font-family":     true,
+	"font-size":       true,
+	"font-weight":     true,
+	"font-style":      true,
+	"line-height":     true,
+	"letter-spacing":  true,
+	"text-align":      true,
+	"text-indent":     true,
+	"text-transform":  true,
+	"visibility":      true,
+	"white-space":     true,
+	"word-spacing":    true,
+	"list-style":      true,
+	"cursor":          true,
+	"direction":       true,
+	"unicode-bidi":    true,
+	"opacity":         true,
 }
 
+// getDefaultElementDisplay returns the default 'display' value for an HTML element.
+// Implements the User Agent (UA) stylesheet defaults per HTML spec.
+// Unknown elements default to 'block'.
+// See: https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Box_Model/Introduction_to_the_CSS_box_model#user_agent_styles
+// See: https://searchfox.org/mozilla-central/source/layout/style/res
 func getDefaultElementDisplay(element string) string {
 	displayType := "block"
 
@@ -51,6 +60,9 @@ func getDefaultElementDisplay(element string) string {
 	return displayType
 }
 
+// getDefaultElementFontWeight returns the default font-weight for an element.
+// Headings (h1-h6) default to 600 (semi-bold), others default to 400 (normal).
+// Matches UA stylesheet defaults.
 func getDefaultElementFontWeight(element string) int {
 	switch element {
 	case "h1", "h2", "h3", "h4", "h5", "h6":
@@ -60,6 +72,11 @@ func getDefaultElementFontWeight(element string) int {
 	return 400
 }
 
+// mapSizeValue converts a CSS size string to a float64 pixel value.
+// Extracts the numeric portion from strings like "16px", "1.5em", "100%".
+// For relative units (em, rem, %), returns the numeric part only.
+// Layout engine resolves relative units against parent context.
+// Returns 14 (default font size) if no number found.
 func mapSizeValue(sizeValue string) float64 {
 	re := regexp.MustCompile(`[0-9]+(\.[0-9]+)?`)
 	valueString := re.FindString(sizeValue)
@@ -74,6 +91,9 @@ func mapSizeValue(sizeValue string) float64 {
 	return value
 }
 
+// mapIntValue extracts an integer from a CSS value string.
+// Used for properties like z-index, font-weight (numeric).
+// Returns 0 if no number found.
 func mapIntValue(intValue string) int {
 	re := regexp.MustCompile(`[0-9]+`)
 	valueString := re.FindString(intValue)
@@ -87,6 +107,14 @@ func mapIntValue(intValue string) int {
 	return value
 }
 
+// mapPropToStylesheet applies a single CSS property:value pair to a Stylesheet.
+// Parses the property name and value, converts to typed Go fields.
+// Handles: color, background-color, font-size, and many others.
+// Properties not explicitly handled are stored in the Properties map for cascade.
+// Parameters:
+//   parsedStyleSheet - target Stylesheet to modify
+//   propSlice - [property, value] pair (e.g., ["color", "red"])
+// Returns the modified Stylesheet.
 func mapPropToStylesheet(parsedStyleSheet *hotdog.Stylesheet, propSlice []string) *hotdog.Stylesheet {
 	propName := strings.TrimSpace(strings.ToLower(propSlice[0]))
 	propValue := strings.TrimSpace(propSlice[1])
