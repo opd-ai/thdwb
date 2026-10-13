@@ -126,6 +126,27 @@ func (window *Window) RequestReflow() {
 	window.needsReflow = true
 }
 
+func (window *Window) resize(width, height int, xscale, yscale float32) {
+	if width <= 0 || height <= 0 {
+		return
+	}
+	if xscale <= 0 {
+		xscale = 1
+	}
+	if yscale <= 0 {
+		yscale = 1
+	}
+	swidth := int(float32(width) / xscale)
+	sheight := int(float32(height) / yscale)
+	if swidth <= 0 || sheight <= 0 || (window.width == swidth && window.height == sheight) {
+		return
+	}
+	window.width, window.height = swidth, sheight
+	window.RecreateContext()
+	window.frameBuffer = nil
+	window.needsReflow = true
+}
+
 func (window *Window) SetTitle(title string) {
 	window.glw.SetTitle(title)
 }
@@ -143,14 +164,7 @@ func (window *Window) addEvents() {
 		if window.hiDPI {
 			xscale, yscale = w.GetContentScale()
 		}
-
-		swidth := int(float32(width) / xscale)
-		sheight := int(float32(height) / yscale)
-
-		window.width, window.height = swidth, sheight
-		window.RecreateContext()
-		// window.RecreateOverlayContext()
-		window.needsReflow = true
+		window.resize(width, height, xscale, yscale)
 	})
 
 	window.glw.SetCursorPosCallback(func(w *glfw.Window, x, y float64) {
