@@ -144,8 +144,8 @@ Implement secure network handling, cookie isolation, and storage partitioning pe
 ### Phase 6 Completion Checklist
 - [ ] Cookies enforce Secure, HttpOnly, SameSite, and domain/path matching
 - [ ] HTTPS required; HSTS headers cached and enforced
+- [ ] Certificate validation blocks self-signed unless exempted and expired certs always
 - [ ] Easy self-signed HTTPS workflow for adding and removing TOFU self-signed certs
-- [ ] Certificate validation blocks self-signed and expired certs
 - [ ] localStorage persists per-origin across windows
 - [ ] sessionStorage is per-window and cleared on tab close
 - [ ] CSP violations block inline scripts and log to console
