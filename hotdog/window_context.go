@@ -116,6 +116,7 @@ type WindowContext struct {
 	animationFrameCounter uint64
 	animationFrames       map[uint64]func()
 	animationFrameTimer   *time.Timer
+	active                bool
 
 	// JS runtime (Goja VM) - per window isolation
 	jsRuntimeMu sync.Mutex
@@ -154,6 +155,7 @@ func NewWindowContext(settings *Settings, buildInfo *assets.BuildInfo, profiler 
 		mutationObservers: make(map[*MutationObserver]struct{}),
 		animationFrames:   make(map[uint64]func()),
 		sessionStorage:    NewSessionStorageManager(),
+		active:            true,
 	}
 
 	// Initialize per-window Goja VM for JavaScript execution
@@ -263,6 +265,9 @@ func (wc *WindowContext) RemoveEventByKey(eventName string, key uintptr) {
 
 // EmitEvent emits an event to all registered handlers for this window context.
 func (wc *WindowContext) EmitEvent(eventName string, data interface{}) {
+	if !wc.IsActive() {
+		return
+	}
 	if handlers, ok := wc.eventRegistry[eventName]; ok {
 		for _, handler := range handlers {
 			handler.handler(data)
@@ -312,35 +317,78 @@ func (wc *WindowContext) ScheduleAnimationFrame(callback func()) uint64 {
 	wc.animationFrameCounter++
 	id := wc.animationFrameCounter
 	wc.animationFrames[id] = callback
-	if wc.animationFrameTimer == nil {
-		wc.animationFrameTimer = time.AfterFunc(16*time.Millisecond, wc.runAnimationFrame)
-	}
+	wc.scheduleAnimationFrameLocked()
 	wc.animationFrameMu.Unlock()
 	return id
 }
 
+func (wc *WindowContext) scheduleAnimationFrameLocked() {
+	if wc.active && wc.animationFrameTimer == nil && len(wc.animationFrames) > 0 {
+		wc.animationFrameTimer = time.AfterFunc(16*time.Millisecond, wc.runAnimationFrame)
+	}
+}
+
 func (wc *WindowContext) runAnimationFrame() {
+	wc.jsRuntimeMu.Lock()
+	defer wc.jsRuntimeMu.Unlock()
 	wc.animationFrameMu.Lock()
+	if !wc.active || wc.jsRuntime == nil {
+		wc.animationFrameTimer = nil
+		wc.animationFrameMu.Unlock()
+		return
+	}
 	ids := make([]uint64, 0, len(wc.animationFrames))
 	for id := range wc.animationFrames {
 		ids = append(ids, id)
 	}
 	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
-	callbacks := make([]func(), 0, len(ids))
-	for _, id := range ids {
-		callbacks = append(callbacks, wc.animationFrames[id])
-		delete(wc.animationFrames, id)
-	}
 	wc.animationFrameTimer = nil
 	wc.animationFrameMu.Unlock()
 
-	wc.jsRuntimeMu.Lock()
-	defer wc.jsRuntimeMu.Unlock()
-	if wc.jsRuntime != nil {
-		for _, callback := range callbacks {
+	for _, id := range ids {
+		wc.animationFrameMu.Lock()
+		if !wc.active {
+			wc.animationFrameMu.Unlock()
+			return
+		}
+		callback := wc.animationFrames[id]
+		delete(wc.animationFrames, id)
+		wc.animationFrameMu.Unlock()
+		if callback != nil {
 			callback()
 		}
 	}
+}
+
+// IsActive reports whether this window is allowed to run scripts and drain layout work.
+func (wc *WindowContext) IsActive() bool {
+	if wc == nil {
+		return false
+	}
+	wc.animationFrameMu.Lock()
+	defer wc.animationFrameMu.Unlock()
+	return wc.active
+}
+
+// SetActive pauses or resumes script callbacks and layout queue draining for this window.
+func (wc *WindowContext) SetActive(active bool) {
+	if wc == nil {
+		return
+	}
+	wc.animationFrameMu.Lock()
+	defer wc.animationFrameMu.Unlock()
+	if wc.active == active {
+		return
+	}
+	wc.active = active
+	if !active {
+		if wc.animationFrameTimer != nil {
+			wc.animationFrameTimer.Stop()
+			wc.animationFrameTimer = nil
+		}
+		return
+	}
+	wc.scheduleAnimationFrameLocked()
 }
 
 // CancelAnimationFrame removes a queued frame callback for this window.
@@ -396,6 +444,11 @@ func (wc *WindowContext) queueReflow(node *NodeDOM) (*NodeDOM, bool) {
 
 // DrainReflowQueue returns unique DOM roots invalidated since the previous drain.
 func (wc *WindowContext) DrainReflowQueue() []*NodeDOM {
+	wc.animationFrameMu.Lock()
+	defer wc.animationFrameMu.Unlock()
+	if !wc.active {
+		return nil
+	}
 	wc.reflowMu.Lock()
 	defer wc.reflowMu.Unlock()
 	roots := make([]*NodeDOM, 0, len(wc.pendingReflows))
@@ -426,6 +479,9 @@ func (wc *WindowContext) SetJSValue(name string, value interface{}) error {
 func (wc *WindowContext) RunJS(script string) (goja.Value, error) {
 	wc.jsRuntimeMu.Lock()
 	defer wc.jsRuntimeMu.Unlock()
+	if !wc.IsActive() {
+		return nil, fmt.Errorf("window context is inactive")
+	}
 	if wc.jsRuntime == nil {
 		return nil, fmt.Errorf("no JavaScript runtime available")
 	}
@@ -451,7 +507,7 @@ func (wc *WindowContext) BindWindowInput(window *mustard.Window) {
 
 // DispatchMouseClick hit-tests this window’s active document and dispatches a DOM mouse event.
 func (wc *WindowContext) DispatchMouseClick(x, y float64, button mustard.MustardKey) *NodeDOM {
-	if wc == nil || wc.ActiveDocument == nil || wc.ActiveDocument.DOM == nil {
+	if wc == nil || !wc.IsActive() || wc.ActiveDocument == nil || wc.ActiveDocument.DOM == nil {
 		return nil
 	}
 	eventType, buttonCode, ok := mouseClickDetails(button)
@@ -479,7 +535,7 @@ func mouseClickDetails(button mustard.MustardKey) (string, int, bool) {
 func (wc *WindowContext) dispatchMouseEventAt(target *NodeDOM, eventType string, button int, x, y float64) {
 	wc.jsRuntimeMu.Lock()
 	defer wc.jsRuntimeMu.Unlock()
-	if wc.jsRuntime == nil {
+	if wc.jsRuntime == nil || !wc.IsActive() {
 		return
 	}
 	wrapper := &JSDOMWrapper{node: target, runtime: wc.jsRuntime, windowCtx: wc}
@@ -530,7 +586,7 @@ func (wc *WindowContext) focusedDOMNode() *NodeDOM {
 func (wc *WindowContext) dispatchKeyboardEventAt(target *NodeDOM, eventType string, properties map[string]interface{}) {
 	wc.jsRuntimeMu.Lock()
 	defer wc.jsRuntimeMu.Unlock()
-	if wc.jsRuntime == nil {
+	if wc.jsRuntime == nil || !wc.IsActive() {
 		return
 	}
 	options := wc.jsRuntime.NewObject()

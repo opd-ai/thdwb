@@ -151,6 +151,43 @@ func TestLayoutInvalidationsCoalescePerWindow(t *testing.T) {
 	}
 }
 
+func TestInactiveWindowBlocksScriptsAndDefersReflow(t *testing.T) {
+	wc := NewWindowContext(&Settings{}, &assets.BuildInfo{}, profiler.CreateProfiler())
+	defer wc.Destroy()
+	wc.SetActive(false)
+	if _, err := wc.RunJS(`globalThis.inactiveScriptRan = true`); err == nil {
+		t.Fatal("inactive window executed JavaScript")
+	}
+	root := &NodeDOM{WindowCtx: wc}
+	root.RequestReflow()
+	if roots := wc.DrainReflowQueue(); len(roots) != 0 {
+		t.Fatal("inactive window drained layout work")
+	}
+	wc.SetActive(true)
+	if roots := wc.DrainReflowQueue(); len(roots) != 1 || roots[0] != root {
+		t.Fatal("pending layout work was not retained for activation")
+	}
+}
+
+func TestInactiveWindowPausesAnimationFramesUntilActivation(t *testing.T) {
+	wc := NewWindowContext(&Settings{}, &assets.BuildInfo{}, profiler.CreateProfiler())
+	defer wc.Destroy()
+	fired := make(chan struct{}, 1)
+	wc.SetActive(false)
+	wc.ScheduleAnimationFrame(func() { fired <- struct{}{} })
+	select {
+	case <-fired:
+		t.Fatal("inactive window ran an animation frame")
+	case <-time.After(50 * time.Millisecond):
+	}
+	wc.SetActive(true)
+	select {
+	case <-fired:
+	case <-time.After(time.Second):
+		t.Fatal("animation frame did not run after activation")
+	}
+}
+
 func TestCalcPointIntersectionChoosesDeepestTopmostLaidOutNode(t *testing.T) {
 	root := &NodeDOM{RenderBox: &RenderBox{Width: 100, Height: 100}}
 	earlier := &NodeDOM{RenderBox: &RenderBox{Left: 10, Top: 10, Width: 30, Height: 30}}

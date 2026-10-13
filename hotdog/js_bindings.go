@@ -78,6 +78,9 @@ func (mo *MutationObserver) Trigger(target *NodeDOM, mutationType string) {
 	if mo == nil || mo.callback == nil || mo.runtime == nil {
 		return
 	}
+	if mo.windowCtx != nil && !mo.windowCtx.IsActive() {
+		return
+	}
 	if _, ok := mo.observed[target]; !ok {
 		return
 	}
@@ -1351,6 +1354,9 @@ func (w *JSWindowWrapper) postMessage(call goja.FunctionCall) goja.Value {
 		}
 
 		// Create event object in the target window's runtime
+		if !targetWC.IsActive() {
+			continue
+		}
 		targetRuntime := targetWC.GetJSRuntime()
 		if targetRuntime == nil {
 			continue
@@ -1487,13 +1493,18 @@ func (w *JSWindowWrapper) fetch(call goja.FunctionCall) goja.Value {
 	}
 
 	// Execute request asynchronously
+	scheduleFetchError := func(err error) {
+		w.windowCtx.ScheduleAnimationFrame(func() {
+			reject(w.runtime.NewGoError(err))
+		})
+	}
 	go func() {
 		if needsPreflight {
 			// Send OPTIONS preflight request (never sends credentials)
 			preflightClient := &http.Client{}
 			preflightResp := sauce.MakeCORSRequestWithClient(preflightClient, parsedURL, origin, "OPTIONS", nil, getPreflightHeaders(method, headers))
 			if !isCORSPreflightSuccessful(preflightResp) {
-				reject(w.runtime.NewGoError(errors.New("CORS preflight failed")))
+				scheduleFetchError(errors.New("CORS preflight failed"))
 				return
 			}
 		}
@@ -1501,13 +1512,13 @@ func (w *JSWindowWrapper) fetch(call goja.FunctionCall) goja.Value {
 		// Make actual request
 		resp := sauce.MakeCORSRequestWithClient(httpClient, parsedURL, origin, method, body, headers)
 		if resp.Code == 0 && resp.Body != "" && strings.Contains(resp.Body, "error") {
-			reject(w.runtime.NewGoError(errors.New(resp.Body)))
+			scheduleFetchError(errors.New(resp.Body))
 			return
 		}
 
-		// Create Response object
-		responseObj := w.createResponseObject(resp)
-		resolve(responseObj)
+		w.windowCtx.ScheduleAnimationFrame(func() {
+			resolve(w.createResponseObject(resp))
+		})
 	}()
 
 	return w.runtime.ToValue(promise)
@@ -1546,11 +1557,17 @@ func (w *JSWindowWrapper) XMLHttpRequest(call goja.FunctionCall) goja.Value {
 
 		// Helper to call a listener function
 		callListener := func(listener goja.Callable, eventObj *goja.Object) {
+			if !w.windowCtx.IsActive() {
+				return
+			}
 			_, _ = listener(goja.Undefined(), w.runtime.ToValue(eventObj))
 		}
 
 		// Helper to update readyState and fire event
 		updateReadyState := func(newState int) {
+			if !w.windowCtx.IsActive() {
+				return
+			}
 			readyState = newState
 			xhrObj.Set("readyState", readyState)
 

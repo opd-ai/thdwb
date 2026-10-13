@@ -181,12 +181,13 @@ Build comprehensive test coverage, user-facing documentation, and performance op
 
 ---
 
-## Phase 8: Stretch Goal – CGo-Free Hardware-Accelerated Rendering Path
+## Phase 8: Stretch Goal – CGo-Free Hardware-Accelerated Rendering Path with Ebitengine, Android/iOS, and WebView
 
-Decouple from all CGo dependencies while maintaining or improving hardware acceleration.
+Decouple from all CGo dependencies by moving the browser render stack onto Ebitengine, while maintaining or improving hardware acceleration and broadening the target surface to Android and iOS as first-class platforms. Add a native WebView integration path for embedded browsing and hybrid app workflows without reintroducing CGo-based render dependencies.
 
 * **Audit Current CGo Dependencies:** Document all CGo bindings in mustard (GLFW, OpenGL, FreeType, image libraries).
-* **Replace GLFW:** Migrate window creation/input to pure Go bindings (syscall on Windows/macOS, X11/Wayland on Linux) or `ebitengine/purego`.
+* **Replace GLFW:** Migrate window creation/input to Ebitengine's cross-platform runtime and input model, eliminating GLFW and native CGo window glue while preserving desktop behavior.
+* **Add Android and iOS as First-Class Targets:** Port the renderer and input stack to Android and iOS via Ebitengine, with touch events, lifecycle handling, orientation changes, and mobile-safe viewport management.
 * **Implement Direct GPU Access:** Use platform-native GPU APIs:
   - **Windows:** Direct3D 12 via `golang.org/x/sys/windows`.
   - **macOS:** Metal via syscall bindings.
@@ -194,13 +195,22 @@ Decouple from all CGo dependencies while maintaining or improving hardware accel
 * **Port Font Rendering:** Replace FreeType with pure Go font rasterizer using `golang.org/x/image/font` and `golang.org/x/image/vector` for TrueType/OpenType glyph rendering.
 * **Replace Image Codecs:** Swap CGo image libraries for pure Go implementations (`image/png`, `image/jpeg`, `golang.org/x/image/webp`, `kolesa-team/go-avif`).
 * **Build Platform Abstraction Layer:** Create thin interface layer (`platform.Renderer`, `platform.Window`, `platform.Input`) with native implementations per OS.
+* **Implement WebView:** Add an embeddable native WebView layer for Android/iOS and desktop fallback surfaces, enabling in-app browsing with sandboxed execution and shared browser policy enforcement.
 * **Implement GPU Command Buffer Abstraction:** Define platform-agnostic command buffer format; translate into native GPU APIs at runtime.
 * **Add Software Fallback Renderer:** Implement pure Go CPU-based renderer using `golang.org/x/image/draw` as fallback for headless/GPU-restricted environments.
 * **Create Build Tags:** Use conditional compilation (`// +build cgo,nocgo`) allowing users to choose CGo or pure Go rendering at compile time; default to pure Go.
-* **Ensure Cross-Platform Testing:** Validate pure Go renderer on Windows, macOS, Linux; test headless rendering and virtualized GPU scenarios.
+* **Ensure Cross-Platform Testing:** Validate pure Go renderer on Windows, macOS, Linux, Android, and iOS; test headless rendering and virtualized GPU scenarios.
 
 ### Phase 8 Completion Checklist
-- [ ] All CGo dependencies catalogued and replacement plan documented
-- [ ] Window creation and event loop work without GLFW on all platforms
-- [ ] GPU rendering functional via Direct3D 12, Metal, or Vulkan
-- [ ] Font rendering produces correct glyphs and metrics
+- [ ] All CGo dependencies audited and replacement plan documented
+- [ ] GLFW replaced with Ebitengine-based cross-platform windowing and input stack
+- [ ] Android and iOS are supported as first-class targets with touch and lifecycle handling
+- [ ] GPU rendering functional via Direct3D 12, Metal, or Vulkan on native platforms
+- [ ] Font rendering works with pure Go TrueType/OpenType rasterization
+- [ ] Image codecs replaced with pure Go implementations without CGo dependencies
+- [ ] Platform abstraction layer (`platform.Renderer`, `platform.Window`, `platform.Input`) implemented
+- [ ] Embeddable native WebView layer added for in-app browsing and sandboxed execution
+- [ ] GPU command buffer abstraction translates cleanly to native GPU APIs
+- [ ] CPU software renderer provides a fallback for headless or GPU-restricted environments
+- [ ] Build tags support CGo and pure Go rendering selection, defaulting to pure Go
+- [ ] Cross-platform validation passes on Windows, macOS, Linux, Android, and iOS

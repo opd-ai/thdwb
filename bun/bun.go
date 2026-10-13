@@ -99,7 +99,6 @@ func layoutDOM(ctx *gg.Context, node *hotdog.NodeDOM, childIdx int) {
 		layoutDOM(ctx, nodeChildren[i], i)
 		node.RenderBox.Height += nodeChildren[i].RenderBox.Height
 	}
-
 }
 
 func paintNode(ctx *gg.Context, node *hotdog.NodeDOM) {
