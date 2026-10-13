@@ -69,11 +69,11 @@ func main() {
 
 	// Add click handler
 	clickCount := 0
-	button.onClick = func() {
+	window.RegisterButton(button, func() {
 		clickCount++
 		button.SetContent(fmt.Sprintf("Clicked %d times!", clickCount))
 		button.RequestRepaint()
-	}
+	})
 
 	// Create a label to show status
 	statusLabel := mustard.CreateLabelWidget("Button not clicked yet")

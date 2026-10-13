@@ -226,6 +226,11 @@ func (widget *baseWidget) BaseWidget() *baseWidget {
 	return widget
 }
 
+// GetWindow returns the window associated with this widget.
+func (widget *baseWidget) GetWindow() *Window {
+	return widget.window
+}
+
 func (widget *baseWidget) NeedsRepaint() bool {
 	return widget.needsRepaint
 }

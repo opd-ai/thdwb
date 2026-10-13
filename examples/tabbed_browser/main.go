@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"image"
 	"runtime"
 
 	hotdog "github.com/danfragoso/thdwb/hotdog"
@@ -88,11 +89,11 @@ func main() {
 	tab1Status.SetFontColor("#333333")
 
 	clickCount1 := 0
-	tab1Button.onClick = func() {
+	tab1Window.RegisterButton(tab1Button, func() {
 		clickCount1++
 		tab1Status.SetContent(fmt.Sprintf("Tab 1 button clicked %d times!", clickCount1))
 		tab1Status.RequestRepaint()
-	}
+	})
 
 	tab1RootFrame.AttachWidget(tab1Title)
 	tab1RootFrame.AttachWidget(tab1Desc)
@@ -164,7 +165,7 @@ func main() {
 	tab2Status.SetFontSize(14)
 	tab2Status.SetFontColor("#333333")
 
-	submitButton.onClick = func() {
+	tab2Window.RegisterButton(submitButton, func() {
 		username := usernameInput.GetValue()
 		email := emailInput.GetValue()
 		if username == "" || email == "" {
@@ -175,7 +176,7 @@ func main() {
 			tab2Status.SetFontColor("#4CAF50")
 		}
 		tab2Status.RequestRepaint()
-	}
+	})
 
 	tab2RootFrame.AttachWidget(tab2Title)
 	tab2RootFrame.AttachWidget(tab2Desc)
@@ -270,27 +271,31 @@ func main() {
 	modalOverlay.AttachWidget(modalMessage)
 	modalOverlay.AttachWidget(modalButtons)
 
-	tab3Window.AddOverlay(modalOverlay)
+	// Create overlay from modal frame
+	modalOverlayCtx := modalOverlay.BaseWidget().GetWindow().GetContext()
+	overlay := mustard.CreateStaticOverlay("modal", modalOverlayCtx, image.Point{X: 300, Y: 200})
+	tab3Window.AddOverlay(overlay)
 
-	openModalButton.onClick = func() {
+	// Button handlers
+	tab3Window.RegisterButton(openModalButton, func() {
 		modalOverlay.SetVisible(true)
 		modalOverlay.RequestRepaint()
 		tab3Window.RequestReflow()
-	}
+	})
 
-	confirmButton.onClick = func() {
+	tab3Window.RegisterButton(confirmButton, func() {
 		modalOverlay.SetVisible(false)
 		tab3Status.SetContent("Action confirmed!")
 		tab3Status.SetFontColor("#4CAF50")
 		tab3Status.RequestRepaint()
-	}
+	})
 
-	cancelButton.onClick = func() {
+	tab3Window.RegisterButton(cancelButton, func() {
 		modalOverlay.SetVisible(false)
 		tab3Status.SetContent("Action cancelled")
 		tab3Status.SetFontColor("#FF9800")
 		tab3Status.RequestRepaint()
-	}
+	})
 
 	tab3RootFrame.AttachWidget(tab3Title)
 	tab3RootFrame.AttachWidget(tab3Desc)

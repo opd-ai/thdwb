@@ -183,6 +183,11 @@ func (window *Window) RecreateContext() {
 	window.context = gg.NewContext(window.width, window.height)
 }
 
+// GetContext returns the gg.Context for this window.
+func (window *Window) GetContext() *gg.Context {
+	return window.context
+}
+
 func (window *Window) addEvents() {
 	window.glw.SetFocusCallback(func(w *glfw.Window, focused bool) {
 	})

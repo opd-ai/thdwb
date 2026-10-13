@@ -98,7 +98,7 @@ func main() {
 	statusLabel.SetFontSize(14)
 	statusLabel.SetFontColor("#FF0000")
 
-	submitButton.onClick = func() {
+	window.RegisterButton(submitButton, func() {
 		username := usernameInput.GetValue()
 		password := passwordInput.GetValue()
 		if username == "" || password == "" {
@@ -109,7 +109,7 @@ func main() {
 			statusLabel.SetFontColor("#4CAF50")
 		}
 		statusLabel.RequestRepaint()
-	}
+	})
 
 	// Add widgets to frame
 	rootFrame.AttachWidget(title)

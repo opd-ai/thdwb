@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"image"
 	"runtime"
 
 	hotdog "github.com/danfragoso/thdwb/hotdog"
@@ -123,29 +124,31 @@ func main() {
 	modalOverlay.AttachWidget(modalMessage)
 	modalOverlay.AttachWidget(modalButtons)
 
-	// Add modal to window as overlay
-	window.AddOverlay(modalOverlay)
+	// Create overlay from modal frame
+	modalOverlayCtx := modalOverlay.BaseWidget().GetWindow().GetContext()
+	overlay := mustard.CreateStaticOverlay("modal", modalOverlayCtx, image.Point{X: 300, Y: 200})
+	window.AddOverlay(overlay)
 
 	// Button handlers
-	openModalButton.onClick = func() {
+	window.RegisterButton(openModalButton, func() {
 		modalOverlay.SetVisible(true)
 		modalOverlay.RequestRepaint()
 		window.RequestReflow()
-	}
+	})
 
-	confirmButton.onClick = func() {
+	window.RegisterButton(confirmButton, func() {
 		modalOverlay.SetVisible(false)
 		statusLabel.SetContent("Action confirmed!")
 		statusLabel.SetFontColor("#4CAF50")
 		statusLabel.RequestRepaint()
-	}
+	})
 
-	cancelButton.onClick = func() {
+	window.RegisterButton(cancelButton, func() {
 		modalOverlay.SetVisible(false)
 		statusLabel.SetContent("Action cancelled")
 		statusLabel.SetFontColor("#FF9800")
 		statusLabel.RequestRepaint()
-	}
+	})
 
 	// Add widgets to frame
 	rootFrame.AttachWidget(title)
