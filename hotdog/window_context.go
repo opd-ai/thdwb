@@ -117,6 +117,7 @@ type WindowContext struct {
 	animationFrames       map[uint64]func()
 	animationFrameTimer   *time.Timer
 	active                bool
+	destroyed            bool
 
 	// JS runtime (Goja VM) - per window isolation
 	jsRuntimeMu sync.Mutex
@@ -314,6 +315,10 @@ func (wc *WindowContext) NotifyMutationObservers(target *NodeDOM, mutationType s
 // ScheduleAnimationFrame queues a callback to run on the next animation frame for this window.
 func (wc *WindowContext) ScheduleAnimationFrame(callback func()) uint64 {
 	wc.animationFrameMu.Lock()
+	if wc.destroyed {
+		wc.animationFrameMu.Unlock()
+		return 0
+	}
 	wc.animationFrameCounter++
 	id := wc.animationFrameCounter
 	wc.animationFrames[id] = callback
@@ -331,33 +336,51 @@ func (wc *WindowContext) scheduleAnimationFrameLocked() {
 func (wc *WindowContext) runAnimationFrame() {
 	wc.jsRuntimeMu.Lock()
 	defer wc.jsRuntimeMu.Unlock()
-	wc.animationFrameMu.Lock()
-	if !wc.active || wc.jsRuntime == nil {
-		wc.animationFrameTimer = nil
-		wc.animationFrameMu.Unlock()
+	if !wc.beginAnimationFrame() {
 		return
 	}
+	for _, id := range wc.animationFrameIDs() {
+		if !wc.runAnimationFrameCallback(id) {
+			return
+		}
+	}
+}
+
+func (wc *WindowContext) beginAnimationFrame() bool {
+	wc.animationFrameMu.Lock()
+	defer wc.animationFrameMu.Unlock()
+	if !wc.active || wc.jsRuntime == nil {
+		wc.animationFrameTimer = nil
+		return false
+	}
+	wc.animationFrameTimer = nil
+	return true
+}
+
+func (wc *WindowContext) animationFrameIDs() []uint64 {
+	wc.animationFrameMu.Lock()
+	defer wc.animationFrameMu.Unlock()
 	ids := make([]uint64, 0, len(wc.animationFrames))
 	for id := range wc.animationFrames {
 		ids = append(ids, id)
 	}
 	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
-	wc.animationFrameTimer = nil
-	wc.animationFrameMu.Unlock()
+	return ids
+}
 
-	for _, id := range ids {
-		wc.animationFrameMu.Lock()
-		if !wc.active {
-			wc.animationFrameMu.Unlock()
-			return
-		}
-		callback := wc.animationFrames[id]
-		delete(wc.animationFrames, id)
+func (wc *WindowContext) runAnimationFrameCallback(id uint64) bool {
+	wc.animationFrameMu.Lock()
+	if !wc.active {
 		wc.animationFrameMu.Unlock()
-		if callback != nil {
-			callback()
-		}
+		return false
 	}
+	callback := wc.animationFrames[id]
+	delete(wc.animationFrames, id)
+	wc.animationFrameMu.Unlock()
+	if callback != nil {
+		callback()
+	}
+	return true
 }
 
 // IsActive reports whether this window is allowed to run scripts and drain layout work.
@@ -377,6 +400,9 @@ func (wc *WindowContext) SetActive(active bool) {
 	}
 	wc.animationFrameMu.Lock()
 	defer wc.animationFrameMu.Unlock()
+	if wc.destroyed {
+		return
+	}
 	if wc.active == active {
 		return
 	}
@@ -656,6 +682,8 @@ func (wc *WindowContext) Destroy() {
 	wc.mutationObservers = nil
 	wc.mutationObserverMu.Unlock()
 	wc.animationFrameMu.Lock()
+	wc.destroyed = true
+	wc.active = false
 	if wc.animationFrameTimer != nil {
 		wc.animationFrameTimer.Stop()
 		wc.animationFrameTimer = nil

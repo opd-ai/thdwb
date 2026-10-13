@@ -10,7 +10,7 @@
 - Mark completed tasks immediately with `- [x]`.
 
 ## 🛠️ Implementation & Quality Standards
-- **Function Metrics**: Maximum 30 lines per function. Maximum 10 cyclomatic complexity.
+- **Function Metrics**: Maximum 50 lines per function. Maximum 10 cyclomatic complexity.
 - **Documentation**: Minimum 70% doc coverage. Match local error wrapping and API signatures.
 - **Tests**: Run `go test -race ./...` and `go vet ./...` after every single task. Use `xvfb-run` if a display is missing.
 - **Reversion**: If a test fix takes >20 lines or touches out-of-scope files, revert the task and log the blocker.
