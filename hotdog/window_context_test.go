@@ -158,7 +158,16 @@ func TestInactiveWindowBlocksScriptsAndDefersReflow(t *testing.T) {
 	if _, err := wc.RunJS(`globalThis.inactiveScriptRan = true`); err == nil {
 		t.Fatal("inactive window executed JavaScript")
 	}
+	if err := wc.SetJSValue("inactiveValue", true); err == nil {
+		t.Fatal("inactive window accepted a JavaScript global write")
+	}
 	root := &NodeDOM{WindowCtx: wc}
+	eventFired := false
+	wc.registerNodeEvent(root, "click", 1, func(interface{}) { eventFired = true })
+	wc.EmitNodeEvent(root, "click", nil)
+	if eventFired {
+		t.Fatal("inactive window dispatched a DOM event")
+	}
 	root.RequestReflow()
 	if roots := wc.DrainReflowQueue(); len(roots) != 0 {
 		t.Fatal("inactive window drained layout work")

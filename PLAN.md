@@ -117,7 +117,7 @@ Bind solved layout coordinates to the visual render pipeline and map hardware in
 - [x] Focus ring renders and updates correctly per window
 - [x] Scrollable content works without artifacts
 - [x] No excessive paint/layout cycles per window
-- [ ] Inactive windows do not execute JS or recalculate layout
+- [x] Inactive windows do not execute JS or recalculate layout
 - [ ] Tab switching is smooth with no layout stalls
 - [ ] Each window can have different viewport dimensions
 

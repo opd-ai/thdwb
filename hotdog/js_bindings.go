@@ -1677,20 +1677,24 @@ func (w *JSWindowWrapper) XMLHttpRequest(call goja.FunctionCall) goja.Value {
 
 			updateReadyState(LOADING)
 
-			// Execute request asynchronously
-			go func() {
-				parsedURL, err := url.Parse(requestURL)
-				if err != nil {
-					// Network error
+			// Execute network work asynchronously; Goja callbacks run on this window's frame queue.
+			dispatchNetworkEvent := func(eventType string) {
+				w.windowCtx.ScheduleAnimationFrame(func() {
 					updateReadyState(DONE)
-					if listeners, ok := eventListeners["error"]; ok {
+					if listeners, ok := eventListeners[eventType]; ok {
 						for _, listener := range listeners {
 							eventObj := w.runtime.NewObject()
-							eventObj.Set("type", "error")
+							eventObj.Set("type", eventType)
 							eventObj.Set("target", xhrObj)
 							callListener(listener, eventObj)
 						}
 					}
+				})
+			}
+			go func() {
+				parsedURL, err := url.Parse(requestURL)
+				if err != nil {
+					dispatchNetworkEvent("error")
 					return
 				}
 
@@ -1718,16 +1722,7 @@ func (w *JSWindowWrapper) XMLHttpRequest(call goja.FunctionCall) goja.Value {
 					// Send OPTIONS preflight request
 					preflightResp := sauce.MakeCORSRequestWithClient(httpClient, parsedURL, origin, "OPTIONS", nil, getPreflightHeaders(requestMethod, requestHeaders))
 					if !isCORSPreflightSuccessful(preflightResp) {
-						// CORS preflight failed
-						updateReadyState(DONE)
-						if listeners, ok := eventListeners["error"]; ok {
-							for _, listener := range listeners {
-								eventObj := w.runtime.NewObject()
-								eventObj.Set("type", "error")
-								eventObj.Set("target", xhrObj)
-								callListener(listener, eventObj)
-							}
-						}
+						dispatchNetworkEvent("error")
 						return
 					}
 				}
@@ -1736,33 +1731,25 @@ func (w *JSWindowWrapper) XMLHttpRequest(call goja.FunctionCall) goja.Value {
 				resp := sauce.MakeCORSRequestWithClient(httpClient, parsedURL, origin, requestMethod, requestBody, requestHeaders)
 
 				if resp.Code == 0 && resp.Body != "" && strings.Contains(resp.Body, "error") {
-					// Network error
-					updateReadyState(DONE)
-					if listeners, ok := eventListeners["error"]; ok {
-						for _, listener := range listeners {
-							eventObj := w.runtime.NewObject()
-							eventObj.Set("type", "error")
-							eventObj.Set("target", xhrObj)
-							callListener(listener, eventObj)
-						}
-					}
+					dispatchNetworkEvent("error")
 					return
 				}
 
-				// Success
-				status = resp.Code
-				statusText = httpStatusText(resp.Code)
-				responseText = resp.Body
-				response = resp.Body // For simplicity, response is same as responseText
+				w.windowCtx.ScheduleAnimationFrame(func() {
+					status = resp.Code
+					statusText = httpStatusText(resp.Code)
+					responseText = resp.Body
+					response = resp.Body
 
-				xhrObj.Set("status", status)
-				xhrObj.Set("statusText", statusText)
-				xhrObj.Set("responseText", responseText)
-				xhrObj.Set("response", response)
+					xhrObj.Set("status", status)
+					xhrObj.Set("statusText", statusText)
+					xhrObj.Set("responseText", responseText)
+					xhrObj.Set("response", response)
 
-				updateReadyState(HEADERS_RECEIVED)
-				updateReadyState(LOADING)
-				updateReadyState(DONE)
+					updateReadyState(HEADERS_RECEIVED)
+					updateReadyState(LOADING)
+					updateReadyState(DONE)
+				})
 			}()
 
 			return goja.Undefined()

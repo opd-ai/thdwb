@@ -244,6 +244,9 @@ func (wc *WindowContext) RemoveNodeEventByKey(node *NodeDOM, eventName string, k
 }
 
 func (wc *WindowContext) EmitNodeEvent(node *NodeDOM, eventName string, data interface{}) {
+	if !wc.IsActive() {
+		return
+	}
 	for _, handler := range wc.nodeEventRegistry[node][eventName] {
 		handler.handler(data)
 	}
@@ -495,6 +498,9 @@ func (wc *WindowContext) GetJSRuntime() *goja.Runtime {
 func (wc *WindowContext) SetJSValue(name string, value interface{}) error {
 	wc.jsRuntimeMu.Lock()
 	defer wc.jsRuntimeMu.Unlock()
+	if !wc.IsActive() {
+		return fmt.Errorf("window context is inactive")
+	}
 	if wc.jsRuntime == nil {
 		return fmt.Errorf("no JavaScript runtime available")
 	}
