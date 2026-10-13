@@ -380,6 +380,10 @@ func (window *Window) AttachClickEventListener(callback func(MustardKey)) {
 	window.clickEventListeners = append(window.clickEventListeners, callback)
 }
 
+func (window *Window) AttachPointerClickEventListener(callback func(float64, float64, MustardKey)) {
+	window.pointerClickEventListeners = append(window.pointerClickEventListeners, callback)
+}
+
 func (window *Window) SetCursor(cursorType cursorType) {
 	switch cursorType {
 	case PointerCursor:

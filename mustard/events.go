@@ -40,8 +40,10 @@ func (window *Window) ProcessPointerClick(button glfw.MouseButton) {
 			window.ProcessTreeClick()
 			window.ProcessInputActivation()
 			window.fireClickEvents(MouseLeft)
+			window.firePointerClickEvents(MouseLeft)
 		} else if button == glfw.MouseButtonRight {
 			window.fireClickEvents(MouseRight)
+			window.firePointerClickEvents(MouseRight)
 		}
 	}
 }
@@ -183,6 +185,12 @@ func (window *Window) fireScrollEvents(x, y float64) {
 func (window *Window) fireClickEvents(key MustardKey) {
 	for _, eventCallback := range window.clickEventListeners {
 		eventCallback(key)
+	}
+}
+
+func (window *Window) firePointerClickEvents(button MustardKey) {
+	for _, eventCallback := range window.pointerClickEventListeners {
+		eventCallback(window.cursorX, window.cursorY, button)
 	}
 }
 

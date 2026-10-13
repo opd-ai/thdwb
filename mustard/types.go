@@ -48,6 +48,7 @@ type Window struct {
 	cursorY float64
 
 	pointerPositionEventListeners []func(float64, float64)
+	pointerClickEventListeners    []func(float64, float64, MustardKey)
 	scrollEventListeners          []func(int)
 	clickEventListeners           []func(MustardKey)
 

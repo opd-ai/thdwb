@@ -432,6 +432,58 @@ func (wc *WindowContext) RunJS(script string) (goja.Value, error) {
 	return wc.jsRuntime.RunString(script)
 }
 
+// BindWindowInput routes pointer clicks from a mustard window to this window context.
+func (wc *WindowContext) BindWindowInput(window *mustard.Window) {
+	if wc == nil || window == nil {
+		return
+	}
+	wc.Window = window
+	window.AttachPointerClickEventListener(func(x, y float64, button mustard.MustardKey) {
+		wc.DispatchMouseClick(x, y, button)
+	})
+}
+
+// DispatchMouseClick hit-tests this window’s active document and dispatches a DOM mouse event.
+func (wc *WindowContext) DispatchMouseClick(x, y float64, button mustard.MustardKey) *NodeDOM {
+	if wc == nil || wc.ActiveDocument == nil || wc.ActiveDocument.DOM == nil {
+		return nil
+	}
+	eventType, buttonCode, ok := mouseClickDetails(button)
+	if !ok {
+		return nil
+	}
+	target := wc.ActiveDocument.DOM.CalcPointIntersection(x, y)
+	if target != nil {
+		wc.dispatchMouseEventAt(target, eventType, buttonCode, x, y)
+	}
+	return target
+}
+
+func mouseClickDetails(button mustard.MustardKey) (string, int, bool) {
+	switch button {
+	case mustard.MouseLeft:
+		return "click", 0, true
+	case mustard.MouseRight:
+		return "contextmenu", 2, true
+	default:
+		return "", 0, false
+	}
+}
+
+func (wc *WindowContext) dispatchMouseEventAt(target *NodeDOM, eventType string, button int, x, y float64) {
+	wc.jsRuntimeMu.Lock()
+	defer wc.jsRuntimeMu.Unlock()
+	if wc.jsRuntime == nil {
+		return
+	}
+	wrapper := &JSDOMWrapper{node: target, runtime: wc.jsRuntime, windowCtx: wc}
+	event := newJSEvent(wc.jsRuntime, goja.ConstructorCall{Arguments: []goja.Value{wc.jsRuntime.ToValue(eventType)}})
+	event.Set("button", button)
+	event.Set("clientX", x)
+	event.Set("clientY", y)
+	wrapper.dispatchDOMEvent(event)
+}
+
 // SetFocusedElement sets the currently focused DOM element.
 func (wc *WindowContext) SetFocusedElement(el *NodeDOM) {
 	wc.focusedElement = el

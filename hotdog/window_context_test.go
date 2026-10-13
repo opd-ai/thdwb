@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/danfragoso/thdwb/assets"
+	"github.com/danfragoso/thdwb/mustard"
+	"github.com/go-gl/glfw/v3.3/glfw"
 	"golang.org/x/net/html"
 
 	profiler "github.com/danfragoso/thdwb/profiler"
@@ -520,6 +522,54 @@ func TestDOMMutationsFromJS(t *testing.T) {
 }
 
 // parseHTMLForTest parses HTML using the ketchup parser for testing.
+func setupMouseClickTestWindow(t *testing.T) (*WindowContext, *mustard.Window) {
+	t.Helper()
+	wc := NewWindowContext(&Settings{}, &assets.BuildInfo{}, profiler.CreateProfiler())
+	doc, err := parseHTMLForTest(`<html><body><button id="target"></button></body></html>`, wc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wc.ActiveDocument = doc
+	if err := wc.InitJSRuntime(); err != nil {
+		t.Fatal(err)
+	}
+	target, err := doc.DOM.QuerySelector("#target")
+	if err != nil {
+		t.Fatal(err)
+	}
+	target.RenderBox = &RenderBox{Width: 20, Height: 20}
+	if _, err := wc.RunJS(`var clickCount = 0; var clickWasCorrect = false; var button = document.querySelector("#target"); button.addEventListener("click", function(event) { clickCount++; clickWasCorrect = event.target === button && event.currentTarget === button && event.button === 0 && event.clientX === 0 && event.clientY === 0; });`); err != nil {
+		t.Fatal(err)
+	}
+	window := &mustard.Window{}
+	wc.BindWindowInput(window)
+	return wc, window
+}
+
+func TestWindowPointerClickDispatchIsIsolated(t *testing.T) {
+	wc1, window1 := setupMouseClickTestWindow(t)
+	wc2, window2 := setupMouseClickTestWindow(t)
+	defer wc1.Destroy()
+	defer wc2.Destroy()
+	window1.ProcessPointerClick(glfw.MouseButtonLeft)
+	assertJSResult(t, wc1, `clickCount + ":" + clickWasCorrect`, "1:true")
+	assertJSResult(t, wc2, `clickCount + ":" + clickWasCorrect`, "0:false")
+	window2.ProcessPointerClick(glfw.MouseButtonLeft)
+	assertJSResult(t, wc1, `clickCount + ":" + clickWasCorrect`, "1:true")
+	assertJSResult(t, wc2, `clickCount + ":" + clickWasCorrect`, "1:true")
+}
+
+func assertJSResult(t *testing.T, wc *WindowContext, script, want string) {
+	t.Helper()
+	result, err := wc.RunJS(script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := result.String(); got != want {
+		t.Fatalf("JS result = %q, want %q", got, want)
+	}
+}
+
 func parseHTMLForTest(htmlContent string, windowCtx *WindowContext) (*Document, error) {
 	// Use the existing HTML parser from ketchup
 	// This is a simplified version - in reality we'd use the ketchup package
