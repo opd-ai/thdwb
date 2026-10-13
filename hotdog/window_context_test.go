@@ -188,6 +188,33 @@ func TestInactiveWindowPausesAnimationFramesUntilActivation(t *testing.T) {
 	}
 }
 
+func TestAnimationFrameDeactivationDefersRemainingCallbacks(t *testing.T) {
+	wc := NewWindowContext(&Settings{}, &assets.BuildInfo{}, profiler.CreateProfiler())
+	defer wc.Destroy()
+	first, second := make(chan struct{}, 1), make(chan struct{}, 1)
+	wc.ScheduleAnimationFrame(func() {
+		wc.SetActive(false)
+		first <- struct{}{}
+	})
+	wc.ScheduleAnimationFrame(func() { second <- struct{}{} })
+	select {
+	case <-first:
+	case <-time.After(time.Second):
+		t.Fatal("first animation frame did not run")
+	}
+	select {
+	case <-second:
+		t.Fatal("deactivation did not pause the remaining callback")
+	case <-time.After(50 * time.Millisecond):
+	}
+	wc.SetActive(true)
+	select {
+	case <-second:
+	case <-time.After(time.Second):
+		t.Fatal("remaining callback did not resume after activation")
+	}
+}
+
 func TestCalcPointIntersectionChoosesDeepestTopmostLaidOutNode(t *testing.T) {
 	root := &NodeDOM{RenderBox: &RenderBox{Width: 100, Height: 100}}
 	earlier := &NodeDOM{RenderBox: &RenderBox{Left: 10, Top: 10, Width: 30, Height: 30}}
