@@ -218,6 +218,42 @@ func TestWindowRequestAnimationFrameIsolation(t *testing.T) {
 	wc2.Destroy()
 }
 
+func TestAnimationFrameBatchOrderAndIsolation(t *testing.T) {
+	wc1 := NewWindowContext(&Settings{}, &assets.BuildInfo{}, profiler.CreateProfiler())
+	wc2 := NewWindowContext(&Settings{}, &assets.BuildInfo{}, profiler.CreateProfiler())
+	defer wc1.Destroy()
+	defer wc2.Destroy()
+	order1, order2 := make(chan int, 2), make(chan int, 2)
+	wc1.ScheduleAnimationFrame(func() { order1 <- 1 })
+	cancelledID := wc1.ScheduleAnimationFrame(func() { order1 <- 2 })
+	wc1.ScheduleAnimationFrame(func() { order1 <- 3 })
+	wc2.ScheduleAnimationFrame(func() { order2 <- 4 })
+	wc2.ScheduleAnimationFrame(func() { order2 <- 5 })
+	if !wc1.CancelAnimationFrame(cancelledID) {
+		t.Fatal("failed to cancel wc1 callback")
+	}
+	for _, expected := range []int{1, 3} {
+		select {
+		case got := <-order1:
+			if got != expected {
+				t.Fatalf("wc1 callback order = %d, want %d", got, expected)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("wc1 callback %d did not execute", expected)
+		}
+	}
+	for _, expected := range []int{4, 5} {
+		select {
+		case got := <-order2:
+			if got != expected {
+				t.Fatalf("wc2 callback order = %d, want %d", got, expected)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("wc2 callback %d did not execute", expected)
+		}
+	}
+}
+
 func TestMutationObserverFiresOnDOMChanges(t *testing.T) {
 	settings := &Settings{}
 	buildInfo := &assets.BuildInfo{}

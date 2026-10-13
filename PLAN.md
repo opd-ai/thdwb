@@ -87,7 +87,7 @@ Enable interactive UIs with event handling, mutation tracking, and continuous la
 - [x] Interactive components respond to events
 - [x] No layout thrashing
 - [x] Viewport resize triggers relayout without artifacts
-- [ ] Each window maintains independent event loop and animation frame
+- [x] Each window maintains independent event loop and animation frame
 - [ ] Event bubbling stops at security boundaries (iframe sandbox)
 
 ---

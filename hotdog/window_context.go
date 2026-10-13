@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/url"
 	"reflect"
+	"sort"
 	"sync"
 	"time"
 
@@ -114,6 +115,7 @@ type WindowContext struct {
 	animationFrameMu      sync.Mutex
 	animationFrameCounter uint64
 	animationFrames       map[uint64]func()
+	animationFrameTimer   *time.Timer
 
 	// JS runtime (Goja VM) - per window isolation
 	jsRuntimeMu sync.Mutex
@@ -310,27 +312,34 @@ func (wc *WindowContext) ScheduleAnimationFrame(callback func()) uint64 {
 	wc.animationFrameCounter++
 	id := wc.animationFrameCounter
 	wc.animationFrames[id] = callback
+	if wc.animationFrameTimer == nil {
+		wc.animationFrameTimer = time.AfterFunc(16*time.Millisecond, wc.runAnimationFrame)
+	}
 	wc.animationFrameMu.Unlock()
-
-	time.AfterFunc(16*time.Millisecond, func() {
-		wc.animationFrameMu.Lock()
-		cb, ok := wc.animationFrames[id]
-		if ok {
-			delete(wc.animationFrames, id)
-		}
-		wc.animationFrameMu.Unlock()
-		if ok {
-			wc.invokeAnimationFrame(cb)
-		}
-	})
 	return id
 }
 
-func (wc *WindowContext) invokeAnimationFrame(callback func()) {
+func (wc *WindowContext) runAnimationFrame() {
+	wc.animationFrameMu.Lock()
+	ids := make([]uint64, 0, len(wc.animationFrames))
+	for id := range wc.animationFrames {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	callbacks := make([]func(), 0, len(ids))
+	for _, id := range ids {
+		callbacks = append(callbacks, wc.animationFrames[id])
+		delete(wc.animationFrames, id)
+	}
+	wc.animationFrameTimer = nil
+	wc.animationFrameMu.Unlock()
+
 	wc.jsRuntimeMu.Lock()
 	defer wc.jsRuntimeMu.Unlock()
 	if wc.jsRuntime != nil {
-		callback()
+		for _, callback := range callbacks {
+			callback()
+		}
 	}
 }
 
@@ -342,6 +351,10 @@ func (wc *WindowContext) CancelAnimationFrame(id uint64) bool {
 		return false
 	}
 	delete(wc.animationFrames, id)
+	if len(wc.animationFrames) == 0 && wc.animationFrameTimer != nil {
+		wc.animationFrameTimer.Stop()
+		wc.animationFrameTimer = nil
+	}
 	return true
 }
 
@@ -467,6 +480,10 @@ func (wc *WindowContext) Destroy() {
 	wc.mutationObservers = nil
 	wc.mutationObserverMu.Unlock()
 	wc.animationFrameMu.Lock()
+	if wc.animationFrameTimer != nil {
+		wc.animationFrameTimer.Stop()
+		wc.animationFrameTimer = nil
+	}
 	for id := range wc.animationFrames {
 		delete(wc.animationFrames, id)
 	}
