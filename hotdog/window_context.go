@@ -99,7 +99,9 @@ type WindowContext struct {
 	inputState     map[string]interface{}
 
 	// Event registry for this window
-	eventRegistry map[string][]eventHandler
+	eventRegistry     map[string][]eventHandler
+	nodeEventRegistry map[*NodeDOM]map[string][]eventHandler
+	nodeWrappers      map[*NodeDOM]*goja.Object
 
 	// Mutation observers for this window.
 	mutationObserverMu sync.Mutex
@@ -131,18 +133,20 @@ type WindowContext struct {
 // NewWindowContext creates a new isolated window context.
 func NewWindowContext(settings *Settings, buildInfo *assets.BuildInfo, profiler *profiler.Profiler) *WindowContext {
 	wc := &WindowContext{
-		ActiveDocument:  &Document{},
-		Documents:       make([]*Document, 0),
-		History:         &History{},
-		Profiler:        profiler,
-		Settings:        settings,
-		BuildInfo:       buildInfo,
-		layoutCache:     make(map[string]interface{}),
-		inputState:       make(map[string]interface{}),
-		eventRegistry:    make(map[string][]eventHandler),
+		ActiveDocument:    &Document{},
+		Documents:         make([]*Document, 0),
+		History:           &History{},
+		Profiler:          profiler,
+		Settings:          settings,
+		BuildInfo:         buildInfo,
+		layoutCache:       make(map[string]interface{}),
+		inputState:        make(map[string]interface{}),
+		eventRegistry:     make(map[string][]eventHandler),
+		nodeEventRegistry: make(map[*NodeDOM]map[string][]eventHandler),
+		nodeWrappers:      make(map[*NodeDOM]*goja.Object),
 		mutationObservers: make(map[*MutationObserver]struct{}),
-		animationFrames:  make(map[uint64]func()),
-		sessionStorage:   NewSessionStorageManager(),
+		animationFrames:   make(map[uint64]func()),
+		sessionStorage:    NewSessionStorageManager(),
 	}
 
 	// Initialize per-window Goja VM for JavaScript execution
@@ -199,6 +203,40 @@ func (wc *WindowContext) RegisterEvent(eventName string, handler func(interface{
 
 func (wc *WindowContext) registerEvent(eventName string, key uintptr, handler func(interface{})) {
 	wc.eventRegistry[eventName] = append(wc.eventRegistry[eventName], eventHandler{key: key, handler: handler})
+}
+
+func (wc *WindowContext) registerNodeEvent(node *NodeDOM, eventName string, key uintptr, handler func(interface{})) {
+	if node == nil {
+		return
+	}
+	if wc.nodeEventRegistry[node] == nil {
+		wc.nodeEventRegistry[node] = make(map[string][]eventHandler)
+	}
+	wc.nodeEventRegistry[node][eventName] = append(wc.nodeEventRegistry[node][eventName], eventHandler{key: key, handler: handler})
+}
+
+func (wc *WindowContext) RemoveNodeEventByKey(node *NodeDOM, eventName string, key uintptr) {
+	handlers := wc.nodeEventRegistry[node][eventName]
+	filtered := handlers[:0]
+	for _, handler := range handlers {
+		if handler.key != key {
+			filtered = append(filtered, handler)
+		}
+	}
+	if len(filtered) == 0 {
+		delete(wc.nodeEventRegistry[node], eventName)
+	} else {
+		wc.nodeEventRegistry[node][eventName] = filtered
+	}
+	if len(wc.nodeEventRegistry[node]) == 0 {
+		delete(wc.nodeEventRegistry, node)
+	}
+}
+
+func (wc *WindowContext) EmitNodeEvent(node *NodeDOM, eventName string, data interface{}) {
+	for _, handler := range wc.nodeEventRegistry[node][eventName] {
+		handler.handler(data)
+	}
 }
 
 func (wc *WindowContext) RemoveEventByKey(eventName string, key uintptr) {
@@ -350,6 +388,8 @@ func (wc *WindowContext) Destroy() {
 	wc.ClearLayoutCache()
 	wc.inputState = nil
 	wc.eventRegistry = nil
+	wc.nodeEventRegistry = nil
+	wc.nodeWrappers = nil
 	wc.mutationObserverMu.Lock()
 	for observer := range wc.mutationObservers {
 		observer.disconnect()

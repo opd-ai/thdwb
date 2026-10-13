@@ -93,12 +93,58 @@ func (mo *MutationObserver) Trigger(target *NodeDOM, mutationType string) {
 	_, _ = mo.callback(goja.Undefined(), records)
 }
 
+func applyJSEventOptions(event *goja.Object, runtime *goja.Runtime, options goja.Value) {
+	if goja.IsNull(options) || goja.IsUndefined(options) {
+		return
+	}
+	optionsObject := options.ToObject(runtime)
+	if bubbles := optionsObject.Get("bubbles"); bubbles != nil {
+		event.Set("bubbles", bubbles.ToBoolean())
+	}
+	if cancelable := optionsObject.Get("cancelable"); cancelable != nil {
+		event.Set("cancelable", cancelable.ToBoolean())
+	}
+}
+
+func installJSEventMethods(event *goja.Object) {
+	event.Set("preventDefault", func(goja.FunctionCall) goja.Value {
+		if event.Get("cancelable").ToBoolean() {
+			event.Set("defaultPrevented", true)
+		}
+		return goja.Undefined()
+	})
+	event.Set("stopPropagation", func(goja.FunctionCall) goja.Value {
+		event.Set("cancelBubble", true)
+		return goja.Undefined()
+	})
+}
+
+func newJSEvent(runtime *goja.Runtime, call goja.ConstructorCall) *goja.Object {
+	if len(call.Arguments) == 0 {
+		panic(runtime.NewGoError(errors.New("Event requires a type argument")))
+	}
+	event := runtime.NewObject()
+	event.Set("type", call.Argument(0).String())
+	event.Set("bubbles", false)
+	event.Set("cancelable", false)
+	event.Set("defaultPrevented", false)
+	event.Set("cancelBubble", false)
+	if len(call.Arguments) > 1 {
+		applyJSEventOptions(event, runtime, call.Argument(1))
+	}
+	installJSEventMethods(event)
+	return event
+}
+
 // InitJSRuntime initializes the JavaScript runtime with DOM bindings
 func (wc *WindowContext) InitJSRuntime() error {
 	runtime := wc.GetJSRuntime()
 	if runtime == nil {
 		return fmt.Errorf("no JavaScript runtime available")
 	}
+	runtime.Set("Event", func(call goja.ConstructorCall) *goja.Object {
+		return newJSEvent(runtime, call)
+	})
 
 	// Create console object
 	console := &JSConsoleWrapper{
@@ -146,6 +192,7 @@ func (wc *WindowContext) InitJSRuntime() error {
 	windowObj.Set("removeEventListener", windowWrapper.removeEventListener)
 	windowObj.Set("requestAnimationFrame", windowWrapper.requestAnimationFrame)
 	windowObj.Set("cancelAnimationFrame", windowWrapper.cancelAnimationFrame)
+	windowObj.Set("Event", runtime.Get("Event"))
 	windowObj.Set("MutationObserver", func(call goja.ConstructorCall) *goja.Object {
 		if len(call.Arguments) < 1 {
 			panic(runtime.NewGoError(errors.New("MutationObserver requires a callback argument")))
@@ -443,42 +490,81 @@ func (d *JSDocumentWrapper) getTitle(call goja.FunctionCall) goja.Value {
 
 // wrapNode wraps a NodeDOM in a JSDOMWrapper and returns a JS object.
 func (d *JSDocumentWrapper) wrapNode(node *NodeDOM) goja.Value {
-	wrapper := &JSDOMWrapper{
-		node:      node,
-		runtime:   d.runtime,
-		windowCtx: d.windowCtx,
-	}
-	obj := d.runtime.NewObject()
-	obj.SetSymbol(nodeWrapperSymbol, wrapper) // Store wrapper reference for retrieval
-	obj.Set("nodeType", node.Type)
-	obj.Set("tagName", strings.ToUpper(node.Element))
-	// Define textContent with getter/setter
-	obj.DefineAccessorProperty("textContent", d.runtime.ToValue(wrapper.getTextContentProp), d.runtime.ToValue(wrapper.setTextContent), 0, 0)
-	// Define innerHTML with getter/setter
-	obj.DefineAccessorProperty("innerHTML", d.runtime.ToValue(wrapper.getInnerHTMLProp), d.runtime.ToValue(wrapper.setInnerHTML), 0, 0)
-	obj.Set("id", node.Attr("id"))
-	obj.Set("className", node.Attr("class"))
-	obj.Set("querySelector", wrapper.querySelector)
-	obj.Set("querySelectorAll", wrapper.querySelectorAll)
-	obj.Set("getAttribute", wrapper.getAttribute)
-	obj.Set("setAttribute", wrapper.setAttribute)
-	obj.Set("removeAttribute", wrapper.removeAttribute)
-	obj.Set("appendChild", wrapper.appendChild)
-	obj.Set("removeChild", wrapper.removeChild)
-	obj.Set("insertBefore", wrapper.insertBefore)
-	obj.Set("replaceChild", wrapper.replaceChild)
-	obj.Set("cloneNode", wrapper.cloneNode)
-	obj.Set("parentNode", wrapper.getParentNode)
-	obj.Set("childNodes", wrapper.getChildNodes)
-	obj.Set("firstChild", wrapper.getFirstChild)
-	obj.Set("lastChild", wrapper.getLastChild)
-	obj.Set("nextSibling", wrapper.getNextSibling)
-	obj.Set("previousSibling", wrapper.getPreviousSibling)
-	obj.Set("style", wrapper.getStyle)
-	return obj
+	return (&JSDOMWrapper{runtime: d.runtime, windowCtx: d.windowCtx}).wrapNode(node)
 }
 
 // JSDOMWrapper methods for DOM manipulation
+
+func (w *JSDOMWrapper) addEventListener(call goja.FunctionCall) goja.Value {
+	if len(call.Arguments) < 2 {
+		panic(w.runtime.NewGoError(errors.New("addEventListener requires type and listener arguments")))
+	}
+	if err := w.node.checkOrigin(); err != nil {
+		panic(w.runtime.NewGoError(err))
+	}
+	eventType := call.Arguments[0].String()
+	listener, ok := goja.AssertFunction(call.Arguments[1])
+	if !ok {
+		panic(w.runtime.NewGoError(errors.New("event listener must be a function")))
+	}
+	w.windowCtx.registerNodeEvent(w.node, eventType, functionKey(listener), func(data interface{}) {
+		event, ok := data.(*goja.Object)
+		if ok {
+			_, _ = listener(w.runtime.ToValue(event.Get("currentTarget")), w.runtime.ToValue(event))
+		}
+	})
+	return goja.Undefined()
+}
+
+func (w *JSDOMWrapper) removeEventListener(call goja.FunctionCall) goja.Value {
+	if len(call.Arguments) < 2 {
+		return goja.Undefined()
+	}
+	if err := w.node.checkOrigin(); err != nil {
+		panic(w.runtime.NewGoError(err))
+	}
+	listener, ok := goja.AssertFunction(call.Arguments[1])
+	if ok {
+		w.windowCtx.RemoveNodeEventByKey(w.node, call.Arguments[0].String(), functionKey(listener))
+	}
+	return goja.Undefined()
+}
+
+func (w *JSDOMWrapper) dispatchEvent(call goja.FunctionCall) goja.Value {
+	if len(call.Arguments) < 1 || goja.IsNull(call.Argument(0)) || goja.IsUndefined(call.Argument(0)) {
+		panic(w.runtime.NewGoError(errors.New("dispatchEvent requires an event argument")))
+	}
+	return w.dispatchDOMEvent(call.Argument(0).ToObject(w.runtime))
+}
+
+func (w *JSDOMWrapper) click(goja.FunctionCall) goja.Value {
+	options := w.runtime.NewObject()
+	options.Set("bubbles", true)
+	options.Set("cancelable", true)
+	event := newJSEvent(w.runtime, goja.ConstructorCall{Arguments: []goja.Value{w.runtime.ToValue("click"), options}})
+	w.dispatchDOMEvent(event)
+	return goja.Undefined()
+}
+
+func (w *JSDOMWrapper) dispatchDOMEvent(event *goja.Object) goja.Value {
+	if err := w.node.checkOrigin(); err != nil {
+		panic(w.runtime.NewGoError(err))
+	}
+	eventType := event.Get("type")
+	if !goja.IsString(eventType) || eventType.String() == "" {
+		panic(w.runtime.NewGoError(errors.New("event type must be a non-empty string")))
+	}
+	event.Set("target", w.wrapNode(w.node))
+	for current := w.node; current != nil && current.WindowCtx == w.windowCtx; current = current.Parent {
+		event.Set("currentTarget", w.wrapNode(current))
+		w.windowCtx.EmitNodeEvent(current, eventType.String(), event)
+		if !event.Get("bubbles").ToBoolean() || event.Get("cancelBubble").ToBoolean() {
+			break
+		}
+	}
+	event.Set("currentTarget", goja.Null())
+	return w.runtime.ToValue(!event.Get("defaultPrevented").ToBoolean())
+}
 
 // querySelector returns the first element matching the selector within this node's subtree.
 func (w *JSDOMWrapper) querySelector(call goja.FunctionCall) goja.Value {
@@ -953,6 +1039,12 @@ func (w *JSDOMWrapper) getInnerHTMLProp(call goja.FunctionCall) goja.Value {
 
 // wrapNode wraps a NodeDOM in a JSDOMWrapper and returns a JS object.
 func (w *JSDOMWrapper) wrapNode(node *NodeDOM) goja.Value {
+	if node == nil {
+		return goja.Null()
+	}
+	if obj := w.windowCtx.nodeWrappers[node]; obj != nil {
+		return obj
+	}
 	wrapper := &JSDOMWrapper{
 		node:      node,
 		runtime:   w.runtime,
@@ -972,6 +1064,10 @@ func (w *JSDOMWrapper) wrapNode(node *NodeDOM) goja.Value {
 	obj.Set("getAttribute", wrapper.getAttribute)
 	obj.Set("setAttribute", wrapper.setAttribute)
 	obj.Set("removeAttribute", wrapper.removeAttribute)
+	obj.Set("addEventListener", wrapper.addEventListener)
+	obj.Set("removeEventListener", wrapper.removeEventListener)
+	obj.Set("dispatchEvent", wrapper.dispatchEvent)
+	obj.Set("click", wrapper.click)
 	obj.Set("appendChild", wrapper.appendChild)
 	obj.Set("removeChild", wrapper.removeChild)
 	obj.Set("insertBefore", wrapper.insertBefore)
@@ -985,6 +1081,7 @@ func (w *JSDOMWrapper) wrapNode(node *NodeDOM) goja.Value {
 	obj.Set("previousSibling", wrapper.getPreviousSibling)
 	obj.Set("style", wrapper.getStyle)
 	obj.SetSymbol(nodeWrapperSymbol, wrapper) // Store wrapper reference for retrieval
+	w.windowCtx.nodeWrappers[node] = obj
 	return obj
 }
 

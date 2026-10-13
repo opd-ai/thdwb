@@ -255,6 +255,39 @@ func TestWindowEventListenerRemoval(t *testing.T) {
 	wc.Destroy()
 }
 
+const domElementEventScript = `
+	var parent = document.querySelector("#parent");
+	var button = document.querySelector("#button");
+	var calls = [];
+	function onButton(event) { calls.push("button:" + event.type + ":" + (this === button) + ":" + (event.target === button)); }
+	button.addEventListener("click", onButton);
+	parent.addEventListener("click", function(event) { calls.push("parent:" + event.type + ":" + (this === parent) + ":" + (event.currentTarget === parent)); });
+	button.dispatchEvent(new Event("click", { bubbles: true }));
+	button.removeEventListener("click", onButton);
+	button.click();
+	calls.join(",");
+`
+
+func TestDOMElementEventListeners(t *testing.T) {
+	wc := NewWindowContext(&Settings{}, &assets.BuildInfo{}, profiler.CreateProfiler())
+	defer wc.Destroy()
+	doc, err := parseHTMLForTest(`<html><body><div id="parent"><button id="button"></button></div></body></html>`, wc)
+	if err != nil {
+		t.Fatalf("Failed to parse HTML: %v", err)
+	}
+	wc.ActiveDocument = doc
+	if err := wc.InitJSRuntime(); err != nil {
+		t.Fatalf("Failed to init JS runtime: %v", err)
+	}
+	result, err := wc.GetJSRuntime().RunString(domElementEventScript)
+	if err != nil {
+		t.Fatalf("Failed to dispatch DOM events: %v", err)
+	}
+	if got, want := result.String(), "button:click:true:true,parent:click:true:true,parent:click:true:true"; got != want {
+		t.Fatalf("DOM event calls = %q, want %q", got, want)
+	}
+}
+
 func TestDOMMutationsFromJS(t *testing.T) {
 	settings := &Settings{}
 	buildInfo := &assets.BuildInfo{}
