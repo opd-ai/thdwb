@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"time"
 
 	sauce "github.com/danfragoso/thdwb/sauce"
 	"github.com/dop251/goja"
@@ -96,6 +97,8 @@ func (wc *WindowContext) InitJSRuntime() error {
 	windowObj.Set("location", windowWrapper.getLocation)
 	windowObj.Set("addEventListener", windowWrapper.addEventListener)
 	windowObj.Set("removeEventListener", windowWrapper.removeEventListener)
+	windowObj.Set("requestAnimationFrame", windowWrapper.requestAnimationFrame)
+	windowObj.Set("cancelAnimationFrame", windowWrapper.cancelAnimationFrame)
 	windowObj.Set("postMessage", windowWrapper.postMessage)
 	windowObj.Set("fetch", windowWrapper.fetch)
 	windowObj.Set("XMLHttpRequest", windowWrapper.XMLHttpRequest)
@@ -111,6 +114,8 @@ func (wc *WindowContext) InitJSRuntime() error {
 	// Also set as globals (window.localStorage === localStorage)
 	runtime.Set("window", windowObj)
 	runtime.Set("self", windowObj) // window.self === window
+	runtime.Set("requestAnimationFrame", windowWrapper.requestAnimationFrame)
+	runtime.Set("cancelAnimationFrame", windowWrapper.cancelAnimationFrame)
 	runtime.Set("localStorage", localStorageObj)
 	runtime.Set("sessionStorage", sessionStorageObj)
 
@@ -984,6 +989,29 @@ func (w *JSWindowWrapper) getLocation(call goja.FunctionCall) goja.Value {
 }
 
 // getLocalStorage returns the localStorage object for this window's origin.
+func (w *JSWindowWrapper) requestAnimationFrame(call goja.FunctionCall) goja.Value {
+	if len(call.Arguments) < 1 {
+		panic(w.runtime.NewGoError(errors.New("requestAnimationFrame requires a callback argument")))
+	}
+	listener, ok := goja.AssertFunction(call.Arguments[0])
+	if !ok {
+		panic(w.runtime.NewGoError(errors.New("requestAnimationFrame callback must be a function")))
+	}
+	id := w.windowCtx.ScheduleAnimationFrame(func() {
+		_, _ = listener(goja.Undefined(), w.runtime.ToValue(float64(time.Now().UnixNano())/1e6))
+	})
+	return w.runtime.ToValue(int64(id))
+}
+
+func (w *JSWindowWrapper) cancelAnimationFrame(call goja.FunctionCall) goja.Value {
+	if len(call.Arguments) < 1 {
+		return goja.Undefined()
+	}
+	id := uint64(call.Arguments[0].ToInteger())
+	w.windowCtx.CancelAnimationFrame(id)
+	return goja.Undefined()
+}
+
 func (w *JSWindowWrapper) getLocalStorage(call goja.FunctionCall) goja.Value {
 	return w.getStorage("localStorage")
 }

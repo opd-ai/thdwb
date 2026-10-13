@@ -81,8 +81,8 @@ Enable interactive UIs with event handling, mutation tracking, and continuous la
 - [x] Event listeners registered and fired correctly
 - [x] removeEventListener successfully removes callbacks
 - [x] Dirty flag system marks nodes correctly on mutation
-- [ ] Layout recalculation happens after DOM mutations
-- [ ] requestAnimationFrame callbacks execute in correct order and isolation
+- [x] Layout recalculation happens after DOM mutations
+- [x] requestAnimationFrame callbacks execute in correct order and isolation
 - [ ] Mutation observer reacts to DOM changes
 - [ ] Interactive components respond to events
 - [ ] No layout thrashing

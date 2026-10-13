@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"reflect"
 	"sync"
+	"time"
 
 	"github.com/danfragoso/thdwb/assets"
 	mustard "github.com/danfragoso/thdwb/mustard"
@@ -100,6 +101,11 @@ type WindowContext struct {
 	// Event registry for this window
 	eventRegistry map[string][]eventHandler
 
+	// Animation frame callbacks for this window, stored per-window for isolation.
+	animationFrameMu      sync.Mutex
+	animationFrameCounter uint64
+	animationFrames       map[uint64]func()
+
 	// JS runtime (Goja VM) - per window isolation
 	jsRuntime *goja.Runtime
 
@@ -121,16 +127,17 @@ type WindowContext struct {
 // NewWindowContext creates a new isolated window context.
 func NewWindowContext(settings *Settings, buildInfo *assets.BuildInfo, profiler *profiler.Profiler) *WindowContext {
 	wc := &WindowContext{
-		ActiveDocument: &Document{},
-		Documents:      make([]*Document, 0),
-		History:        &History{},
-		Profiler:       profiler,
-		Settings:       settings,
-		BuildInfo:      buildInfo,
-		layoutCache:    make(map[string]interface{}),
-		inputState:     make(map[string]interface{}),
-		eventRegistry:  make(map[string][]eventHandler),
-		sessionStorage: NewSessionStorageManager(),
+		ActiveDocument:  &Document{},
+		Documents:       make([]*Document, 0),
+		History:         &History{},
+		Profiler:        profiler,
+		Settings:        settings,
+		BuildInfo:       buildInfo,
+		layoutCache:     make(map[string]interface{}),
+		inputState:      make(map[string]interface{}),
+		eventRegistry:   make(map[string][]eventHandler),
+		animationFrames: make(map[uint64]func()),
+		sessionStorage:  NewSessionStorageManager(),
 	}
 
 	// Initialize per-window Goja VM for JavaScript execution
@@ -213,6 +220,39 @@ func (wc *WindowContext) EmitEvent(eventName string, data interface{}) {
 	}
 }
 
+// ScheduleAnimationFrame queues a callback to run on the next animation frame for this window.
+func (wc *WindowContext) ScheduleAnimationFrame(callback func()) uint64 {
+	wc.animationFrameMu.Lock()
+	wc.animationFrameCounter++
+	id := wc.animationFrameCounter
+	wc.animationFrames[id] = callback
+	wc.animationFrameMu.Unlock()
+
+	time.AfterFunc(16*time.Millisecond, func() {
+		wc.animationFrameMu.Lock()
+		cb, ok := wc.animationFrames[id]
+		if ok {
+			delete(wc.animationFrames, id)
+		}
+		wc.animationFrameMu.Unlock()
+		if ok {
+			cb()
+		}
+	})
+	return id
+}
+
+// CancelAnimationFrame removes a queued frame callback for this window.
+func (wc *WindowContext) CancelAnimationFrame(id uint64) bool {
+	wc.animationFrameMu.Lock()
+	defer wc.animationFrameMu.Unlock()
+	if _, ok := wc.animationFrames[id]; !ok {
+		return false
+	}
+	delete(wc.animationFrames, id)
+	return true
+}
+
 // GetLayoutCache retrieves a cached layout value.
 func (wc *WindowContext) GetLayoutCache(key string) (interface{}, bool) {
 	val, ok := wc.layoutCache[key]
@@ -269,6 +309,12 @@ func (wc *WindowContext) Destroy() {
 	wc.ClearLayoutCache()
 	wc.inputState = nil
 	wc.eventRegistry = nil
+	wc.animationFrameMu.Lock()
+	for id := range wc.animationFrames {
+		delete(wc.animationFrames, id)
+	}
+	wc.animationFrames = nil
+	wc.animationFrameMu.Unlock()
 	wc.focusedElement = nil
 	wc.jsRuntime = nil // Allow Goja VM to be garbage collected
 	wc.sessionStorage.ClearAllSessionStorage()
