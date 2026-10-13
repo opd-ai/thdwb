@@ -3,6 +3,10 @@ go 1.25.0
 use (
 	./assets
 	./bun
+	./examples/button_example
+	./examples/form_example
+	./examples/modal_example
+	./examples/tabbed_browser
 	./gg
 	./hotdog
 	./ketchup
