@@ -71,12 +71,12 @@ func TestOriginStorageManagerWritesPrivateFile(t *testing.T) {
 	require.NoError(t, manager.SetItem(origin, "key", "value"))
 	info, err := os.Stat(path)
 	require.NoError(t, err)
-	require.Equal(t, os.FileMode(0600), info.Mode().Perm())
+	require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
 }
 
 func TestOriginStorageManagerRejectsCorruptPersistentData(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "local-storage.json")
-	require.NoError(t, os.WriteFile(path, []byte("{invalid"), 0600))
+	require.NoError(t, os.WriteFile(path, []byte("{invalid"), 0o600))
 	_, err := NewOriginStorageManager(path)
 	require.ErrorContains(t, err, "decode localStorage")
 }
@@ -121,7 +121,7 @@ func TestOriginStorageManagerRollsBackFailedPersistence(t *testing.T) {
 	origin, err := url.Parse("https://example.com")
 	require.NoError(t, err)
 	blockedPath := filepath.Join(t.TempDir(), "existing-directory")
-	require.NoError(t, os.Mkdir(blockedPath, 0700))
+	require.NoError(t, os.Mkdir(blockedPath, 0o700))
 	manager.path = blockedPath
 
 	require.Error(t, manager.SetItem(origin, "key", "value"))

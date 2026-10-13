@@ -255,7 +255,7 @@ func GetAllLocalStorageOrigins() []string {
 func (manager *OriginStorageManager) load() error {
 	data, err := os.ReadFile(manager.path)
 	if errors.Is(err, os.ErrNotExist) {
-		if err := os.MkdirAll(filepath.Dir(manager.path), 0700); err != nil {
+		if err := os.MkdirAll(filepath.Dir(manager.path), 0o700); err != nil {
 			return fmt.Errorf("create localStorage directory: %w", err)
 		}
 		return manager.persistLocked()
@@ -263,7 +263,7 @@ func (manager *OriginStorageManager) load() error {
 	if err != nil {
 		return fmt.Errorf("read localStorage: %w", err)
 	}
-	if err := os.Chmod(manager.path, 0600); err != nil {
+	if err := os.Chmod(manager.path, 0o600); err != nil {
 		return fmt.Errorf("secure localStorage permissions: %w", err)
 	}
 	if err := json.Unmarshal(data, &manager.storages); err != nil {
@@ -293,7 +293,7 @@ func writeLocalStorageFile(path string, data []byte) error {
 	}
 	name := temporary.Name()
 	defer os.Remove(name)
-	if err := temporary.Chmod(0600); err != nil {
+	if err := temporary.Chmod(0o600); err != nil {
 		temporary.Close()
 		return fmt.Errorf("secure localStorage temporary file: %w", err)
 	}
