@@ -151,7 +151,7 @@ Implement secure network handling, cookie isolation, and storage partitioning pe
 - [x] CSP violations block inline scripts and log to console
 - [x] CORS preflight requests work for cross-origin XHR/Fetch
 - [x] SOP blocks cross-origin resource loads by default
-- [ ] No cross-window cookie leaks in test suite
+- [x] No cross-window cookie leaks in test suite
 
 ---
 

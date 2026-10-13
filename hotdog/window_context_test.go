@@ -112,6 +112,31 @@ func TestHttpOnlyCookiesAreNotExposedToJavaScript(t *testing.T) {
 	}
 }
 
+func TestWindowContextCookieJarIsolation(t *testing.T) {
+	wc1 := NewWindowContext(&Settings{}, &assets.BuildInfo{}, profiler.CreateProfiler())
+	defer wc1.Destroy()
+	wc2 := NewWindowContext(&Settings{}, &assets.BuildInfo{}, profiler.CreateProfiler())
+	defer wc2.Destroy()
+
+	for _, wc := range []*WindowContext{wc1, wc2} {
+		if err := wc.SetOrigin("https://example.com"); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	wc1.GetCookieJar().SetCookies(wc1.GetOrigin(), []*http.Cookie{
+		{Name: "session", Value: "window-one", Path: "/"},
+	})
+
+	cookies := wc1.GetCookieJar().Cookies(wc1.GetOrigin())
+	if len(cookies) != 1 || cookies[0].Value != "window-one" {
+		t.Fatalf("expected cookie to remain available in wc1, got %#v", cookies)
+	}
+	if cookies := wc2.GetCookieJar().Cookies(wc2.GetOrigin()); len(cookies) != 0 {
+		t.Fatalf("cookie set by wc1 leaked into wc2: %#v", cookies)
+	}
+}
+
 func TestDirtyFlagTracksDOMMutation(t *testing.T) {
 	settings := &Settings{}
 	buildInfo := &assets.BuildInfo{}
