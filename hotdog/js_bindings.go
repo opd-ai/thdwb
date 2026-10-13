@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -1902,6 +1903,7 @@ func getPreflightHeaders(method string, headers map[string]string) map[string]st
 		for key := range headers {
 			requestHeaders = append(requestHeaders, strings.ToLower(key))
 		}
+		sort.Strings(requestHeaders)
 		if len(requestHeaders) > 0 {
 			preflightHeaders["Access-Control-Request-Headers"] = strings.Join(requestHeaders, ", ")
 		}
