@@ -3,6 +3,7 @@ package hotdog
 import (
 	"net/http"
 	"net/url"
+	"reflect"
 	"sync"
 
 	"github.com/danfragoso/thdwb/assets"
@@ -57,6 +58,11 @@ func FindWindowsByOrigin(targetOrigin string) []*WindowContext {
 	return result
 }
 
+type eventHandler struct {
+	key     uintptr
+	handler func(interface{})
+}
+
 // WindowContext holds all state for a single browser window/tab instance.
 // This enables multiple independent windows to run without memory interference.
 type WindowContext struct {
@@ -92,7 +98,7 @@ type WindowContext struct {
 	inputState     map[string]interface{}
 
 	// Event registry for this window
-	eventRegistry map[string][]func(interface{})
+	eventRegistry map[string][]eventHandler
 
 	// JS runtime (Goja VM) - per window isolation
 	jsRuntime *goja.Runtime
@@ -123,7 +129,7 @@ func NewWindowContext(settings *Settings, buildInfo *assets.BuildInfo, profiler 
 		BuildInfo:      buildInfo,
 		layoutCache:    make(map[string]interface{}),
 		inputState:     make(map[string]interface{}),
-		eventRegistry:  make(map[string][]func(interface{})),
+		eventRegistry:  make(map[string][]eventHandler),
 		sessionStorage: NewSessionStorageManager(),
 	}
 
@@ -163,16 +169,46 @@ func (wc *WindowContext) GetOrigin() *url.URL {
 	return wc.Origin
 }
 
+func functionKey(fn interface{}) uintptr {
+	if fn == nil {
+		return 0
+	}
+	value := reflect.ValueOf(fn)
+	if !value.IsValid() || value.Kind() != reflect.Func {
+		return 0
+	}
+	return value.Pointer()
+}
+
 // RegisterEvent registers an event handler for this window context.
 func (wc *WindowContext) RegisterEvent(eventName string, handler func(interface{})) {
-	wc.eventRegistry[eventName] = append(wc.eventRegistry[eventName], handler)
+	wc.registerEvent(eventName, functionKey(handler), handler)
+}
+
+func (wc *WindowContext) registerEvent(eventName string, key uintptr, handler func(interface{})) {
+	wc.eventRegistry[eventName] = append(wc.eventRegistry[eventName], eventHandler{key: key, handler: handler})
+}
+
+func (wc *WindowContext) RemoveEventByKey(eventName string, key uintptr) {
+	handlers := wc.eventRegistry[eventName]
+	filtered := handlers[:0]
+	for _, handler := range handlers {
+		if handler.key != key {
+			filtered = append(filtered, handler)
+		}
+	}
+	if len(filtered) == 0 {
+		delete(wc.eventRegistry, eventName)
+		return
+	}
+	wc.eventRegistry[eventName] = filtered
 }
 
 // EmitEvent emits an event to all registered handlers for this window context.
 func (wc *WindowContext) EmitEvent(eventName string, data interface{}) {
 	if handlers, ok := wc.eventRegistry[eventName]; ok {
 		for _, handler := range handlers {
-			handler(data)
+			handler.handler(data)
 		}
 	}
 }

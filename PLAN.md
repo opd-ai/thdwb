@@ -78,8 +78,8 @@ Enable interactive UIs with event handling, mutation tracking, and continuous la
 * **Implement Viewport Resize Handling:** Capture viewport changes and mark root node dirty. **Viewport size can differ per window.**
 
 ### Phase 4 Completion Checklist
-- [ ] Event listeners registered and fired correctly
-- [ ] removeEventListener successfully removes callbacks
+- [x] Event listeners registered and fired correctly
+- [x] removeEventListener successfully removes callbacks
 - [ ] Dirty flag system marks nodes correctly on mutation
 - [ ] Layout recalculation happens after DOM mutations
 - [ ] requestAnimationFrame callbacks execute in correct order and isolation

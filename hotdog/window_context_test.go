@@ -84,6 +84,39 @@ func TestWindowContextJSRuntimeBasicExecution(t *testing.T) {
 	wc.Destroy()
 }
 
+func TestWindowEventListenerRemoval(t *testing.T) {
+	settings := &Settings{}
+	buildInfo := &assets.BuildInfo{}
+	prof := profiler.CreateProfiler()
+
+	wc := NewWindowContext(settings, buildInfo, prof)
+	if err := wc.InitJSRuntime(); err != nil {
+		t.Fatalf("Failed to init JS runtime: %v", err)
+	}
+
+	runtime := wc.GetJSRuntime()
+	calls := 0
+	runtime.Set("onMessage", func(call goja.FunctionCall) goja.Value {
+		calls++
+		return goja.Undefined()
+	})
+
+	if _, err := runtime.RunString(`window.addEventListener("message", onMessage)`); err != nil {
+		t.Fatalf("Failed to add event listener: %v", err)
+	}
+	if _, err := runtime.RunString(`window.removeEventListener("message", onMessage)`); err != nil {
+		t.Fatalf("Failed to remove event listener: %v", err)
+	}
+	if _, err := runtime.RunString(`window.postMessage("hello", "*")`); err != nil {
+		t.Fatalf("Failed to postMessage: %v", err)
+	}
+	if calls != 0 {
+		t.Fatalf("Listener remained registered after removeEventListener; calls=%d", calls)
+	}
+
+	wc.Destroy()
+}
+
 func TestDOMMutationsFromJS(t *testing.T) {
 	settings := &Settings{}
 	buildInfo := &assets.BuildInfo{}

@@ -1066,7 +1066,7 @@ func (w *JSWindowWrapper) addEventListener(call goja.FunctionCall) goja.Value {
 	if !ok {
 		panic(w.runtime.NewGoError(errors.New("addEventListener listener must be a function")))
 	}
-	w.windowCtx.RegisterEvent(eventType, func(data interface{}) {
+	w.windowCtx.registerEvent(eventType, functionKey(listenerFunc), func(data interface{}) {
 		listenerFunc(goja.Undefined(), w.runtime.ToValue(data))
 	})
 	return goja.Undefined()
@@ -1074,8 +1074,19 @@ func (w *JSWindowWrapper) addEventListener(call goja.FunctionCall) goja.Value {
 
 // removeEventListener removes an event listener from the window.
 func (w *JSWindowWrapper) removeEventListener(call goja.FunctionCall) goja.Value {
-	// Simplified implementation - in a real browser, you'd track specific listeners
-	// For now, we just acknowledge the call
+	if len(call.Arguments) < 2 {
+		return goja.Undefined()
+	}
+	eventType := call.Arguments[0].String()
+	listener := call.Arguments[1]
+	if goja.IsNull(listener) || goja.IsUndefined(listener) {
+		return goja.Undefined()
+	}
+	listenerFunc, ok := goja.AssertFunction(listener)
+	if !ok {
+		return goja.Undefined()
+	}
+	w.windowCtx.RemoveEventByKey(eventType, functionKey(listenerFunc))
 	return goja.Undefined()
 }
 
@@ -1447,6 +1458,10 @@ func (w *JSWindowWrapper) XMLHttpRequest(call goja.FunctionCall) goja.Value {
 
 				// Check if preflight is needed
 				needsPreflight := isCrossOrigin && !isSimpleRequest(requestMethod, requestHeaders)
+				httpClient := w.windowCtx.GetHTTPClient()
+				if !withCredentials {
+					httpClient = &http.Client{}
+				}
 
 				if needsPreflight {
 					// Send OPTIONS preflight request
