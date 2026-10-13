@@ -84,7 +84,7 @@ Enable interactive UIs with event handling, mutation tracking, and continuous la
 - [x] Layout recalculation happens after DOM mutations
 - [x] requestAnimationFrame callbacks execute in correct order and isolation
 - [x] Mutation observer reacts to DOM changes
-- [ ] Interactive components respond to events
+- [x] Interactive components respond to events
 - [ ] No layout thrashing
 - [ ] Viewport resize triggers relayout without artifacts
 - [ ] Each window maintains independent event loop and animation frame

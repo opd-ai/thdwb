@@ -140,19 +140,23 @@ func TestWindowRequestAnimationFrameIsolation(t *testing.T) {
 
 	frame1 := make(chan bool, 1)
 	frame2 := make(chan bool, 1)
-	wc1.GetJSRuntime().Set("onFrame1", func(call goja.FunctionCall) goja.Value {
+	if err := wc1.SetJSValue("onFrame1", func(call goja.FunctionCall) goja.Value {
 		frame1 <- true
 		return goja.Undefined()
-	})
-	wc2.GetJSRuntime().Set("onFrame2", func(call goja.FunctionCall) goja.Value {
+	}); err != nil {
+		t.Fatalf("Failed to set wc1 frame callback: %v", err)
+	}
+	if err := wc2.SetJSValue("onFrame2", func(call goja.FunctionCall) goja.Value {
 		frame2 <- true
 		return goja.Undefined()
-	})
+	}); err != nil {
+		t.Fatalf("Failed to set wc2 frame callback: %v", err)
+	}
 
-	if _, err := wc1.GetJSRuntime().RunString(`window.requestAnimationFrame(onFrame1)`); err != nil {
+	if _, err := wc1.RunJS(`window.requestAnimationFrame(onFrame1)`); err != nil {
 		t.Fatalf("Failed to schedule wc1 animation frame: %v", err)
 	}
-	if _, err := wc2.GetJSRuntime().RunString(`window.requestAnimationFrame(onFrame2)`); err != nil {
+	if _, err := wc2.RunJS(`window.requestAnimationFrame(onFrame2)`); err != nil {
 		t.Fatalf("Failed to schedule wc2 animation frame: %v", err)
 	}
 
@@ -169,11 +173,13 @@ func TestWindowRequestAnimationFrameIsolation(t *testing.T) {
 	}
 
 	cancelled := make(chan bool, 1)
-	wc1.GetJSRuntime().Set("onCancelled", func(call goja.FunctionCall) goja.Value {
+	if err := wc1.SetJSValue("onCancelled", func(call goja.FunctionCall) goja.Value {
 		cancelled <- true
 		return goja.Undefined()
-	})
-	if _, err := wc1.GetJSRuntime().RunString(`var cancelledId = window.requestAnimationFrame(onCancelled); window.cancelAnimationFrame(cancelledId);`); err != nil {
+	}); err != nil {
+		t.Fatalf("Failed to set cancellation callback: %v", err)
+	}
+	if _, err := wc1.RunJS(`var cancelledId = window.requestAnimationFrame(onCancelled); window.cancelAnimationFrame(cancelledId);`); err != nil {
 		t.Fatalf("Failed to cancel requested animation frame: %v", err)
 	}
 

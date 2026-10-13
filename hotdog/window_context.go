@@ -1,6 +1,7 @@
 package hotdog
 
 import (
+	"fmt"
 	"net/http"
 	"net/url"
 	"reflect"
@@ -113,7 +114,8 @@ type WindowContext struct {
 	animationFrames       map[uint64]func()
 
 	// JS runtime (Goja VM) - per window isolation
-	jsRuntime *goja.Runtime
+	jsRuntimeMu sync.Mutex
+	jsRuntime   *goja.Runtime
 
 	// Session storage manager (per-window, origin-partitioned)
 	sessionStorage *SessionStorageManager
@@ -315,10 +317,18 @@ func (wc *WindowContext) ScheduleAnimationFrame(callback func()) uint64 {
 		}
 		wc.animationFrameMu.Unlock()
 		if ok {
-			cb()
+			wc.invokeAnimationFrame(cb)
 		}
 	})
 	return id
+}
+
+func (wc *WindowContext) invokeAnimationFrame(callback func()) {
+	wc.jsRuntimeMu.Lock()
+	defer wc.jsRuntimeMu.Unlock()
+	if wc.jsRuntime != nil {
+		callback()
+	}
 }
 
 // CancelAnimationFrame removes a queued frame callback for this window.
@@ -349,9 +359,29 @@ func (wc *WindowContext) ClearLayoutCache() {
 }
 
 // GetJSRuntime returns the Goja runtime for this window context.
-// This allows controlled access to the JS runtime for DOM bindings.
+// The returned runtime must not be accessed concurrently; use RunJS and SetJSValue.
 func (wc *WindowContext) GetJSRuntime() *goja.Runtime {
 	return wc.jsRuntime
+}
+
+// SetJSValue sets a global while serializing access to this window's Goja runtime.
+func (wc *WindowContext) SetJSValue(name string, value interface{}) error {
+	wc.jsRuntimeMu.Lock()
+	defer wc.jsRuntimeMu.Unlock()
+	if wc.jsRuntime == nil {
+		return fmt.Errorf("no JavaScript runtime available")
+	}
+	return wc.jsRuntime.Set(name, value)
+}
+
+// RunJS executes a script while serializing access to this window's Goja runtime.
+func (wc *WindowContext) RunJS(script string) (goja.Value, error) {
+	wc.jsRuntimeMu.Lock()
+	defer wc.jsRuntimeMu.Unlock()
+	if wc.jsRuntime == nil {
+		return nil, fmt.Errorf("no JavaScript runtime available")
+	}
+	return wc.jsRuntime.RunString(script)
 }
 
 // SetFocusedElement sets the currently focused DOM element.
@@ -377,6 +407,8 @@ func (wc *WindowContext) GetInputState(key string) (interface{}, bool) {
 
 // Destroy cleans up the window context resources.
 func (wc *WindowContext) Destroy() {
+	wc.jsRuntimeMu.Lock()
+	defer wc.jsRuntimeMu.Unlock()
 	wc.ActiveDocument = nil
 	wc.Documents = nil
 	wc.Viewport = nil
