@@ -1,12 +1,12 @@
 package sauce
 
 import (
+	"context"
 	"encoding/base64"
-	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -238,32 +238,33 @@ func TestHSTSUpgradesLoopbackWhenExplicitlySet(t *testing.T) {
 
 func TestHTTPTransportUpgradesURLAndCachesHSTS(t *testing.T) {
 	store := NewHSTSStore()
-	var receivedURL string
-	transport := &originCookieTransport{
-		hsts: store,
-		base: roundTripFunc(func(request *http.Request) (*http.Response, error) {
-			receivedURL = request.URL.String()
-			return &http.Response{
-				StatusCode: http.StatusOK,
-				Header:     http.Header{"Strict-Transport-Security": []string{"max-age=3600"}},
-				Body:       io.NopCloser(strings.NewReader("ok")),
-				Request:    request,
-			}, nil
-		}),
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Strict-Transport-Security", "max-age=3600")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+	serverURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+	store.ProcessHeader("example.com", "max-age=3600", true)
+	dialer := &net.Dialer{}
+	base := &http.Transport{
+		DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
+			return dialer.DialContext(ctx, network, server.Listener.Addr().String())
+		},
 	}
-	request, err := http.NewRequest(http.MethodGet, "http://example.com:80/resource", nil)
+	tofu, err := NewTOFUStore("")
+	require.NoError(t, err)
+	require.NoError(t, tofu.TrustCertificate("example.com", server.Certificate()))
+	transport := &originCookieTransport{
+		hsts: store, base: base, tofu: tofu,
+	}
+	request, err := http.NewRequest(http.MethodGet, "http://example.com:"+serverURL.Port()+"/resource", nil)
 	require.NoError(t, err)
 	response, err := (&http.Client{Transport: transport}).Do(request)
 	require.NoError(t, err)
 	require.NoError(t, response.Body.Close())
-	assert.Equal(t, "https://example.com:443/resource", receivedURL)
+	assert.Equal(t, "https://example.com:"+serverURL.Port()+"/resource", response.Request.URL.String())
 	assert.True(t, store.ShouldUpgrade("example.com"))
-}
-
-type roundTripFunc func(*http.Request) (*http.Response, error)
-
-func (roundTrip roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
-	return roundTrip(request)
 }
 
 func assertCookieNames(t *testing.T, cookies []*http.Cookie, want ...string) {

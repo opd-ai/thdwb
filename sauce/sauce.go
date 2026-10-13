@@ -389,11 +389,14 @@ func isSafeMethod(method string) bool {
 }
 
 type originCookieTransport struct {
-	jar       *OriginCookieJar
-	initiator *url.URL
-	topLevel  bool
-	hsts      *HSTSStore
-	base      http.RoundTripper
+	jar             *OriginCookieJar
+	initiator       *url.URL
+	topLevel        bool
+	hsts            *HSTSStore
+	base            http.RoundTripper
+	tofu            *TOFUStore
+	httpsMu         sync.Mutex
+	httpsTransports map[string]http.RoundTripper
 }
 
 func (transport *originCookieTransport) RoundTrip(request *http.Request) (*http.Response, error) {
@@ -404,18 +407,39 @@ func (transport *originCookieTransport) RoundTrip(request *http.Request) (*http.
 		store = hstsStore
 	}
 	upgradeHTTPURL(request.URL, store)
-	if transport.jar != nil {
-		request.Header.Del("Cookie")
-		if request.Method != http.MethodOptions {
-			for _, cookie := range transport.jar.CookiesForRequest(request.URL, transport.initiator, transport.topLevel, request.Method) {
-				request.AddCookie(cookie)
-			}
+	transport.addRequestCookies(request)
+	base := transport.base
+	if strings.EqualFold(request.URL.Scheme, "https") {
+		var err error
+		base, err = transport.httpsTransport(request.URL.Hostname())
+		if err != nil {
+			return nil, fmt.Errorf("configure HTTPS transport: %w", err)
 		}
+	} else if base == nil {
+		base = http.DefaultTransport
 	}
-	response, err := transport.base.RoundTrip(request)
+	response, err := base.RoundTrip(request)
 	if err != nil {
 		return nil, err
 	}
+	transport.processResponse(request, response, store)
+	return response, nil
+}
+
+func (transport *originCookieTransport) addRequestCookies(request *http.Request) {
+	if transport.jar == nil {
+		return
+	}
+	request.Header.Del("Cookie")
+	if request.Method == http.MethodOptions {
+		return
+	}
+	for _, cookie := range transport.jar.CookiesForRequest(request.URL, transport.initiator, transport.topLevel, request.Method) {
+		request.AddCookie(cookie)
+	}
+}
+
+func (transport *originCookieTransport) processResponse(request *http.Request, response *http.Response, store *HSTSStore) {
 	if strings.EqualFold(request.URL.Scheme, "https") {
 		for _, header := range response.Header.Values("Strict-Transport-Security") {
 			store.ProcessHeader(request.URL.Hostname(), header, true)
@@ -424,7 +448,38 @@ func (transport *originCookieTransport) RoundTrip(request *http.Request) (*http.
 	if transport.jar != nil {
 		transport.jar.SetCookies(request.URL, response.Cookies())
 	}
-	return response, nil
+}
+
+func (transport *originCookieTransport) httpsTransport(hostname string) (http.RoundTripper, error) {
+	transport.httpsMu.Lock()
+	defer transport.httpsMu.Unlock()
+	if cached := transport.httpsTransports[hostname]; cached != nil {
+		return cached, nil
+	}
+	store, err := transport.certificateStore()
+	if err != nil {
+		return nil, err
+	}
+	base := transport.base
+	if base == nil {
+		base = http.DefaultTransport
+	}
+	verified, err := newVerifiedTransport(base, store, hostname)
+	if err != nil {
+		return nil, err
+	}
+	if transport.httpsTransports == nil {
+		transport.httpsTransports = make(map[string]http.RoundTripper)
+	}
+	transport.httpsTransports[hostname] = verified
+	return verified, nil
+}
+
+func (transport *originCookieTransport) certificateStore() (*TOFUStore, error) {
+	if transport.tofu != nil {
+		return transport.tofu, nil
+	}
+	return DefaultTOFUStore()
 }
 
 func cloneURL(requestURL *url.URL) *url.URL {
