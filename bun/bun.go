@@ -22,6 +22,7 @@ func RenderDocument(ctx *gg.Context, document *hotdog.Document, experimentalLayo
 		ctx.Clear()
 
 		layoutDOM(ctx, body, 0)
+		paintTree(ctx, body)
 	} else {
 		html, err := document.DOM.FindChildByName("html")
 		if err != nil {
@@ -42,7 +43,7 @@ func RenderDocument(ctx *gg.Context, document *hotdog.Document, experimentalLayo
 		ctx.Clear()
 
 		layoutNode(ctx, renderTree)
-		paintNode(ctx, renderTree)
+		paintTree(ctx, renderTree)
 
 		renderTree.Print(0)
 	}
@@ -99,7 +100,6 @@ func layoutDOM(ctx *gg.Context, node *hotdog.NodeDOM, childIdx int) {
 		node.RenderBox.Height += nodeChildren[i].RenderBox.Height
 	}
 
-	paintNode(ctx, node)
 }
 
 func paintNode(ctx *gg.Context, node *hotdog.NodeDOM) {
@@ -111,6 +111,37 @@ func paintNode(ctx *gg.Context, node *hotdog.NodeDOM) {
 	case "list-item":
 		paintListItemElement(ctx, node)
 	}
+}
+
+func paintTree(ctx *gg.Context, node *hotdog.NodeDOM) {
+	if node == nil {
+		return
+	}
+	paintNode(ctx, node)
+	for _, child := range node.Children {
+		paintTree(ctx, child)
+	}
+	paintFocusRing(ctx, node)
+}
+
+func paintFocusRing(ctx *gg.Context, node *hotdog.NodeDOM) {
+	if node == nil || node.RenderBox == nil || node.RenderBox.Width <= 0 || node.RenderBox.Height <= 0 {
+		return
+	}
+	source := node
+	if node.RenderBox.Node != nil {
+		source = node.RenderBox.Node
+	}
+	if source.WindowCtx == nil || source.WindowCtx.GetFocusedElement() != source {
+		return
+	}
+	box := node.RenderBox
+	ctx.Push()
+	ctx.SetHexColor("#1a73e8")
+	ctx.SetLineWidth(2)
+	ctx.DrawRectangle(box.Left-2, box.Top-2, box.Width+4, box.Height+4)
+	ctx.Stroke()
+	ctx.Pop()
 }
 
 func calculateNode(ctx *gg.Context, node *hotdog.NodeDOM, postion int) {

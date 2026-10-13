@@ -147,6 +147,52 @@ func assertTextWithinRenderBox(t *testing.T, paint func(*gg.Context, *hotdog.Nod
 	}
 }
 
+func TestFocusRingRendersOnlyInOwningWindow(t *testing.T) {
+	wc1 := hotdog.NewWindowContext(&hotdog.Settings{}, &assets.BuildInfo{}, profiler.CreateProfiler())
+	wc2 := hotdog.NewWindowContext(&hotdog.Settings{}, &assets.BuildInfo{}, profiler.CreateProfiler())
+	defer wc1.Destroy()
+	defer wc2.Destroy()
+	root1, focused1 := focusRenderTree(wc1, 20)
+	root2, focused2 := focusRenderTree(wc2, 60)
+	previous1 := root1.RenderBox.Node
+	wc1.SetFocusedElement(previous1)
+	wc1.SetFocusedElement(focused1)
+	wc2.SetFocusedElement(focused2)
+	if !previous1.NeedsRepaint || !focused1.NeedsRepaint || !focused2.NeedsRepaint {
+		t.Fatal("focus changes did not invalidate the old and new focus regions")
+	}
+	context1, context2 := gg.NewContext(100, 60), gg.NewContext(100, 60)
+	for _, context := range []*gg.Context{context1, context2} {
+		context.SetRGB(1, 1, 1)
+		context.Clear()
+	}
+	paintTree(context1, root1)
+	paintTree(context2, root2)
+	if !hasFocusRingPixel(context1, 18, 20) || hasFocusRingPixel(context1, 58, 20) {
+		t.Fatal("wc1 focus ring was missing or painted at wc2’s target")
+	}
+	if !hasFocusRingPixel(context2, 58, 20) || hasFocusRingPixel(context2, 18, 20) {
+		t.Fatal("wc2 focus ring was missing or painted at wc1’s target")
+	}
+}
+
+func focusRenderTree(wc *hotdog.WindowContext, left float64) (*hotdog.NodeDOM, *hotdog.NodeDOM) {
+	rootSource := &hotdog.NodeDOM{WindowCtx: wc}
+	focusedSource := &hotdog.NodeDOM{WindowCtx: wc}
+	child := &hotdog.NodeDOM{Style: focusTestStyle(), RenderBox: &hotdog.RenderBox{Node: focusedSource, Left: left, Top: 10, Width: 20, Height: 20}}
+	root := &hotdog.NodeDOM{Style: focusTestStyle(), RenderBox: &hotdog.RenderBox{Node: rootSource, Width: 100, Height: 60}, Children: []*hotdog.NodeDOM{child}}
+	return root, focusedSource
+}
+
+func focusTestStyle() *hotdog.Stylesheet {
+	return &hotdog.Stylesheet{Display: "block", Color: &hotdog.ColorRGBA{A: 1}, BackgroundColor: &hotdog.ColorRGBA{R: 1, G: 1, B: 1, A: 1}, FontSize: 12, FontWeight: 400}
+}
+
+func hasFocusRingPixel(context *gg.Context, x, y int) bool {
+	r, _, b, _ := context.Image().At(x, y).RGBA()
+	return b > r
+}
+
 func TestTextPaintStaysWithinRenderBox(t *testing.T) {
 	for name, paint := range map[string]func(*gg.Context, *hotdog.NodeDOM){"inline": paintInlineElement, "block": paintBlockElement} {
 		t.Run(name, func(t *testing.T) { assertTextWithinRenderBox(t, paint) })

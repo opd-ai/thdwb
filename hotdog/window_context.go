@@ -545,7 +545,16 @@ func (wc *WindowContext) dispatchKeyboardEventAt(target *NodeDOM, eventType stri
 
 // SetFocusedElement sets the currently focused DOM element.
 func (wc *WindowContext) SetFocusedElement(el *NodeDOM) {
+	if wc.focusedElement == el {
+		return
+	}
+	if wc.focusedElement != nil {
+		wc.focusedElement.RequestRepaint()
+	}
 	wc.focusedElement = el
+	if el != nil {
+		el.RequestRepaint()
+	}
 }
 
 // GetFocusedElement returns the currently focused DOM element.
