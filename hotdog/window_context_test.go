@@ -355,6 +355,53 @@ func TestDOMElementEventListeners(t *testing.T) {
 	}
 }
 
+func TestDOMEventBubblingStopsAtIframeBoundary(t *testing.T) {
+	wc := NewWindowContext(&Settings{}, &assets.BuildInfo{}, profiler.CreateProfiler())
+	defer wc.Destroy()
+	parentDoc, err := parseHTMLForTest(`<html><body><div id="outer"><iframe id="frame"></iframe></div></body></html>`, wc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wc.ActiveDocument = parentDoc
+	if err := wc.InitJSRuntime(); err != nil {
+		t.Fatal(err)
+	}
+	childDoc, err := parseHTMLForTest(`<html><body><button id="inner"></button></body></html>`, wc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	iframe, err := parentDoc.DOM.QuerySelector("#frame")
+	if err != nil {
+		t.Fatal(err)
+	}
+	iframe.SandboxFlags = SandboxAllowScripts | SandboxAllowSameOrigin
+	iframe.IframeDocument = childDoc
+	inner, err := childDoc.DOM.QuerySelector("#inner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inner == nil {
+		t.Fatal("child document did not return the inner button")
+	}
+	childDoc.DOM.Parent = iframe
+	childWrapper := &JSDocumentWrapper{doc: childDoc, runtime: wc.GetJSRuntime(), windowCtx: wc}
+	for name, node := range map[string]*NodeDOM{"innerButton": inner, "childRoot": childDoc.DOM} {
+		if err := wc.SetJSValue(name, childWrapper.wrapNode(node)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if wrapped := wc.GetJSRuntime().Get("innerButton"); wrapped == nil || goja.IsNull(wrapped) || goja.IsUndefined(wrapped) || wrapped.ToObject(wc.GetJSRuntime()).Get("addEventListener") == nil {
+		t.Fatal("inner button wrapper was not exposed to JavaScript")
+	}
+	result, err := wc.RunJS(`var counts = [0, 0, 0]; innerButton.addEventListener("click", function() { counts[0]++; }); childRoot.addEventListener("click", function() { counts[1]++; }); document.querySelector("#outer").addEventListener("click", function() { counts[2]++; }); innerButton.dispatchEvent(new Event("click", { bubbles: true })); counts.join(":");`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := result.String(), "1:1:0"; got != want {
+		t.Fatalf("event listener counts = %s, want %s", got, want)
+	}
+}
+
 func TestDOMMutationsFromJS(t *testing.T) {
 	settings := &Settings{}
 	buildInfo := &assets.BuildInfo{}

@@ -556,6 +556,9 @@ func (w *JSDOMWrapper) dispatchDOMEvent(event *goja.Object) goja.Value {
 	}
 	event.Set("target", w.wrapNode(w.node))
 	for current := w.node; current != nil && current.WindowCtx == w.windowCtx; current = current.Parent {
+		if w.isIframeEventBoundary(current) {
+			break
+		}
 		event.Set("currentTarget", w.wrapNode(current))
 		w.windowCtx.EmitNodeEvent(current, eventType.String(), event)
 		if !event.Get("bubbles").ToBoolean() || event.Get("cancelBubble").ToBoolean() {
@@ -564,6 +567,10 @@ func (w *JSDOMWrapper) dispatchDOMEvent(event *goja.Object) goja.Value {
 	}
 	event.Set("currentTarget", goja.Null())
 	return w.runtime.ToValue(!event.Get("defaultPrevented").ToBoolean())
+}
+
+func (w *JSDOMWrapper) isIframeEventBoundary(node *NodeDOM) bool {
+	return node != w.node && node.Type == NodeTypeElement && node.Element == "iframe" && node.IframeDocument == w.node.Document
 }
 
 // querySelector returns the first element matching the selector within this node's subtree.
