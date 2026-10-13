@@ -26,6 +26,9 @@ func TestProcessScrollUpdatesScrollableCanvasWithinBounds(t *testing.T) {
 	window.rootFrame = root
 
 	window.ProcessScroll(0, -1)
+	if window.needsReflow {
+		t.Fatal("scrolling triggered a layout reflow instead of a canvas repaint")
+	}
 	window.ProcessScroll(0, -1)
 	window.ProcessScroll(0, -1)
 	if canvas.GetOffset() != 100 {
@@ -60,7 +63,7 @@ func TestCanvasScrollClearsOldViewportPixels(t *testing.T) {
 	root := CreateFrame(VerticalFrame)
 	root.SetVisible(true)
 	canvas := &CanvasWidget{
-		baseWidget:     baseWidget{visible: true, needsRepaint: true},
+		baseWidget:     baseWidget{visible: true, needsRepaint: true, backgroundColor: "#fff"},
 		context:        gg.NewContext(0, 0),
 		drawingContext: gg.NewContext(0, 0),
 		drawingRepaint: true,

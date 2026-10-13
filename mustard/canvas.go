@@ -64,7 +64,6 @@ func (canvas *CanvasWidget) SetOffset(offset int) {
 	}
 	canvas.offset = offset
 	canvas.needsRepaint = true
-	canvas.RequestReflow()
 }
 
 func (canvas *CanvasWidget) GetOffset() int {
@@ -93,7 +92,7 @@ func (ctx *CanvasWidget) draw() {
 		ctx.drawingRepaint = false
 	}
 
-	ctx.context.SetRGBA(0, 0, 0, 0)
+	ctx.context.SetHexColor(ctx.backgroundColor)
 	ctx.context.Clear()
 	ctx.context.DrawImage(ctx.drawingContext.Image(), 0, -ctx.offset)
 	context.DrawImage(ctx.context.Image(), int(left), int(top))
