@@ -174,8 +174,8 @@ Build comprehensive test coverage, user-facing documentation, and performance op
 - [x] Tabbed browser example functional with multiple windows
 - [x] API docs complete and accurate (docs/07-javascript-runtime.md, docs/08-ui-toolkit.md updated to match actual public API)
 - [x] Benchmark suite established with baseline metrics (mustard, hotdog, bun benchmarks added)
-- [ ] Debug instrumentation functional and non-intrusive
-- [ ] Migration guide covers all breaking API changes
+- [x] Debug instrumentation functional and non-intrusive (profiler, DebugFlag, NodeDOM.Print/JSON, sauce.Log)
+- [x] Migration guide covers all breaking API changes (docs/MIGRATION.md)
 - [x] No static analysis warnings in main codebase
 - [x] Example gallery builds and runs successfully
 - [x] Security tests verify SOP, CORS, CSP, cookie isolation
