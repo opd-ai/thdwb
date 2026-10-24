@@ -86,17 +86,77 @@ thdwb uses **Goja** (dop251/goja) — a pure Go implementation of ECMAScript 5.1
 // - Storage (cookies, localStorage, sessionStorage)
 // - Network client (isolated cookie jar)
 type WindowContext struct {
-    VM           *goja.Runtime        // JavaScript virtual machine
-    Document     *Document            // DOM document
-    Origin       string               // Scheme://host:port
-    EventLoop    *EventLoop           // JS event loop
-    Storage      *StoragePartition    // localStorage/sessionStorage
-    HTTPClient   *http.Client         // Isolated network client
-    // ... other window-specific state
+    // DOM and document state
+    ActiveDocument *Document
+    Documents      []*Document
+
+    // Rendering and viewport
+    Viewport    *mustard.CanvasWidget
+    StatusLabel *mustard.LabelWidget
+
+    // Navigation history
+    History *History
+
+    // Mustard window reference
+    Window *mustard.Window
+
+    // Profiling
+    Profiler *profiler.Profiler
+
+    // Settings and build info (shared reference)
+    Settings  *Settings
+    BuildInfo *assets.BuildInfo
+
+    // Origin tracking for cookie partitioning and SOP
+    Origin *url.URL
+
+    // Layout cache and pending invalidations
+    layoutCache    map[string]interface{}
+    reflowMu       sync.Mutex
+    pendingReflows map[*NodeDOM]struct{}
+
+    // Focus and input state
+    focusedElement *NodeDOM
+    inputState     map[string]interface{}
+
+    // Event registry for this window
+    eventRegistry     map[string][]eventHandler
+    nodeEventRegistry map[*NodeDOM]map[string][]eventHandler
+    nodeWrappers      map[*NodeDOM]*goja.Object
+
+    // Mutation observers for this window.
+    mutationObserverMu sync.Mutex
+    mutationObservers  map[*MutationObserver]struct{}
+
+    // Animation frame callbacks for this window, stored per-window for isolation.
+    animationFrameMu      sync.Mutex
+    animationFrameCounter uint64
+    animationFrames       map[uint64]func()
+    animationFrameTimer   *time.Timer
+    active                bool
+    destroyed             bool
+
+    // JS runtime (Goja VM) - per window isolation
+    jsRuntimeMu sync.Mutex
+    jsRuntime   *goja.Runtime
+
+    // Session storage manager (per-window, origin-partitioned)
+    sessionStorage *SessionStorageManager
+
+    // Cookie jar for this window (per-window cookie isolation)
+    cookieJar *sauce.OriginCookieJar
+
+    // HTTP client for this window (with per-window cookie jar)
+    httpClient *http.Client
+
+    // Debug state
+    DebugFlag   bool
+    DebugWindow *mustard.Window
+    DebugTree   *mustard.TreeWidget
 }
 ```
 
-**Why isolate?**
+### Why isolate?
 - Tab A: `example.com` — logs in, sets cookies, runs JS
 - Tab B: `evil.com` — CANNOT access Tab A's VM, DOM, cookies, localStorage
 - This is **Container Tabs** / **Site Isolation** (Firefox/Chrome feature)
@@ -110,55 +170,50 @@ type WindowContext struct {
 ### NewWindowContext: VM Setup
 
 ```go
-// NewWindowContext creates a new isolated window context with its own Goja VM.
-func NewWindowContext() *WindowContext {
-    ctx := &WindowContext{
-        VM:        goja.New(),           // NEW VM per window!
-        EventLoop: NewEventLoop(),
-        Storage:   NewStoragePartition(),
-    }
-
-    // Set up global objects: window, document, console, etc.
-    ctx.setupGlobals()
-
-    return ctx
-}
+func NewWindowContext(settings *Settings, buildInfo *assets.BuildInfo, profiler *profiler.Profiler) *WindowContext
 ```
 
-### Setting Up Globals
+Creates a new isolated window context with its own Goja VM, cookie jar, HTTP client, session storage, and event registry.
+
+### InitJSRuntime: Setting Up Globals
 
 ```go
-func (ctx *WindowContext) setupGlobals() {
-    vm := ctx.VM
+func (wc *WindowContext) InitJSRuntime() error
+```
 
-    // 1. console object
-    consoleObj := vm.NewObject()
-    consoleObj.Set("log", ctx.consoleLog)
-    consoleObj.Set("error", ctx.consoleError)
-    consoleObj.Set("warn", ctx.consoleWarn)
-    vm.Set("console", consoleObj)
+Initializes the JavaScript runtime with DOM bindings. Sets up the following global objects:
 
-    // 2. window object (globalThis)
-    windowObj := vm.NewObject()
-    windowObj.Set("document", ctx.Document.toJSValue(vm))
-    windowObj.Set("location", ctx.locationToJS(vm))
-    windowObj.Set("navigator", ctx.navigatorToJS(vm))
-    windowObj.Set("localStorage", ctx.Storage.LocalStorage.toJSValue(vm))
-    windowObj.Set("sessionStorage", ctx.Storage.SessionStorage.toJSValue(vm))
-    windowObj.Set("fetch", ctx.fetch)
-    windowObj.Set("XMLHttpRequest", ctx.XMLHttpRequestConstructor)
-    windowObj.Set("setTimeout", ctx.setTimeout)
-    windowObj.Set("setInterval", ctx.setInterval)
-    windowObj.Set("clearTimeout", ctx.clearTimeout)
-    windowObj.Set("clearInterval", ctx.clearInterval)
-    windowObj.Set("addEventListener", ctx.addEventListener)
-    windowObj.Set("removeEventListener", ctx.removeEventListener)
-    windowObj.Set("postMessage", ctx.postMessage)
-    // ... more
+| Global | Description |
+|--------|-------------|
+| `Event` | Event constructor for creating JS events |
+| `console` | Object with `log()`, `error()`, `warn()` methods |
+| `document` | DOM document with querySelector, getElementById, createElement, etc. |
+| `window` | Window object with document, console, location, addEventListener, etc. |
+| `self` | Alias for `window` (window.self === window) |
+| `localStorage` | Origin-partitioned persistent storage |
+| `sessionStorage` | Per-window, per-origin session storage |
+| `fetch` | Fetch API bridge |
+| `XMLHttpRequest` | XHR constructor |
+| `requestAnimationFrame` | Frame scheduling callback |
+| `cancelAnimationFrame` | Cancel scheduled frame |
+| `MutationObserver` | DOM mutation observer constructor |
+| `postMessage` | Inter-window messaging |
+| `eval` | Blocked unless CSP allows 'unsafe-eval' |
+| `Function` | Blocked unless CSP allows 'unsafe-eval' |
 
-    vm.Set("window", windowObj)
-    vm.Set("self", windowObj)  // window === self
-    vm.Set("globalThis", windowObj)
+### Example: Initializing the JS Runtime
+
+```go
+wc := hotdog.NewWindowContext(settings, buildInfo, profiler)
+wc.SetOrigin("https://example.com")
+if err := wc.InitJSRuntime(); err != nil {
+    log.Fatal(err)
+}
+
+// Run JavaScript
+result, err := wc.RunJS("console.log('Hello from JS!'); document.title = 'Updated';")
+if err != nil {
+    log.Fatal(err)
 }
 ```
 
@@ -166,806 +221,297 @@ func (ctx *WindowContext) setupGlobals() {
 
 ## 7.7 DOM Bindings: document, Element, Node
 
-### Document Binding
+### document Object
 
-```go
-func (doc *Document) toJSValue(vm *goja.Runtime) goja.Value {
-    obj := vm.NewObject()
+The `document` object exposes the following methods:
 
-    // Properties
-    obj.Set("title", doc.Title)
-    obj.Set("URL", doc.URL)
-    obj.Set("readyState", "complete")
-
-    // Methods
-    obj.Set("getElementById", func(id string) goja.Value {
-        node := doc.GetElementById(id)
-        if node == nil {
-            return goja.Null()
-        }
-        return node.toJSValue(vm)
-    })
-
-    obj.Set("querySelector", func(selector string) goja.Value {
-        node, _ := doc.DOM.QuerySelector(selector)
-        if node == nil {
-            return goja.Null()
-        }
-        return node.toJSValue(vm)
-    })
-
-    obj.Set("querySelectorAll", func(selector string) goja.Value {
-        nodes, _ := doc.DOM.QuerySelectorAll(selector)
-        arr := vm.NewArray()
-        for i, n := range nodes {
-            arr.Set(strconv.Itoa(i), n.toJSValue(vm))
-        }
-        return arr
-    })
-
-    obj.Set("createElement", func(tagName string) goja.Value {
-        node := &NodeDOM{
-            Element: tagName,
-            Type:    NodeTypeElement,
-            Document: doc,
-            Style:   mayo.GetElementStylesheet(tagName, nil),
-            RenderBox: &RenderBox{},
-        }
-        return node.toJSValue(vm)
-    })
-
-    obj.Set("createTextNode", func(text string) goja.Value {
-        node := &NodeDOM{
-            Element: "html:text",
-            Type:    NodeTypeText,
-            Content: text,
-            Document: doc,
-        }
-        return node.toJSValue(vm)
-    })
-
-    return obj
-}
-```
+| Method | Description |
+|--------|-------------|
+| `querySelector(selector)` | Returns first matching element using cascadia selector |
+| `querySelectorAll(selector)` | Returns all matching elements |
+| `getElementById(id)` | Returns element by ID |
+| `getElementsByClassName(name)` | Returns elements by class name |
+| `getElementsByTagName(name)` | Returns elements by tag name |
+| `createElement(tagName)` | Creates a new element node |
+| `createTextNode(text)` | Creates a new text node |
+| `body` | Accessor property for the body element |
+| `documentElement` | Accessor property for the root element |
+| `title` | Accessor property for the document title |
 
 ### Element/Node Binding
 
-```go
-func (node *NodeDOM) toJSValue(vm *goja.Runtime) goja.Value {
-    obj := vm.NewObject()
+DOM nodes are wrapped in `JSDOMWrapper` objects that expose:
 
-    // Properties
-    obj.Set("tagName", strings.ToUpper(node.Element))
-    obj.Set("id", node.GetAttribute("id"))
-    obj.Set("className", node.GetAttribute("class"))
-    obj.Set("textContent", node.TextContent())
-    obj.Set("innerHTML", node.InnerHTML())
+| Property/Method | Description |
+|-----------------|-------------|
+| `id` | Element ID attribute |
+| `className` | Element class attribute |
+| `innerHTML` | Element inner HTML |
+| `textContent` | Element text content |
+| `style` | Element style properties |
+| `addEventListener(type, listener)` | Registers an event listener |
+| `removeEventListener(type, listener)` | Removes an event listener |
 
-    // Style property (CSSStyleDeclaration-like)
-    styleObj := vm.NewObject()
-    for prop, val := range node.Style.Properties {
-        styleObj.Set(prop, val)
-    }
-    obj.Set("style", styleObj)
-
-    // Methods
-    obj.Set("setAttribute", func(name, value string) {
-        node.SetAttribute(name, value)
-        node.MarkDirty()  // Trigger relayout
-    })
-
-    obj.Set("getAttribute", func(name string) string {
-        return node.GetAttribute(name)
-    })
-
-    obj.Set("removeAttribute", func(name string) {
-        node.RemoveAttribute(name)
-        node.MarkDirty()
-    })
-
-    obj.Set("appendChild", func(child goja.Value) goja.Value {
-        childNode := child.ToObject(ctx).Export().(*NodeDOM)
-        node.AppendChild(childNode)
-        node.MarkDirty()
-        return child
-    })
-
-    obj.Set("removeChild", func(child goja.Value) goja.Value {
-        childNode := child.ToObject(ctx).Export().(*NodeDOM)
-        node.RemoveChild(childNode)
-        node.MarkDirty()
-        return child
-    })
-
-    obj.Set("addEventListener", node.addEventListener)
-    obj.Set("removeEventListener", node.removeEventListener)
-    obj.Set("dispatchEvent", node.dispatchEvent)
-
-    // Query selector on element
-    obj.Set("querySelector", func(selector string) goja.Value {
-        found, _ := node.QuerySelector(selector)
-        if found == nil {
-            return goja.Null()
-        }
-        return found.toJSValue(vm)
-    })
-
-    obj.Set("querySelectorAll", func(selector string) goja.Value {
-        nodes, _ := node.QuerySelectorAll(selector)
-        arr := vm.NewArray()
-        for i, n := range nodes {
-            arr.Set(strconv.Itoa(i), n.toJSValue(vm))
-        }
-        return arr
-    })
-
-    return obj
-}
-```
+All DOM operations enforce origin checks and throw `SecurityError` on cross-origin violations.
 
 ---
 
-## 7.8 Console API: Logging from JS
+## 7.8 Window Object
 
-```go
-func (ctx *WindowContext) consoleLog(call goja.FunctionCall) goja.Value {
-    args := make([]string, len(call.Arguments))
-    for i, arg := range call.Arguments {
-        args[i] = arg.String()
-    }
-    // Log with origin attribution
-    log.Printf("[JS:%s] %s", ctx.Origin, strings.Join(args, " "))
-    return goja.Undefined()
-}
+The `window` object exposes:
 
-func (ctx *WindowContext) consoleError(call goja.FunctionCall) goja.Value {
-    args := make([]string, len(call.Arguments))
-    for i, arg := range call.Arguments {
-        args[i] = arg.String()
-    }
-    log.Printf("[JS ERROR:%s] %s", ctx.Origin, strings.Join(args, " "))
-    return goja.Undefined()
-}
-
-func (ctx *WindowContext) consoleWarn(call goja.FunctionCall) goja.Value {
-    args := make([]string, len(call.Arguments))
-    for i, arg := range call.Arguments {
-        args[i] = arg.String()
-    }
-    log.Printf("[JS WARN:%s] %s", ctx.Origin, strings.Join(args, " "))
-    return goja.Undefined()
-}
-```
-
-**Output example:**
-```
-[JS:https://example.com] Page loaded
-[JS ERROR:https://example.com] Failed to fetch: network error
-```
+| Property/Method | Description |
+|-----------------|-------------|
+| `document` | Reference to the document object |
+| `console` | Reference to the console object |
+| `location` | Location accessor (getter) |
+| `addEventListener(type, listener)` | Registers a window-level event listener |
+| `removeEventListener(type, listener)` | Removes a window-level event listener |
+| `requestAnimationFrame(callback)` | Schedules an animation frame callback |
+| `cancelAnimationFrame(id)` | Cancels a scheduled animation frame |
+| `Event` | Event constructor |
+| `MutationObserver` | MutationObserver constructor |
+| `postMessage(data, targetOrigin)` | Sends a message to another window |
+| `fetch(input, init)` | Fetch API |
+| `XMLHttpRequest` | XHR constructor |
+| `localStorage` | Origin-partitioned storage |
+| `sessionStorage` | Per-window session storage |
 
 ---
 
-## 7.9 Event System: addEventListener
-
-### EventTarget Interface
+## 7.9 Console API
 
 ```go
-// EventTarget is implemented by NodeDOM, WindowContext, etc.
-type EventTarget interface {
-    AddEventListener(eventType string, listener goja.Value)
-    RemoveEventListener(eventType string, listener goja.Value)
-    DispatchEvent(event *Event) bool
+type JSConsoleWrapper struct {
+    windowCtx *WindowContext
+    runtime   *goja.Runtime
 }
 ```
 
-### Adding Listeners
+| Method | Description |
+|--------|-------------|
+| `console.log(...args)` | Logs output with origin attribution |
+| `console.error(...args)` | Logs error output with origin attribution |
+| `console.warn(...args)` | Logs warning output with origin attribution |
 
-```go
-func (node *NodeDOM) addEventListener(call goja.FunctionCall) goja.Value {
-    eventType := call.Argument(0).String()
-    listener := call.Argument(1)
-
-    // Validate: listener must be a function
-    if goja.IsCallable(listener) == false {
-        panic(vm.NewTypeError("listener must be a function"))
-    }
-
-    // Store in node's event listener map
-    if node.EventListeners == nil {
-        node.EventListeners = make(map[string][]goja.Value)
-    }
-    node.EventListeners[eventType] = append(node.EventListeners[eventType], listener)
-
-    return goja.Undefined()
-}
-```
-
-### Dispatching Events
-
-```go
-func (node *NodeDOM) dispatchEvent(call goja.FunctionCall) goja.Value {
-    eventObj := call.Argument(0).ToObject(vm)
-    event := &Event{
-        Type:      eventObj.Get("type").String(),
-        Target:    node,
-        CurrentTarget: node,
-        Bubbles:   eventObj.Get("bubbles").ToBoolean(),
-        Cancelable: eventObj.Get("cancelable").ToBoolean(),
-    }
-
-    // 1. Capture phase (top-down) - not fully implemented
-    // 2. Target phase
-    node.fireListeners(event)
-
-    // 3. Bubble phase (bottom-up)
-    if event.Bubbles && !event.PropagationStopped {
-        node.bubbleEvent(event)
-    }
-
-    return vm.ToValue(!event.DefaultPrevented)
-}
-
-func (node *NodeDOM) fireListeners(event *Event) {
-    listeners := node.EventListeners[event.Type]
-    for _, listener := range listeners {
-        fn := listener.(goja.Callable)
-        fn(goja.Undefined(), vm.ToValue(event))
-    }
-}
-
-func (node *NodeDOM) bubbleEvent(event *Event) {
-    parent := node.Parent
-    for parent != nil {
-        event.CurrentTarget = parent
-        parent.fireListeners(event)
-        if event.PropagationStopped {
-            break
-        }
-        parent = parent.Parent
-    }
-}
-```
-
-**Reference**: [MDN - EventTarget](https://developer.mozilla.org/en-US/docs/Web/API/EventTarget) | [Firefox EventDispatcher](https://searchfox.org/mozilla-central/source/dom/events/EventDispatcher.cpp)
+Output format: `[console.log] [origin: <origin>] <args>`
 
 ---
 
-## 7.10 Timer APIs: setTimeout, setInterval
+## 7.10 Event System
+
+### Event Object
 
 ```go
-func (ctx *WindowContext) setTimeout(call goja.FunctionCall) goja.Value {
-    fn := call.Argument(0)
-    delay := call.Argument(1).ToInteger()
-
-    if !goja.IsCallable(fn) {
-        panic(vm.NewTypeError("callback must be a function"))
-    }
-
-    id := ctx.EventLoop.AddTimer(time.Duration(delay)*time.Millisecond, false, fn)
-    return vm.ToValue(id)
-}
-
-func (ctx *WindowContext) setInterval(call goja.FunctionCall) goja.Value {
-    fn := call.Argument(0)
-    delay := call.Argument(1).ToInteger()
-
-    if !goja.IsCallable(fn) {
-        panic(vm.NewTypeError("callback must be a function"))
-    }
-
-    id := ctx.EventLoop.AddTimer(time.Duration(delay)*time.Millisecond, true, fn)
-    return vm.ToValue(id)
-}
-
-func (ctx *WindowContext) clearTimeout(call goja.FunctionCall) goja.Value {
-    id := call.Argument(0).ToInteger()
-    ctx.EventLoop.RemoveTimer(int(id))
-    return goja.Undefined()
-}
-
-func (ctx *WindowContext) clearInterval(call goja.FunctionCall) goja.Value {
-    id := call.Argument(0).ToInteger()
-    ctx.EventLoop.RemoveTimer(int(id))
-    return goja.Undefined()
-}
+func newJSEvent(runtime *goja.Runtime, call goja.ConstructorCall) *goja.Object
 ```
 
-### Event Loop Implementation
+Creates a JS event object with:
+- `type` — Event type string
+- `bubbles` — Whether event bubbles (default: false)
+- `cancelable` — Whether event is cancelable (default: false)
+- `defaultPrevented` — Whether preventDefault was called (default: false)
+- `cancelBubble` — Whether stopPropagation was called (default: false)
+- `preventDefault()` — Prevents default action if cancelable
+- `stopPropagation()` — Stops event bubbling
 
-```go
-type EventLoop struct {
-    mu       sync.Mutex
-    timers   map[int]*Timer
-    nextID   int
-    microtasks []func()
-}
+### Event Listener Registration
 
-type Timer struct {
-    ID        int
-    Delay     time.Duration
-    Repeat    bool
-    Callback  goja.Value
-    Deadline  time.Time
-}
+| Method | Description |
+|--------|-------------|
+| `(wc *WindowContext) RegisterEvent(eventName string, handler func(interface{}))` | Registers a window-level event handler |
+| `(wc *WindowContext) RemoveEventByKey(eventName string, key uintptr)` | Removes a window-level event handler |
+| `(wc *WindowContext) EmitEvent(eventName string, data interface{})` | Emits an event to all registered handlers |
+| `(wc *WindowContext) registerNodeEvent(node, eventName, key, handler)` | Registers a node-level event handler |
+| `(wc *WindowContext) RemoveNodeEventByKey(node, eventName, key)` | Removes a node-level event handler |
+| `(wc *WindowContext) EmitNodeEvent(node, eventName, data)` | Emits an event to node handlers |
 
-func (el *EventLoop) Run() {
-    for {
-        el.mu.Lock()
-        now := time.Now()
-
-        // Run expired timers
-        for _, timer := range el.timers {
-            if now.After(timer.Deadline) {
-                // Execute callback in VM
-                go func(cb goja.Value) {
-                    cb(goja.Undefined())
-                }(timer.Callback)
-
-                if timer.Repeat {
-                    timer.Deadline = now.Add(timer.Delay)
-                } else {
-                    delete(el.timers, timer.ID)
-                }
-            }
-        }
-
-        // Run microtasks (Promise callbacks)
-        for len(el.microtasks) > 0 {
-            task := el.microtasks[0]
-            el.microtasks = el.microtasks[1:]
-            task()
-        }
-
-        el.mu.Unlock()
-        time.Sleep(1 * time.Millisecond)
-    }
-}
-```
+Events are delivered only to nodes within the same window context.
 
 ---
 
-## 7.11 Fetch API: Network Requests from JS
+## 7.11 Animation Frames
 
-```go
-func (ctx *WindowContext) fetch(call goja.FunctionCall) goja.Value {
-    url := call.Argument(0).String()
-    options := call.Argument(1)
+| Method | Description |
+|--------|-------------|
+| `(wc *WindowContext) ScheduleAnimationFrame(callback func()) uint64` | Schedules an animation frame callback |
+| `(wc *WindowContext) CancelAnimationFrame(id uint64) bool` | Cancels a scheduled animation frame |
 
-    // Parse options (method, headers, body, credentials, etc.)
-    req, err := ctx.buildFetchRequest(url, options)
-    if err != nil {
-        return vm.NewPromiseReject(err)
-    }
-
-    // Create Promise
-    promise, resolve, reject := vm.NewPromise()
-
-    // Execute asynchronously
-    go func() {
-        // Use window's isolated HTTP client (with its cookie jar)
-        resp, err := ctx.HTTPClient.Do(req)
-        if err != nil {
-            reject(vm.ToValue(err.Error()))
-            return
-        }
-
-        // Build Response object
-        jsResp := ctx.buildJSResponse(vm, resp)
-        resolve(jsResp)
-    }()
-
-    return promise
-}
-```
-
-### Response Object
-
-```go
-func (ctx *WindowContext) buildJSResponse(vm *goja.Runtime, resp *http.Response) goja.Value {
-    obj := vm.NewObject()
-
-    obj.Set("ok", resp.StatusCode >= 200 && resp.StatusCode < 300)
-    obj.Set("status", resp.StatusCode)
-    obj.Set("statusText", http.StatusText(resp.StatusCode))
-
-    // headers
-    headersObj := vm.NewObject()
-    for k, v := range resp.Header {
-        headersObj.Set(k, strings.Join(v, ", "))
-    }
-    obj.Set("headers", headersObj)
-
-    // .json() method
-    obj.Set("json", func(call goja.FunctionCall) goja.Value {
-        body, _ := io.ReadAll(resp.Body)
-        var data interface{}
-        json.Unmarshal(body, &data)
-        return vm.ToValue(data)
-    })
-
-    // .text() method
-    obj.Set("text", func(call goja.FunctionCall) goja.Value {
-        body, _ := io.ReadAll(resp.Body)
-        return vm.ToValue(string(body))
-    })
-
-    // .blob(), .arrayBuffer(), etc.
-
-    return obj
-}
-```
-
-**Reference**: [MDN - Fetch API](https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API) | [Firefox Fetch](https://searchfox.org/mozilla-central/source/dom/fetch/Fetch.cpp)
+Animation frames are per-window and fire in isolation. Each window maintains its own animation frame timer.
 
 ---
 
-## 7.12 XMLHttpRequest: Legacy API
+## 7.12 Mutation Observers
 
 ```go
-func (ctx *WindowContext) XMLHttpRequestConstructor(call goja.ConstructorCall) *goja.Object {
-    xhr := &XMLHttpRequest{
-        VM:       ctx.VM,
-        WindowCtx: ctx,
-        State:    XHR_UNSENT,
-    }
-
-    obj := call.This
-    obj.Set("open", xhr.open)
-    obj.Set("send", xhr.send)
-    obj.Set("setRequestHeader", xhr.setRequestHeader)
-    obj.Set("abort", xhr.abort)
-    obj.Set("onreadystatechange", goja.Null())
-    obj.Set("readyState", xhr.State)
-    obj.Set("responseText", "")
-    obj.Set("status", 0)
-    obj.Set("statusText", "")
-
-    return obj
+type MutationObserver struct {
+    runtime   *goja.Runtime
+    windowCtx *WindowContext
+    callback  goja.Callable
+    observed  map[*NodeDOM]struct{}
 }
 ```
+
+| Method | Description |
+|--------|-------------|
+| `observe(target, options)` | Starts observing a DOM node for mutations |
+| `disconnect()` | Stops observing all nodes |
+| `takeRecords()` | Returns mutation records (empty array) |
+
+Mutations are observable only within the same window context.
 
 ---
 
-## 7.13 Storage: localStorage & sessionStorage
+## 7.13 Storage APIs
 
-### StoragePartition: Per-Origin Isolation
+### localStorage
 
-```go
-// StoragePartition isolates storage by origin.
-// Each origin gets its own localStorage and sessionStorage.
-type StoragePartition struct {
-    mu           sync.RWMutex
-    localStorage  map[string]*StorageArea  // key: origin
-    sessionStorage map[string]*StorageArea
-}
+Persistent per-origin key-value store, accessible only to scripts from that origin. Survives across window reloads.
 
-type StorageArea struct {
-    mu    sync.RWMutex
-    data  map[string]string
-    origin string
-}
-```
+### sessionStorage
 
-### localStorage Binding
+Per-window, per-origin key-value store. Cleared when the window is closed.
 
-```go
-func (sa *StorageArea) toJSValue(vm *goja.Runtime) goja.Value {
-    obj := vm.NewObject()
-
-    obj.Set("getItem", func(key string) goja.Value {
-        sa.mu.RLock()
-        val, ok := sa.data[key]
-        sa.mu.RUnlock()
-        if !ok {
-            return goja.Null()
-        }
-        return vm.ToValue(val)
-    })
-
-    obj.Set("setItem", func(key, value string) {
-        sa.mu.Lock()
-        sa.data[key] = value
-        sa.mu.Unlock()
-        sa.persist()  // Save to disk
-    })
-
-    obj.Set("removeItem", func(key string) {
-        sa.mu.Lock()
-        delete(sa.data, key)
-        sa.mu.Unlock()
-        sa.persist()
-    })
-
-    obj.Set("clear", func() {
-        sa.mu.Lock()
-        sa.data = make(map[string]string)
-        sa.mu.Unlock()
-        sa.persist()
-    })
-
-    obj.Set("key", func(index int) goja.Value {
-        sa.mu.RLock()
-        defer sa.mu.RUnlock()
-        keys := make([]string, 0, len(sa.data))
-        for k := range sa.data {
-            keys = append(keys, k)
-        }
-        if index < 0 || index >= len(keys) {
-            return goja.Null()
-        }
-        return vm.ToValue(keys[index])
-    })
-
-    obj.Set("length", len(sa.data))
-
-    return obj
-}
-```
-
-**Reference**: [MDN - Web Storage](https://developer.mozilla.org/en-US/docs/Web/API/Web_Storage_API) | [Firefox Storage](https://searchfox.org/mozilla-central/source/dom/storage/Storage.cpp)
+Both are exposed as global objects on `window` and as standalone globals.
 
 ---
 
-## 7.14 postMessage: Cross-Window Communication
+## 7.14 Inter-Window Messaging
 
 ```go
-func (ctx *WindowContext) postMessage(call goja.FunctionCall) goja.Value {
-    message := call.Argument(0).Export()
-    targetOrigin := call.Argument(1).String()
-
-    // Security: validate targetOrigin
-    if targetOrigin != "*" && targetOrigin != ctx.Origin {
-        // Find target window by origin
-        targets := hotdog.FindWindowsByOrigin(targetOrigin)
-        for _, target := range targets {
-            target.VM.RunScript(fmt.Sprintf(`
-                window.dispatchEvent(new MessageEvent("message", {
-                    data: %s,
-                    origin: "%s",
-                    source: window
-                }));
-            `, toJSON(message), ctx.Origin))
-        }
-    } else if targetOrigin == "*" {
-        // Broadcast to all windows (use with caution!)
-        hotdog.ForEachWindow(func(w *WindowContext) {
-            if w != ctx {
-                w.VM.RunScript(fmt.Sprintf(`
-                    window.dispatchEvent(new MessageEvent("message", {
-                        data: %s,
-                        origin: "%s",
-                        source: window
-                    }));
-                `, toJSON(message), ctx.Origin))
-            }
-        })
-    }
-
-    return goja.Undefined()
-}
+(window *WindowWrapper) postMessage(data, targetOrigin)
 ```
 
-**Reference**: [MDN - postMessage](https://developer.mozilla.org/en-US/docs/Web/API/Window/postMessage) | [Firefox PostMessage](https://searchfox.org/mozilla-central/source/dom/base/Window.cpp#3000)
+Sends a message to another window. Validates `targetOrigin` and prevents unsolicited messages. Uses the global window registry to find matching windows by origin.
 
 ---
 
-## 7.15 Security: Same-Origin Policy & CSP
-
-### Origin Checking
+## 7.15 Fetch API Bridge
 
 ```go
-// checkSameOrigin verifies that a JS operation is allowed.
-// Throws SecurityError if cross-origin access attempted.
-func (ctx *WindowContext) checkSameOrigin(targetOrigin string) error {
-    if targetOrigin == ctx.Origin {
-        return nil
-    }
-    // Check if CORS allows it (for fetch/XHR)
-    // For DOM access: always deny cross-origin
-    return fmt.Errorf("SecurityError: Blocked cross-origin access from %s to %s", ctx.Origin, targetOrigin)
-}
+(window *WindowWrapper) fetch(input, init)
+(window *WindowWrapper) XMLHttpRequest
 ```
 
-### CSP Enforcement
-
-```go
-// ContentSecurityPolicy parses and enforces CSP headers.
-type ContentSecurityPolicy struct {
-    directives map[string][]string
-}
-
-func (csp *ContentSecurityPolicy) Allows(scriptSrc string) bool {
-    // Check script-src directive
-    allowed := csp.directives["script-src"]
-    for _, source := range allowed {
-        if matchSource(source, scriptSrc) {
-            return true
-        }
-    }
-    return false
-}
-
-// Blocks eval() unless 'unsafe-eval' in script-src
-func (ctx *WindowContext) eval(call goja.FunctionCall) goja.Value {
-    if !ctx.CSP.Allows("'unsafe-eval'") {
-        panic(vm.NewError(vm.NewGoError(errors.New("eval() blocked by CSP"))))
-    }
-    // ... execute eval
-}
-```
-
-**Reference**: [MDN - CSP](https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP) | [Firefox CSP](https://searchfox.org/mozilla-central/source/dom/security/ContentSecurityPolicy.cpp)
+Implements Fetch API and XMLHttpRequest with:
+- Enforced CORS preflight
+- Origin header validation
+- Cookie jar isolation (per-window cookie jar)
+- Header filtering
 
 ---
 
-## 7.16 Module System (Experimental)
+## 7.16 Security: Dangerous APIs
 
-Goja supports ES modules partially:
+| API | Behavior |
+|-----|----------|
+| `eval()` | Blocked unless CSP allows `script-src 'unsafe-eval'` |
+| `Function()` constructor | Blocked unless CSP allows `script-src 'unsafe-eval'` |
+
+Both throw `SecurityError` when blocked.
+
+---
+
+## 7.17 WindowContext Methods
+
+| Method | Description |
+|--------|-------------|
+| `SetOrigin(rawURL string) error` | Sets the origin for this window context |
+| `GetOrigin() *url.URL` | Returns the origin |
+| `RegisterEvent(eventName string, handler func(interface{}))` | Registers a window event handler |
+| `RemoveEventByKey(eventName string, key uintptr)` | Removes a window event handler |
+| `EmitEvent(eventName string, data interface{})` | Emits a window event |
+| `RegisterMutationObserver(observer *MutationObserver)` | Registers a mutation observer |
+| `UnregisterMutationObserver(observer *MutationObserver)` | Unregisters a mutation observer |
+| `NotifyMutationObservers(target *NodeDOM, mutationType string)` | Notifies observers of a mutation |
+| `ScheduleAnimationFrame(callback func()) uint64` | Schedules an animation frame |
+| `CancelAnimationFrame(id uint64) bool` | Cancels an animation frame |
+| `IsActive() bool` | Returns whether the window is active |
+| `SetActive(active bool)` | Sets the window active state |
+| `GetLayoutCache(key string) (interface{}, bool)` | Gets a layout cache entry |
+| `SetLayoutCache(key string, value interface{})` | Sets a layout cache entry |
+| `ClearLayoutCache()` | Clears the layout cache |
+| `GetJSRuntime() *goja.Runtime` | Returns the Goja VM |
+| `SetJSValue(name string, value interface{}) error` | Sets a global JS value |
+| `RunJS(script string) (goja.Value, error)` | Runs JavaScript code |
+| `BindWindowInput(window *mustard.Window)` | Binds window input events |
+| `DispatchMouseClick(x, y float64, button mustard.MustardKey) *NodeDOM` | Dispatches a mouse click event |
+| `DispatchKeyboardInput(input mustard.KeyboardInput) *NodeDOM` | Dispatches a keyboard input event |
+| `DispatchTextInput(char rune) *NodeDOM` | Dispatches a text input event |
+| `SetFocusedElement(el *NodeDOM)` | Sets the focused DOM element |
+| `GetFocusedElement() *NodeDOM` | Returns the focused DOM element |
+| `SetInputState(key string, value interface{})` | Sets input state |
+| `GetInputState(key string) (interface{}, bool)` | Gets input state |
+| `Destroy()` | Destroys the window context |
+| `GetSessionStorageManager() *SessionStorageManager` | Returns session storage manager |
+| `GetCookieJar() *sauce.OriginCookieJar` | Returns the cookie jar |
+| `GetHTTPClient() *http.Client` | Returns the HTTP client |
+
+---
+
+## 7.18 Example: Running JavaScript with DOM Access
 
 ```go
-// Enable modules
-vm.Set("import", func(specifier string) goja.Value {
-    // Resolve specifier to URL
-    // Fetch module code
-    // Parse and execute in module context
-    // Return module namespace object
+wc := hotdog.NewWindowContext(settings, buildInfo, profiler)
+wc.SetOrigin("https://example.com")
+wc.InitJSRuntime()
+
+// Create a div element via JS
+_, err := wc.RunJS(`
+    var div = document.createElement('div');
+    div.id = 'my-div';
+    div.textContent = 'Hello from JavaScript';
+    console.log('Created div with id:', div.id);
+`)
+if err != nil {
+    log.Fatal(err)
+}
+
+// Set up an event listener
+wc.RegisterEvent("click", func(data interface{}) {
+    println("Click event received:", data)
 })
+
+// Run JS that triggers the event
+wc.RunJS("window.dispatchEvent(new Event('click'));")
 ```
 
 ---
 
-## 7.17 Cross-References
+## 7.19 Cross-References
 
 | Concept | Chapter |
 |---------|---------|
-| How network layer isolates cookies | [Chapter 2: Network Layer](../02-network-layer.md) |
-| How DOM is structured | [Chapter 3: HTML Parsing](../03-html-parsing-dom.md) |
-| How styles affect JS-computed styles | [Chapter 4: CSS Styling](../04-css-styling.md) |
-| How layout triggers from JS | [Chapter 5: Layout Engine](../05-layout-engine.md) |
-| How Canvas API draws | [Chapter 6: Rendering](../06-rendering-graphics.md) |
-| Event system details | [Glossary: Event](../glossary.md#event), [Glossary: Event Listener](../glossary.md#event-listener) |
+| DOM tree structure | [Chapter 3: HTML Parsing & DOM](../03-html-parsing-dom.md) |
+| CSS styling | [Chapter 4: CSS Styling](../04-css-styling.md) |
+| Layout engine | [Chapter 5: Layout Engine](../05-layout-engine.md) |
+| UI toolkit | [Chapter 8: UI Toolkit & Application](../08-ui-toolkit.md) |
+| Network & cookies | [Chapter 2: Network Layer](../02-network-layer.md) |
+| Security (SOP, CORS, CSP) | [Chapter 6: Rendering & Graphics](../06-rendering-graphics.md) |
 
 ---
 
-## 7.18 Example Test: Running JavaScript
+## 7.20 Summary
 
-```go
-// Example_GojaVM demonstrates running JavaScript in a window context.
-func Example_GojaVM() {
-    ctx := hotdog.NewWindowContext()
-    defer ctx.Close()
-
-    // Run simple script
-    result, err := ctx.VM.RunScript(`
-        var x = 10;
-        var y = 20;
-        x + y;
-    `)
-    if err != nil {
-        log.Fatal(err)
-    }
-    fmt.Println("Result:", result.ToInteger())  // 30
-
-    // Access DOM
-    _, err = ctx.VM.RunScript(`
-        document.title = "New Title";
-        console.log("Title changed to:", document.title);
-    `)
-    if err != nil {
-        log.Fatal(err)
-    }
-    fmt.Println("Document title:", ctx.Document.Title)
-
-    // Output:
-    // Result: 30
-    // [JS:about:blank] Title changed to: New Title
-    // Document title: New Title
-}
-```
-
-Run with: `go test -run Example_GojaVM ./hotdog`
+- **Goja** = Pure Go JavaScript engine (ES5.1+)
+- **WindowContext** = Per-window isolation with own VM, DOM, storage, network
+- **InitJSRuntime** = Sets up global objects: Event, console, document, window, localStorage, sessionStorage, fetch, XMLHttpRequest, requestAnimationFrame, MutationObserver, postMessage
+- **DOM bindings** = querySelector, getElementById, createElement, createTextNode, element properties (id, className, innerHTML, textContent, style)
+- **Events** = Event constructor, addEventListener/removeEventListener, preventDefault, stopPropagation
+- **Animation frames** = requestAnimationFrame/cancelAnimationFrame per window
+- **Mutation observers** = Observe DOM changes within window
+- **Storage** = localStorage (persistent per-origin), sessionStorage (per-window per-origin)
+- **postMessage** = Inter-window messaging with origin validation
+- **Fetch/XHR** = CORS-enforced network requests with cookie jar isolation
+- **Security** = eval() and Function() blocked unless CSP allows 'unsafe-eval'; cross-origin DOM access throws SecurityError
 
 ---
 
-## 7.19 Example Test: Fetch from JS
+## 7.21 Further Reading
 
-```go
-// Example_FetchAPI demonstrates the Fetch API from JavaScript.
-func Example_FetchAPI() {
-    ctx := hotdog.NewWindowContext()
-    defer ctx.Close()
-
-    // Mock HTTP server for testing
-    server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-        w.Header().Set("Content-Type", "application/json")
-        w.Write([]byte(`{"message": "Hello from server!"}`))
-    }))
-    defer server.Close()
-
-    // Run fetch in JS
-    _, err := ctx.VM.RunScript(fmt.Sprintf(`
-        fetch("%s")
-            .then(r => r.json())
-            .then(data => console.log("Got data:", data.message))
-            .catch(e => console.error("Error:", e));
-    `, server.URL))
-    if err != nil {
-        log.Fatal(err)
-    }
-
-    // Give event loop time to process
-    time.Sleep(100 * time.Millisecond)
-
-    // Output:
-    // [JS:about:blank] Got data: Hello from server!
-}
-```
-
-Run with: `go test -run Example_FetchAPI ./hotdog`
-
----
-
-## 7.20 Example Test: Event Listeners
-
-```go
-// Example_AddEventListener demonstrates DOM event handling from JS.
-func Example_AddEventListener() {
-    ctx := hotdog.NewWindowContext()
-    defer ctx.Close()
-
-    // Create a button in DOM
-    _, err := ctx.VM.RunScript(`
-        var btn = document.createElement("button");
-        btn.textContent = "Click Me";
-        btn.id = "myBtn";
-        document.body.appendChild(btn);
-
-        btn.addEventListener("click", function() {
-            console.log("Button clicked!");
-            this.textContent = "Clicked!";
-        });
-    `)
-    if err != nil {
-        log.Fatal(err)
-    }
-
-    // Simulate click (would normally come from UI)
-    btn := ctx.Document.GetElementById("myBtn")
-    if btn != nil {
-        event := &hotdog.Event{Type: "click", Target: btn, Bubbles: true}
-        btn.DispatchEvent(event)
-    }
-
-    // Output:
-    // [JS:about:blank] Button clicked!
-}
-```
-
-Run with: `go test -run Example_AddEventListener ./hotdog`
-
----
-
-## 7.21 Summary
-
-- **Goja** = Pure Go JS engine (ES5.1+), one VM per window
-- **WindowContext** = Isolated environment: VM, DOM, storage, network
-- **Global objects**: window, document, console, fetch, localStorage, etc.
-- **DOM bindings**: Element methods (querySelector, appendChild, style, etc.)
-- **Event system**: addEventListener, dispatchEvent, capture/bubble phases
-- **Timers**: setTimeout, setInterval with event loop
-- **Fetch/XHR**: Network requests using window's isolated HTTP client
-- **Storage**: localStorage/sessionStorage partitioned by origin
-- **postMessage**: Cross-window communication with origin validation
-- **Security**: Same-origin policy, CSP, eval() blocking
-
----
-
-## 7.22 Next Chapter
-
-👉 **[Chapter 8: UI Toolkit & Application — mustard/app](../08-ui-toolkit.md)**
-
-Learn how the browser UI (tabs, address bar, buttons) is built with mustard widgets, and how the application manages multiple windows.
-
----
-
-*Key terms from this chapter: [CSP](../glossary.md#csp), [Event Loop](../glossary.md#event-loop), [Fetch](../glossary.md#fetch), [Goja](../glossary.md#goja), [JS Engine](../glossary.md#js-engine), [localStorage](../glossary.md#localstorage), [Microtask](../glossary.md#microtask), [Promise](../glossary.md#promise), [Same-Origin Policy](../glossary.md#same-origin-policy), [sessionStorage](../glossary.md#sessionstorage), [VM](../glossary.md#vm), [XHR](../glossary.md#xhr)*
+- **Goja (JavaScript engine)**: https://github.com/dop251/goja
+- **MDN - JavaScript**: https://developer.mozilla.org/en-US/docs/Web/JavaScript
+- **MDN - DOM**: https://developer.mozilla.org/en-US/docs/Web/API/Document_Object_Model
+- **MDN - Fetch API**: https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API
+- **MDN - Same-Origin Policy**: https://developer.mozilla.org/en-US/docs/Web/Security/Same-origin_policy
+- **MDN - Content Security Policy**: https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP

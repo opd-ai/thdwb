@@ -1,12 +1,12 @@
 # Chapter 8: UI Toolkit & Application — mustard/app
 
-> **In this chapter**: How thdwb builds the browser UI (tabs, address bar, buttons) using mustard widgets, and how the application manages multiple windows/tabs. This is the "house frame and furniture" of the browser.
+> **In this chapter**: How thdwb builds the browser UI using mustard widgets, and how the application manages multiple windows/tabs. This is the "house frame and furniture" of the browser.
 
 ---
 
 ## 8.1 What Is the Browser UI?
 
-The **browser UI** (also called **chrome** — not to be confused with Google Chrome) is everything *around* the web content: tabs, address bar, back/forward buttons, bookmarks, menus, settings.
+The **browser UI** (also called **chrome** — not to be confused with Google Chrome) is everything *around* the web content: windows, frames, buttons, labels, inputs, canvases, and event handling.
 
 **Analogy**: If the web page is a painting, the browser UI is the frame, the wall hooks, the gallery labels, and the lighting — all the stuff that lets you view and navigate between paintings.
 
@@ -15,19 +15,10 @@ The **browser UI** (also called **chrome** — not to be confused with Google Ch
 │                    BROWSER WINDOW (mustard.Window)               │
 ├─────────────────────────────────────────────────────────────────┤
 │  ┌───────────────────────────────────────────────────────────┐  │
-│  │ TAB BAR (Frame with LayoutHorizontal)                      │  │
-│  │  [Tab 1: Google]  [Tab 2: GitHub]  [Tab 3: MDN]  [+]     │  │
-│  └───────────────────────────────────────────────────────────┘  │
-│  ┌───────────────────────────────────────────────────────────┐  │
-│  │ TOOLBAR (Frame)                                            │  │
-│  │  [←] [→] [⟳] [🏠] [_______________________________] [🔍]  │  │
-│  │   Back  Forward  Reload  Home      Address Bar        Search │
-│  └───────────────────────────────────────────────────────────┘  │
-│  ┌───────────────────────────────────────────────────────────┐  │
-│  │ WEB CONTENT AREA (Canvas widget)                           │  │
-│  │                                                           │  │
-│  │        Rendered web page (gg.Context)                     │  │
-│  │                                                           │  │
+│  │ ROOT FRAME (VerticalFrame or HorizontalFrame)             │  │
+│  │  ┌─────────────────────────────────────────────────────┐  │  │
+│  │  │ CHILD WIDGETS (Button, Label, Canvas, Input, etc.)  │  │  │
+│  │  └─────────────────────────────────────────────────────┘  │  │
 │  └───────────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -37,9 +28,9 @@ The **browser UI** (also called **chrome** — not to be confused with Google Ch
 ## 8.2 Key Terms (Defined in [Glossary](../glossary.md))
 
 - **Chrome (Browser UI)** — The browser's own interface (not the web page)
-- **Widget** — Reusable UI component (button, input, label, etc.)
-- **Frame** — Container widget that holds other widgets
-- **Layout** — Algorithm for positioning widgets (vertical, horizontal, flex)
+- **Widget** — Reusable UI component (button, input, label, canvas, etc.)
+- **Frame** — Container widget that holds other widgets (vertical/horizontal layout)
+- **Layout** — Algorithm for positioning widgets (vertical, horizontal)
 - **Event Loop** — Main loop processing input, updating, rendering
 - **Hit Testing** — Finding which widget is under the mouse
 - **Focus** — Which widget receives keyboard input
@@ -49,25 +40,25 @@ The **browser UI** (also called **chrome** — not to be confused with Google Ch
 
 ## 8.3 The mustard Package: UI Toolkit
 
-### File Overview (Recap)
+### File Overview
 
 ```
 mustard/
-├── window.go           # Window creation, OpenGL, event loop
-├── app.go              # Application: tab management, main entry
-├── frame.go            # Frame tree (widget hierarchy)
-├── widget.go           # Base Widget interface
-├── button.go           # Button widget
-├── label.go            # Label widget
-├── input.go            # Text input widget
-├── canvas.go           # Canvas widget (web content)
-├── scrollbar.go        # Scrollbar widget
-├── text.go             # Text rendering helpers
-├── image.go            # Image widget
-├── events.go           # Event types and handling
-├── contextMenu.go      # Context menu
-├── tree.go             # Tree widget
-├── types.go            # Shared types
+├── app.go              # Application: CreateNewApp, AddWindow, ActivateWindow, DestroyWindow
+├── window.go           # Window creation, OpenGL, event loop, widget management
+├── frame.go            # Frame tree (widget hierarchy, CreateFrame)
+├── widget.go           # Base Widget interface and baseWidget implementation
+├── button.go           # Button widget (CreateButtonWidget)
+├── label.go            # Label widget (CreateLabelWidget)
+├── input.go            # Text input widget (CreateInputWidget)
+├── canvas.go           # Canvas widget (CreateCanvasWidget)
+├── scrollbar.go        # Scrollbar widget (CreateScrollBarWidget)
+├── text.go             # Text widget (CreateTextWidget)
+├── image.go            # Image widget (CreateImageWidget)
+├── tree.go             # Tree widget (CreateTreeWidget)
+├── events.go           # Event processing (ProcessKeyboardInput, ProcessPointerClick, etc.)
+├── contextMenu.go      # Context menu (EnableContextMenus, AddContextMenuEntry, etc.)
+├── types.go            # Shared types (Widget, Window, Frame, etc.)
 ├── gl.go               # OpenGL shader setup
 ├── shaders.go          # Shader sources
 ├── mui.go              # Material UI helpers
@@ -81,591 +72,699 @@ mustard/
 ### Main Function
 
 ```go
-// main is the entry point (in mustard/app.go or separate main.go).
+// main is the entry point.
 func main() {
-    // 1. Initialize GLFW
+    // 1. Initialize GLFW hints
     mustard.SetGLFWHints()
 
     // 2. Create application
-    app := mustard.NewApp()
+    app := mustard.CreateNewApp("thdwb")
 
-    // 3. Create first window with a tab
-    win := app.NewWindow("https://example.com")
+    // 3. Create a window
+    window := mustard.CreateNewWindow("thdwb", 900, 600, true)
 
-    // 4. Run application (blocks)
-    app.Run()
+    // 4. Create root frame and set it on the window
+    rootFrame := mustard.CreateFrame(mustard.VerticalFrame)
+    window.SetRootFrame(rootFrame)
+
+    // 5. Add window to app
+    app.AddWindow(window)
+
+    // 6. Activate window (enables tabbed mode)
+    app.ActivateWindow(window)
+
+    // 7. Show window
+    window.Show()
+
+    // 8. Run application (blocks)
+    app.Run(func() {
+        // Per-frame callback
+    })
 }
 ```
 
-### App Struct: Tab Manager
+### App Struct
 
 ```go
-// App manages multiple windows and tabs.
 type App struct {
-    Windows     []*Window
-    ActiveWindow *Window
-    Settings    *Settings
+    name         string
+    windows      []*Window
+    activeWindow *Window
+    tabbedMode   bool
 }
+```
 
-// NewApp creates the application.
-func NewApp() *App {
-    return &App{
-        Windows: make([]*Window, 0),
-        Settings: LoadSettings(),
-    }
-}
+### App Methods
 
-// NewWindow creates a new browser window with initial URL.
-func (app *App) NewWindow(initialURL string) *Window {
-    win := mustard.CreateNewWindow("thdwb", 1024, 768, true)
+| Method | Description |
+|--------|-------------|
+| `CreateNewApp(name string) *App` | Creates a new application with the given name |
+| `(app *App) Run(callback func())` | Runs the main event loop (blocks forever) |
+| `(app *App) AddWindow(window *Window)` | Adds a window to the app |
+| `(app *App) ActivateWindow(window *Window) error` | Activates a window (enables tabbed mode) |
+| `(app *App) Windows() []*Window` | Returns all managed windows |
+| `(app *App) DestroyWindow(window *Window)` | Destroys a window and removes it from the app |
 
-    // Create tab with web content
-    tab := NewTab(initialURL)
-    win.SetContent(tab)
+### Example: Creating an App with a Window
 
-    app.Windows = append(app.Windows, win)
-    app.ActiveWindow = win
-
-    return win
-}
+```go
+app := mustard.CreateNewApp("my-browser")
+window := mustard.CreateNewWindow("My Browser", 900, 600, true)
+rootFrame := mustard.CreateFrame(mustard.VerticalFrame)
+window.SetRootFrame(rootFrame)
+app.AddWindow(window)
+app.ActivateWindow(window)
+window.Show()
+app.Run(func() {
+    // Per-frame callback
+})
 ```
 
 ---
 
-## 8.5 Tab: Web Content Container
+## 8.5 Window
 
-Each tab holds a **WindowContext** (from hotdog) which has its own DOM, JS VM, network client, etc.
+### Window Struct
 
 ```go
-// Tab represents a single browser tab with web content.
-type Tab struct {
-    WindowCtx   *hotdog.WindowContext  // Isolated JS + DOM + Network
-    Canvas      *mustard.Canvas        // Widget for rendering
-    URL         string
-    Title       string
-    Favicon     image.Image
-    Loading     bool
-    History     []string
-    HistoryIndex int
+type Window struct {
+    title  string
+    width  int
+    height int
+    hiDPI  bool
+    active bool
+    // ... internal fields for GLFW, OpenGL, widgets, events
 }
+```
 
-// NewTab creates a tab and starts loading the URL.
-func NewTab(url string) *Tab {
-    ctx := hotdog.NewWindowContext()
+### Window Methods
 
-    canvas := mustard.NewCanvas(800, 600)
-    canvas.SetDocument(ctx.Document)
+| Method | Description |
+|--------|-------------|
+| `CreateNewWindow(title string, width, height int, hiDPI bool) *Window` | Creates a new GLFW/OpenGL window |
+| `(window *Window) Show()` | Shows the window and marks it for reflow |
+| `(window *Window) AttachActiveChangeListener(callback func(bool))` | Registers a callback for active state changes |
+| `(window *Window) IsActive() bool` | Returns whether the window is active |
+| `(window *Window) SetRootFrame(frame *Frame)` | Sets the root frame for the window |
+| `(window *Window) GetSize() (int, int)` | Returns the window dimensions |
+| `(window *Window) RequestReflow()` | Requests a layout reflow |
+| `(window *Window) SetTitle(title string)` | Sets the window title |
+| `(window *Window) RecreateContext()` | Recreates the gg.Context |
+| `(window *Window) GetContext() *gg.Context` | Returns the gg.Context for drawing |
+| `(window *Window) GetCursorPosition() (float64, float64)` | Returns the current cursor position |
+| `(window *Window) RegisterTree(tree *TreeWidget)` | Registers a tree widget for event handling |
+| `(window *Window) RegisterButton(button *ButtonWidget, callback func())` | Registers a button with its click callback |
+| `(window *Window) UnregisterButton(button *ButtonWidget)` | Unregisters a button |
+| `(window *Window) RegisterInput(input *InputWidget)` | Registers an input widget |
+| `(window *Window) UnregisterInput(input *InputWidget)` | Unregisters an input widget |
+| `(window *Window) AttachPointerPositionEventListener(callback func(float64, float64))` | Registers a pointer position listener |
+| `(window *Window) AttachScrollEventListener(callback func(int))` | Registers a scroll listener |
+| `(window *Window) AttachClickEventListener(callback func(MustardKey))` | Registers a click listener |
+| `(window *Window) AttachPointerClickEventListener(callback func(float64, float64, MustardKey))` | Registers a pointer click listener |
+| `(window *Window) AttachKeyboardInputEventListener(callback func(KeyboardInput))` | Registers a keyboard input listener |
+| `(window *Window) AttachTextInputEventListener(callback func(rune))` | Registers a text input listener |
+| `(window *Window) SetCursor(cursorType cursorType)` | Sets the cursor type |
+| `(window *Window) AddOverlay(overlay *Overlay)` | Adds an active overlay |
+| `(window *Window) RemoveOverlay(overlay *Overlay)` | Removes an active overlay |
+| `(window *Window) AddStaticOverlay(overlay *Overlay)` | Adds a static overlay |
+| `(window *Window) RemoveStaticOverlay(ref string)` | Removes a static overlay by ref |
 
-    tab := &Tab{
-        WindowCtx: ctx,
-        Canvas:    canvas,
-        URL:       url,
-    }
+### Example: Creating a Window with a Button
 
-    // Start loading in background
-    go tab.LoadURL(url)
+```go
+window := mustard.CreateNewWindow("My Window", 800, 600, false)
+rootFrame := mustard.CreateFrame(mustard.VerticalFrame)
+window.SetRootFrame(rootFrame)
 
-    return tab
-}
+button := mustard.CreateButtonWidget("Click Me", nil)
+button.SetWidth(100)
+button.SetHeight(40)
+button.SetContent("Click Me")
 
-// LoadURL navigates the tab to a new URL.
-func (tab *Tab) LoadURL(url string) {
-    tab.Loading = true
-    tab.Canvas.SetLoading(true)
-
-    // Fetch via window's isolated network client
-    resource, err := tab.WindowCtx.Fetch(url)
-    if err != nil {
-        tab.LoadError(err)
-        return
-    }
-
-    // Parse HTML
-    doc := ketchup.ParseHTML(string(resource.Body), tab.WindowCtx)
-    tab.WindowCtx.Document = doc
-
-    // Update title
-    tab.Title = bun.GetPageTitle(doc.DOM)
-
-    // Render to canvas
-    dc := gg.NewContext(tab.Canvas.Width, tab.Canvas.Height)
-    bun.RenderDocument(dc, doc, false)
-    tab.Canvas.SetContext(dc)
-
-    tab.Loading = false
-    tab.Canvas.SetLoading(false)
-    tab.Canvas.MarkRepaint()
-}
+rootFrame.AttachWidget(button)
+window.Show()
 ```
 
 ---
 
-## 8.6 Tab Bar: Tab Management UI
+## 8.6 Widgets
 
-### Tab Bar Widget
-
-```go
-// TabBar is a horizontal frame holding tab buttons.
-type TabBar struct {
-    *Frame
-    App        *App
-    TabButtons map[*Tab]*Button
-    NewTabBtn  *Button
-}
-
-func NewTabBar(app *App) *TabBar {
-    tb := &TabBar{
-        Frame:      NewFrame(),
-        App:        app,
-        TabButtons: make(map[*Tab]*Button),
-    }
-    tb.Layout = LayoutHorizontal
-
-    // New tab button
-    tb.NewTabBtn = NewButton("+")
-    tb.NewTabBtn.OnClick = func() {
-        app.NewWindow("about:blank")
-    }
-    tb.AddChild(tb.NewTabBtn)
-
-    return tb
-}
-
-func (tb *TabBar) AddTab(tab *Tab) {
-    btn := NewButton(tab.Title)
-    btn.OnClick = func() {
-        tb.App.SwitchToTab(tab)
-    }
-    btn.OnRightClick = func() {
-        tb.ShowTabContextMenu(tab)
-    }
-    tb.TabButtons[tab] = btn
-    tb.InsertChildBefore(btn, tb.NewTabBtn)
-    tb.MarkReflow()
-}
-
-func (tb *TabBar) RemoveTab(tab *Tab) {
-    if btn, ok := tb.TabButtons[tab]; ok {
-        tb.RemoveChild(btn)
-        delete(tb.TabButtons, tab)
-        tb.MarkReflow()
-    }
-}
-```
-
----
-
-## 8.7 Toolbar: Navigation Controls
+### Widget Interface
 
 ```go
-// Toolbar holds navigation buttons and address bar.
-type Toolbar struct {
-    *Frame
-    Tab        *Tab
-    BackBtn    *Button
-    ForwardBtn *Button
-    ReloadBtn  *Button
-    HomeBtn    *Button
-    AddressBar *Input
-    GoBtn      *Button
-}
-
-func NewToolbar(tab *Tab) *Toolbar {
-    tb := &Toolbar{
-        Frame:  NewFrame(),
-        Tab:    tab,
-    }
-    tb.Layout = LayoutHorizontal
-
-    // Back button
-    tb.BackBtn = NewButton("←")
-    tb.BackBtn.OnClick = func() { tab.GoBack() }
-    tb.AddChild(tb.BackBtn)
-
-    // Forward button
-    tb.ForwardBtn = NewButton("→")
-    tb.ForwardBtn.OnClick = func() { tab.GoForward() }
-    tb.AddChild(tb.ForwardBtn)
-
-    // Reload button
-    tb.ReloadBtn = NewButton("⟳")
-    tb.ReloadBtn.OnClick = func() { tab.Reload() }
-    tb.AddChild(tb.ReloadBtn)
-
-    // Home button
-    tb.HomeBtn = NewButton("🏠")
-    tb.HomeBtn.OnClick = func() { tab.LoadURL("https://example.com") }
-    tb.AddChild(tb.HomeBtn)
-
-    // Address bar (flex: takes remaining space)
-    tb.AddressBar = NewInput()
-    tb.AddressBar.Placeholder = "Enter URL or search..."
-    tb.AddressBar.OnEnter = func(url string) {
-        tab.LoadURL(normalizeURL(url))
-    }
-    tb.AddressBar.FlexGrow = 1
-    tb.AddChild(tb.AddressBar)
-
-    // Go/Search button
-    tb.GoBtn = NewButton("🔍")
-    tb.GoBtn.OnClick = func() {
-        tab.LoadURL(normalizeURL(tb.AddressBar.Text))
-    }
-    tb.AddChild(tb.GoBtn)
-
-    return tb
-}
-```
-
----
-
-## 8.8 Address Bar: URL Input & Display
-
-```go
-// normalizeURL converts user input to a valid URL.
-func normalizeURL(input string) string {
-    input = strings.TrimSpace(input)
-
-    // Already a URL?
-    if strings.HasPrefix(input, "http://") || strings.HasPrefix(input, "https://") {
-        return input
-    }
-
-    // Has scheme?
-    if strings.Contains(input, "://") {
-        return input
-    }
-
-    // Looks like a domain?
-    if strings.Contains(input, ".") && !strings.Contains(input, " ") {
-        return "https://" + input
-    }
-
-    // Otherwise treat as search query
-    return "https://www.google.com/search?q=" + url.QueryEscape(input)
-}
-```
-
-### Updating Address Bar on Navigation
-
-```go
-func (tab *Tab) onNavigation(url string) {
-    tab.URL = url
-    tab.Toolbar.AddressBar.SetText(url)
-    tab.Toolbar.AddressBar.CursorPos = len(url)
-}
-```
-
----
-
-## 8.9 Window Content: Assembling the UI
-
-```go
-func (win *Window) SetContent(tab *Tab) {
-    // Create root frame (vertical layout)
-    root := NewFrame()
-    root.Layout = LayoutVertical
-
-    // 1. Tab bar
-    tabBar := NewTabBar(win.App)
-    tabBar.AddTab(tab)
-    root.AddChild(tabBar)
-
-    // 2. Toolbar
-    toolbar := NewToolbar(tab)
-    tab.Toolbar = toolbar
-    root.AddChild(toolbar)
-
-    // 3. Web content canvas (flex: takes remaining space)
-    tab.Canvas.FlexGrow = 1
-    root.AddChild(tab.Canvas)
-
-    win.rootFrame = root
-    win.needsReflow = true
-}
-```
-
----
-
-## 8.10 Event Loop: The Heartbeat
-
-```go
-func (win *Window) Run() {
-    for !win.glfwWindowShouldClose() {
-        // 1. Process OS events (mouse, keyboard, resize)
-        win.processEvents()
-
-        // 2. Run JS microtasks (Promises, queueMicrotask)
-        win.ActiveTab.WindowCtx.EventLoop.RunMicrotasks()
-
-        // 3. Reflow if needed (layout changes)
-        if win.needsReflow {
-            win.reflow()
-        }
-
-        // 4. Repaint if needed (visual changes)
-        if win.needsRepaint {
-            win.repaint()
-        }
-
-        // 5. Swap buffers (show rendered frame)
-        win.swapBuffers()
-
-        // 6. Sleep briefly to not hog CPU
-        glfw.PollEvents()
-        time.Sleep(1 * time.Millisecond)
-    }
-}
-```
-
-### Reflow: Layout Widgets
-
-```go
-func (win *Window) reflow() {
-    win.needsReflow = false
-
-    // Calculate layout for entire widget tree
-    win.rootFrame.Layout(0, 0, float64(win.width), float64(win.height))
-
-    // Also reflow web content if needed
-    if win.ActiveTab != nil && win.ActiveTab.WindowCtx.NeedsReflow {
-        win.ActiveTab.WindowCtx.Reflow()
-    }
-}
-```
-
-### Repaint: Draw Everything
-
-```go
-func (win *Window) repaint() {
-    win.needsRepaint = false
-
-    // 1. Clear gg context
-    win.context.SetRGB(1, 1, 1)
-    win.context.Clear()
-
-    // 2. Draw widget tree (browser chrome)
-    win.rootFrame.Draw(win.context)
-
-    // 3. Draw web content (already rendered to tab's canvas)
-    if win.ActiveTab != nil {
-        tab := win.ActiveTab
-        win.context.DrawImage(tab.Canvas.Context.Image(),
-            int(tab.Canvas.X), int(tab.Canvas.Y))
-    }
-
-    // 4. Upload to OpenGL texture
-    win.backend.UploadTexture(win.context.Image())
-
-    // 5. Draw full-screen quad
-    win.backend.DrawQuad()
-}
-```
-
----
-
-## 8.11 Input Handling: Mouse & Keyboard
-
-### Mouse Events
-
-```go
-func (win *Window) processEvents() {
-    for _, event := range win.pendingEvents {
-        switch event.Type {
-        case EventMouseMove:
-            win.handleMouseMove(event.X, event.Y)
-        case EventMouseDown:
-            win.handleMouseDown(event.X, event.Y, event.Button)
-        case EventMouseUp:
-            win.handleMouseUp(event.X, event.Y, event.Button)
-        case EventMouseScroll:
-            win.handleScroll(event.X, event.Y, event.ScrollY)
-        }
-    }
-}
-
-func (win *Window) handleMouseDown(x, y float64, button glfw.MouseButton) {
-    // 1. Hit test: find widget under cursor
-    target := win.hitTest(x, y)
-
-    // 2. Focus the target
-    if target != nil {
-        win.setFocus(target)
-    }
-
-    // 3. Dispatch to widget
-    if target != nil {
-        target.HandleEvent(Event{Type: EventMouseDown, X: x, Y: y, Button: button})
-    }
-
-    // 4. If web content area, forward to JS
-    if win.ActiveTab != nil && win.ActiveTab.Canvas.Contains(x, y) {
-        win.ActiveTab.WindowCtx.DispatchMouseEvent(x, y, button, "down")
-    }
-}
-```
-
-### Keyboard Events
-
-```go
-func (win *Window) handleKeyDown(key glfw.Key, char rune, mods glfw.ModifierKey) {
-    // 1. If focused widget is input, send to it
-    if win.focusedWidget != nil {
-        win.focusedWidget.HandleEvent(Event{
-            Type: EventKeyDown, Key: key, Char: char, Modifiers: mods,
-        })
-        return
-    }
-
-    // 2. Global shortcuts
-    if mods&glfw.ModControl != 0 {
-        switch key {
-        case glfw.KeyT:
-            win.App.NewWindow("about:blank")  // Ctrl+T = new tab
-        case glfw.KeyW:
-            win.CloseTab(win.ActiveTab)       // Ctrl+W = close tab
-        case glfw.KeyL:
-            win.ActiveTab.Toolbar.AddressBar.Focus()  // Ctrl+L = address bar
-        case glfw.KeyR:
-            win.ActiveTab.Reload()            // Ctrl+R = reload
-        }
-    }
-
-    // 3. Forward to web content if focused
-    if win.ActiveTab != nil && win.ActiveTab.Canvas.Focused {
-        win.ActiveTab.WindowCtx.DispatchKeyEvent(key, char, mods, "down")
-    }
-}
-```
-
----
-
-## 8.12 Focus Management
-
-```go
-func (win *Window) setFocus(widget Widget) {
-    // Blur previous
-    if win.focusedWidget != nil {
-        win.focusedWidget.HandleEvent(Event{Type: EventBlur})
-    }
-
-    // Focus new
-    win.focusedWidget = widget
-    if widget != nil {
-        widget.HandleEvent(Event{Type: EventFocus})
-    }
-}
-
-// Widget interface includes focus handling
 type Widget interface {
-    // ...
-    Focus() bool      // Can this widget receive focus?
-    Blur()            // Called when losing focus
+    Buffer() *image.RGBA
+    SetBuffer(*image.RGBA)
+    SetNeedsRepaint(bool)
+    NeedsRepaint() bool
+    Widgets() []Widget
+    ComputedBox() *box
+    SetWindow(*Window)
+    BaseWidget() *baseWidget
+    draw()
+}
+```
+
+### baseWidget
+
+The `baseWidget` struct provides common functionality for all widgets:
+
+| Method | Description |
+|--------|-------------|
+| `RequestReflow()` | Requests a reflow on the associated window |
+| `RequestRepaint()` | Marks the widget as needing repaint |
+| `GetRect() (float64, float64, float64, float64)` | Returns (top, left, width, height) |
+| `GetTop() float64` | Returns the top position |
+| `GetLeft() float64` | Returns the left position |
+| `GetWidth() float64` | Returns the width |
+| `GetHeight() float64` | Returns the height |
+| `ComputedBox() *box` | Returns the computed bounding box |
+| `SetBuffer(buffer *image.RGBA)` | Sets the render buffer |
+| `SetWindow(window *Window)` | Associates the widget with a window |
+| `Buffer() *image.RGBA` | Returns the render buffer |
+| `Widgets() []Widget` | Returns child widgets |
+| `AttachWidget(wd Widget)` | Attaches a child widget |
+| `DetachWidget(wd Widget) Widget` | Detaches a child widget |
+| `BaseWidget() *baseWidget` | Returns the base widget |
+| `GetWindow() *Window` | Returns the associated window |
+| `NeedsRepaint() bool` | Returns whether repaint is needed |
+| `SetNeedsRepaint(value bool)` | Sets the repaint flag |
+| `IsPointInside(x, y float64) bool` | Checks if a point is inside the widget |
+| `SetVisible(visible bool)` | Sets visibility |
+| `GetVisible() bool` | Returns visibility |
+
+### Button Widget
+
+```go
+type ButtonWidget struct {
+    baseWidget
+    content   string
+    icon      image.Image
+    fontSize  float64
+    fontColor string
+    selected  bool
+    padding   float64
+    onClick   func()
+}
+```
+
+| Method | Description |
+|--------|-------------|
+| `CreateButtonWidget(label string, asset []byte) *ButtonWidget` | Creates a new button widget |
+| `(button *ButtonWidget) SetWidth(width float64)` | Sets width (marks as fixed) |
+| `(button *ButtonWidget) SetHeight(height float64)` | Sets height (marks as fixed) |
+| `(button *ButtonWidget) SetFontSize(fontSize float64)` | Sets font size |
+| `(button *ButtonWidget) SetPadding(padding float64)` | Sets padding |
+| `(button *ButtonWidget) SetContent(content string)` | Sets button text |
+| `(button *ButtonWidget) Click()` | Calls the onClick callback |
+| `(button *ButtonWidget) GetContent() string` | Returns button text |
+| `(button *ButtonWidget) SetFontColor(fontColor string)` | Sets font color (must start with #) |
+| `(button *ButtonWidget) SetBackgroundColor(backgroundColor string)` | Sets background color (must start with #) |
+
+### Label Widget
+
+```go
+type LabelWidget struct {
+    baseWidget
+    content   string
+    fontSize  float64
+    fontColor string
+}
+```
+
+| Method | Description |
+|--------|-------------|
+| `CreateLabelWidget(content string) *LabelWidget` | Creates a new label widget |
+| `(label *LabelWidget) SetWidth(width float64)` | Sets width (marks as fixed) |
+| `(label *LabelWidget) SetHeight(height float64)` | Sets height (marks as fixed) |
+| `(label *LabelWidget) SetFontSize(fontSize float64)` | Sets font size |
+| `(label *LabelWidget) SetContent(content string)` | Sets label text |
+| `(label *LabelWidget) GetContent() string` | Returns label text |
+| `(label *LabelWidget) SetFontColor(fontColor string)` | Sets font color (must start with #) |
+| `(label *LabelWidget) SetBackgroundColor(backgroundColor string)` | Sets background color (must start with #) |
+
+### Input Widget
+
+```go
+type InputWidget struct {
+    baseWidget
+    value           string
+    selected        bool
+    active          bool
+    padding         float64
+    fontSize        float64
+    fontColor       string
+    cursorPosition  int
+    returnCallback  func()
+}
+```
+
+| Method | Description |
+|--------|-------------|
+| `CreateInputWidget() *InputWidget` | Creates a new input widget |
+| `(input *InputWidget) SetWidth(width float64)` | Sets width (marks as fixed) |
+| `(input *InputWidget) SetHeight(height float64)` | Sets height (marks as fixed) |
+| `(input *InputWidget) SetFontSize(fontSize float64)` | Sets font size |
+| `(input *InputWidget) SetReturnCallback(returnCallback func())` | Sets the Enter key callback |
+| `(input *InputWidget) SetFontColor(fontColor string)` | Sets font color (must start with #) |
+| `(input *InputWidget) SetValue(value string)` | Sets input value |
+| `(input *InputWidget) GetValue() string` | Returns input value |
+| `(input *InputWidget) GetCursorPos() int` | Returns cursor position |
+| `(input *InputWidget) SetBackgroundColor(backgroundColor string)` | Sets background color (must start with #) |
+
+### Canvas Widget
+
+```go
+type CanvasWidget struct {
+    baseWidget
+    context        *gg.Context
+    drawingContext *gg.Context
+    renderer       func(*CanvasWidget)
+    scrollable     bool
+    offset         int
+    drawingRepaint bool
+}
+```
+
+| Method | Description |
+|--------|-------------|
+| `CreateCanvasWidget(renderer func(*CanvasWidget)) *CanvasWidget` | Creates a new canvas widget |
+| `(canvas *CanvasWidget) SetWidth(width float64)` | Sets width (marks as fixed) |
+| `(canvas *CanvasWidget) SetHeight(height float64)` | Sets height (marks as fixed) |
+| `(canvas *CanvasWidget) EnableScrolling()` | Enables scrolling |
+| `(canvas *CanvasWidget) DisableScrolling()` | Disables scrolling and resets offset |
+| `(canvas *CanvasWidget) SetOffset(offset int)` | Sets scroll offset |
+| `(canvas *CanvasWidget) GetOffset() int` | Returns scroll offset |
+| `(canvas *CanvasWidget) GetContext() *gg.Context` | Returns the drawing context |
+| `(canvas *CanvasWidget) SetContext(ctx *gg.Context)` | Sets the drawing context |
+| `(canvas *CanvasWidget) SetDrawingRepaint(repaint bool)` | Sets the drawing repaint flag |
+
+### Text Widget
+
+```go
+type TextWidget struct {
+    baseWidget
+    content   string
+    fontSize  float64
+    fontColor string
+}
+```
+
+| Method | Description |
+|--------|-------------|
+| `CreateTextWidget(content string) *TextWidget` | Creates a new text widget |
+| `(text *TextWidget) SetWidth(width float64)` | Sets width (marks as fixed) |
+| `(text *TextWidget) SetHeight(height float64)` | Sets height (marks as fixed) |
+| `(text *TextWidget) SetFontSize(fontSize float64)` | Sets font size |
+| `(text *TextWidget) SetContent(content string)` | Sets text content |
+| `(text *TextWidget) GetContent() string` | Returns text content |
+| `(text *TextWidget) SetFontColor(fontColor string)` | Sets font color (must start with #) |
+| `(text *TextWidget) SetBackgroundColor(backgroundColor string)` | Sets background color (must start with #) |
+
+### Image Widget
+
+```go
+type ImageWidget struct {
+    baseWidget
+    path string
+    img  image.Image
+}
+```
+
+| Method | Description |
+|--------|-------------|
+| `CreateImageWidget(path []byte) *ImageWidget` | Creates a new image widget |
+| `(imageWidget *ImageWidget) SetWidth(width float64)` | Sets width (marks as fixed) |
+| `(imageWidget *ImageWidget) SetHeight(height float64)` | Sets height (marks as fixed) |
+
+### Tree Widget
+
+```go
+type TreeWidget struct {
+    baseWidget
+    fontSize   float64
+    fontColor  string
+    nodes      []*TreeWidgetNode
+    openIcon   image.Image
+    closeIcon  image.Image
+    selectCallback func(*TreeWidgetNode)
+}
+```
+
+| Method | Description |
+|--------|-------------|
+| `CreateTreeWidget() *TreeWidget` | Creates a new tree widget |
+| `(tree *TreeWidget) Click()` | Handles tree click at cursor position |
+| `(tree *TreeWidget) SetSelectCallback(selectCallback func(*TreeWidgetNode))` | Sets node selection callback |
+| `(tree *TreeWidget) SelectNode(node *TreeWidgetNode)` | Selects a specific node |
+| `(tree *TreeWidget) SelectNodeByValue(value string)` | Selects node by value |
+| `(tree *TreeWidget) SetWidth(width float64)` | Sets width (marks as fixed) |
+| `(tree *TreeWidget) SetHeight(height float64)` | Sets height (marks as fixed) |
+| `(tree *TreeWidget) SetFontSize(fontSize float64)` | Sets font size |
+| `(tree *TreeWidget) SetFontColor(fontColor string)` | Sets font color (must start with #) |
+| `(tree *TreeWidget) SetBackgroundColor(backgroundColor string)` | Sets background color (must start with #) |
+
+### Tree Widget Node
+
+```go
+type TreeWidgetNode struct {
+    Key      string
+    Value    string
+    Parent   *TreeWidgetNode
+    Children []*TreeWidgetNode
+    isOpen     bool
+    isSelected bool
+    index      int
+    box        box
+}
+```
+
+| Method | Description |
+|--------|-------------|
+| `CreateTreeWidgetNode(key, value string) *TreeWidgetNode` | Creates a new tree node |
+| `(node *TreeWidgetNode) Toggle()` | Toggles open/closed state |
+| `(node *TreeWidgetNode) Close()` | Closes the node |
+| `(node *TreeWidgetNode) Open()` | Opens the node |
+| `(node *TreeWidgetNode) AddNode(childNode *TreeWidgetNode)` | Adds a child node |
+| `(node *TreeWidgetNode) NextSibling() *TreeWidgetNode` | Returns next sibling |
+| `(node *TreeWidgetNode) PreviousSibling() *TreeWidgetNode` | Returns previous sibling |
+
+### ScrollBar Widget
+
+```go
+type ScrollBarWidget struct {
+    baseWidget
+    orientation ScrollBarOrientation
+    selected    bool
+    thumbSize   float64
+    thumbColor  string
+    scrollerSize   float64
+    scrollerOffset float64
+}
+```
+
+| Method | Description |
+|--------|-------------|
+| `CreateScrollBarWidget(orientation ScrollBarOrientation) *ScrollBarWidget` | Creates a new scrollbar widget |
+| `(scrollBar *ScrollBarWidget) SetWidth(width float64)` | Sets width (marks as fixed) |
+| `(scrollBar *ScrollBarWidget) SetHeight(height float64)` | Sets height (marks as fixed) |
+| `(scrollBar *ScrollBarWidget) SetTrackColor(backgroundColor string)` | Sets track color (must start with #) |
+| `(scrollBar *ScrollBarWidget) SetScrollerSize(scrollerSize float64)` | Sets scroller size |
+| `(scrollBar *ScrollBarWidget) SetThumbSize(thumbSize float64)` | Sets thumb size |
+| `(scrollBar *ScrollBarWidget) SetThumbColor(thumbColor string)` | Sets thumb color |
+| `(scrollBar *ScrollBarWidget) SetScrollerOffset(scrollerOffset float64)` | Sets scroller offset |
+
+### Frame Widget
+
+```go
+type Frame struct {
+    baseWidget
+    orientation FrameOrientation
+}
+```
+
+| Method | Description |
+|--------|-------------|
+| `CreateFrame(orientation FrameOrientation) *Frame` | Creates a new frame widget |
+| `(frame *Frame) SetBackgroundColor(backgroundColor string)` | Sets background color (must start with #) |
+| `(frame *Frame) SetWidth(width float64)` | Sets width (marks as fixed) |
+| `(frame *Frame) SetHeight(height float64)` | Sets height (marks as fixed) |
+| `(frame *Frame) GetHeight() float64` | Returns frame height |
+| `(frame *Frame) SetVisible(visible bool)` | Sets visibility |
+| `(frame *Frame) RemoveWidget(index int)` | Removes child widget at index |
+
+---
+
+## 8.7 Overlays
+
+### Overlay Struct
+
+```go
+type Overlay struct {
+    ref    string
+    active bool
+    top    float64
+    left   float64
+    width  float64
+    height float64
+    position image.Point
+    backgroundBuffer *image.RGBA
+    buffer           *image.RGBA
+}
+```
+
+| Function | Description |
+|----------|-------------|
+| `CreateStaticOverlay(ref string, ctx *gg.Context, position image.Point) *Overlay` | Creates a static overlay from a gg.Context |
+
+### Window Overlay Methods
+
+| Method | Description |
+|--------|-------------|
+| `(window *Window) AddOverlay(overlay *Overlay)` | Adds an active overlay |
+| `(window *Window) RemoveOverlay(overlay *Overlay)` | Removes an active overlay |
+| `(window *Window) AddStaticOverlay(overlay *Overlay)` | Adds a static overlay |
+| `(window *Window) RemoveStaticOverlay(ref string)` | Removes a static overlay by ref |
+
+---
+
+## 8.8 Context Menu
+
+### Window Context Menu Methods
+
+| Method | Description |
+|--------|-------------|
+| `(window *Window) EnableContextMenus()` | Initializes the context menu system |
+| `(window *Window) AddContextMenuEntry(entryText string, action func())` | Adds a menu entry |
+| `(window *Window) DestroyContextMenu()` | Destroys the context menu |
+| `(window *Window) DrawContextMenu()` | Draws the context menu at cursor position |
+| `(window *Window) SetContextMenuOverlay(overlay *Overlay)` | Sets the context menu overlay |
+| `(window *Window) SelectEntry(entry *menuEntry)` | Selects a menu entry |
+| `(window *Window) DeselectEntries()` | Deselects all entries |
+
+### menuEntry Struct
+
+```go
+type menuEntry struct {
+    entryText string
+    action    func()
+    top  float64
+    left float64
+    width  float64
+    height float64
+}
+```
+
+| Method | Description |
+|--------|-------------|
+| `(entry *menuEntry) PointIntersects(x, y float64) bool` | Checks if a point intersects the entry |
+| `(entry *menuEntry) getCoords() (float64, float64, float64, float64)` | Returns entry coordinates |
+| `(entry *menuEntry) setCoords(top, left, width, height float64)` | Sets entry coordinates |
+
+---
+
+## 8.9 Event Processing
+
+### Window Event Methods
+
+| Method | Description |
+|--------|-------------|
+| `(window *Window) ProcessKeyboardInput(input KeyboardInput)` | Dispatches keyboard input to listeners |
+| `(window *Window) ProcessTextInput(char rune)` | Dispatches text input to listeners |
+| `(window *Window) ProcessPointerPosition()` | Processes pointer position events |
+| `(window *Window) ProcessPointerClick(button glfw.MouseButton)` | Processes pointer click events |
+| `(window *Window) ProcessScroll(x, y float64)` | Processes scroll events |
+| `(window *Window) ProcessReturnKey()` | Processes Return key for active input |
+| `(window *Window) ProcessArrowKeys(arrowKey string)` | Processes arrow key input |
+| `(window *Window) ProcessTrees()` | Processes tree widget hover/selection |
+| `(window *Window) ProcessButtons()` | Processes button hover/selection |
+| `(window *Window) ProcessInputs()` | Processes input widget hover/selection |
+| `(window *Window) ProcessInputActivation()` | Activates selected input widget |
+| `(window *Window) ProcessButtonClick()` | Clicks selected button |
+| `(window *Window) ProcessTreeClick()` | Clicks selected tree node |
+| `(window *Window) ProcessContextMenu()` | Processes context menu hover |
+| `(window *Window) ProcessContextMenuClick()` | Processes context menu click |
+
+### Event Listener Methods
+
+| Method | Description |
+|--------|-------------|
+| `(window *Window) AttachPointerPositionEventListener(callback func(float64, float64))` | Registers pointer position listener |
+| `(window *Window) AttachScrollEventListener(callback func(int))` | Registers scroll listener |
+| `(window *Window) AttachClickEventListener(callback func(MustardKey))` | Registers click listener |
+| `(window *Window) AttachPointerClickEventListener(callback func(float64, float64, MustardKey))` | Registers pointer click listener |
+| `(window *Window) AttachKeyboardInputEventListener(callback func(KeyboardInput))` | Registers keyboard input listener |
+| `(window *Window) AttachTextInputEventListener(callback func(rune))` | Registers text input listener |
+| `(window *Window) AttachActiveChangeListener(callback func(bool))` | Registers active state change listener |
+
+---
+
+## 8.10 Types & Constants
+
+### MustardKey
+
+```go
+type MustardKey int
+
+const (
+    MouseLeft  MustardKey = iota  // 0
+    MouseRight                    // 1
+)
+```
+
+### KeyboardAction
+
+```go
+type KeyboardAction int
+
+const (
+    KeyboardPress   KeyboardAction = iota  // 0
+    KeyboardRepeat                         // 1
+    KeyboardRelease                        // 2
+)
+```
+
+### KeyboardInput
+
+```go
+type KeyboardInput struct {
+    Key     string
+    Action  KeyboardAction
+    Control bool
+    Shift   bool
+    Alt     bool
+    Super   bool
+}
+```
+
+### FrameOrientation
+
+```go
+type FrameOrientation int
+
+const (
+    VerticalFrame   FrameOrientation = iota  // 0
+    HorizontalFrame                          // 1
+)
+```
+
+### ScrollBarOrientation
+
+```go
+type ScrollBarOrientation int
+
+const (
+    VerticalScrollBar   ScrollBarOrientation = iota  // 0
+    HorizontalScrollBar                              // 1
+)
+```
+
+### cursorType
+
+```go
+type cursorType int
+
+const (
+    DefaultCursor cursorType = iota  // 0
+    PointerCursor                    // 1
+)
+```
+
+### widgetType
+
+```go
+type widgetType int
+
+const (
+    buttonWidget   widgetType = iota  // 0
+    canvasWidget                      // 1
+    frameWidget                       // 2
+    imageWidget                       // 3
+    inputWidget                       // 4
+    labelWidget                       // 5
+    treeWidget                        // 6
+    scrollbarWidget                   // 7
+    textWidget                        // 8
+)
+```
+
+### widgetPosition
+
+```go
+type widgetPosition int
+
+const (
+    PositionRelative widgetPosition = iota  // 0
+    PositionAbsolute                        // 1
+)
+```
+
+---
+
+## 8.11 Layout Calculation Helpers
+
+| Function | Description |
+|----------|-------------|
+| `calculateChildrenWidgetsLayout(children []*baseWidget, top, left, width, height float64, orientation FrameOrientation) []*baseWidget` | Calculates layout for child widgets |
+| `getFixedWidthElements(elements []*baseWidget) ([]*baseWidget, []*baseWidget)` | Separates fixed vs volatile width elements |
+| `getFixedHeightElements(elements []*baseWidget) ([]*baseWidget, []*baseWidget)` | Separates fixed vs volatile height elements |
+| `calculateFlexibleWidth(avaiableWidth float64, elements []*baseWidget) float64` | Calculates remaining width for flexible elements |
+| `calculateFlexibleHeight(avaiableHeight float64, elements []*baseWidget) float64` | Calculates remaining height for flexible elements |
+| `getCoreWidgets(widgets []Widget) []*baseWidget` | Returns only visible widgets |
+| `copyWidgetToBuffer(widget Widget, src image.Image)` | Copies widget content to buffer |
+| `compositeWidget(buffer *image.RGBA, widget Widget)` | Composites a widget to buffer |
+| `compositeAll(buffer *image.RGBA, widget Widget)` | Recursively composites all widgets |
+
+---
+
+## 8.12 Example: Complete UI Setup
+
+```go
+package main
+
+import (
+    "github.com/danfragoso/thdwb/mustard"
+)
+
+func main() {
+    mustard.SetGLFWHints()
+
+    app := mustard.CreateNewApp("thdwb")
+
+    window := mustard.CreateNewWindow("thdwb", 900, 600, true)
+    rootFrame := mustard.CreateFrame(mustard.VerticalFrame)
+    window.SetRootFrame(rootFrame)
+
+    // Add a label
+    label := mustard.CreateLabelWidget("Hello, thdwb!")
+    label.SetWidth(200)
+    label.SetHeight(40)
+    label.SetFontColor("#000000")
+    rootFrame.AttachWidget(label)
+
+    // Add a button
+    button := mustard.CreateButtonWidget("Click Me", nil)
+    button.SetWidth(100)
+    button.SetHeight(40)
+    button.SetContent("Click Me")
+    window.RegisterButton(button, func() {
+        println("Button clicked!")
+    })
+    rootFrame.AttachWidget(button)
+
+    app.AddWindow(window)
+    app.ActivateWindow(window)
+    window.Show()
+
+    app.Run(func() {
+        // Per-frame callback
+    })
 }
 ```
 
 ---
 
-## 8.13 Context Menu: Right-Click Menu
-
-```go
-// ContextMenu shows on right-click.
-type ContextMenu struct {
-    *Frame
-    Items []*MenuItem
-}
-
-type MenuItem struct {
-    Label    string
-    Shortcut string
-    Action   func()
-    Enabled  bool
-}
-
-func (cm *ContextMenu) Show(x, y float64) {
-    cm.SetBounds(x, y, 200, float64(len(cm.Items)*25))
-    cm.Visible = true
-    cm.MarkRepaint()
-}
-
-func (cm *ContextMenu) Hide() {
-    cm.Visible = false
-}
-```
-
-### Tab Context Menu
-
-```go
-func (tb *TabBar) ShowTabContextMenu(tab *Tab) {
-    menu := NewContextMenu()
-    menu.Items = []*MenuItem{
-        {Label: "Close Tab", Action: func() { tb.App.CloseTab(tab) }},
-        {Label: "Close Other Tabs", Action: func() { tb.App.CloseOtherTabs(tab) }},
-        {Label: "Close Tabs to Right", Action: func() { tb.App.CloseTabsToRight(tab) }},
-        {Label: "Reload", Action: func() { tab.Reload() }},
-        {Label: "Duplicate", Action: func() { tb.App.NewWindow(tab.URL) }},
-        {Label: "Pin Tab", Action: func() { tab.Pinned = !tab.Pinned }},
-    }
-    menu.Show(mouseX, mouseY)
-}
-```
-
----
-
-## 8.14 History Navigation
-
-```go
-func (tab *Tab) GoBack() {
-    if tab.HistoryIndex > 0 {
-        tab.HistoryIndex--
-        tab.LoadURL(tab.History[tab.HistoryIndex])
-    }
-}
-
-func (tab *Tab) GoForward() {
-    if tab.HistoryIndex < len(tab.History)-1 {
-        tab.HistoryIndex++
-        tab.LoadURL(tab.History[tab.HistoryIndex])
-    }
-}
-
-func (tab *Tab) addToHistory(url string) {
-    // Truncate forward history
-    tab.History = tab.History[:tab.HistoryIndex+1]
-    tab.History = append(tab.History, url)
-    tab.HistoryIndex = len(tab.History) - 1
-}
-```
-
----
-
-## 8.15 Settings & Persistence
-
-```go
-// Settings holds user preferences.
-type Settings struct {
-    HomePage       string
-    SearchEngine   string
-    Theme          string  // "light", "dark", "system"
-    FontSize       int
-    EnableJS       bool
-    BlockPopups    bool
-    // ...
-}
-
-func LoadSettings() *Settings {
-    // Load from ~/.config/thdwb/settings.json
-    // Return defaults if not found
-}
-
-func (s *Settings) Save() {
-    // Write to ~/.config/thdwb/settings.json
-}
-```
-
----
-
-## 8.16 Cross-References
+## 8.13 Cross-References
 
 | Concept | Chapter |
 |---------|---------|
@@ -677,78 +776,23 @@ func (s *Settings) Save() {
 
 ---
 
-## 8.17 Example Test: Creating a Tab
-
-```go
-// Example_NewTab demonstrates creating a tab with web content.
-func Example_NewTab() {
-    // This test shows the structure without actually showing a window
-    ctx := hotdog.NewWindowContext()
-    defer ctx.Close()
-
-    tab := mustard.NewTab("https://example.com")
-
-    fmt.Printf("Tab URL: %s\n", tab.URL)
-    fmt.Printf("Tab Title: %s\n", tab.Title)
-    fmt.Printf("Has WindowContext: %v\n", tab.WindowCtx != nil)
-    fmt.Printf("Has Canvas: %v\n", tab.Canvas != nil)
-
-    // Output:
-    // Tab URL: https://example.com
-    // Tab Title: 
-    // Has WindowContext: true
-    // Has Canvas: true
-}
-```
-
-Run with: `go test -run Example_NewTab ./mustard`
-
----
-
-## 8.18 Example Test: Toolbar
-
-```go
-// Example_Toolbar demonstrates creating a toolbar with navigation controls.
-func Example_Toolbar() {
-    ctx := hotdog.NewWindowContext()
-    defer ctx.Close()
-
-    tab := mustard.NewTab("https://example.com")
-    toolbar := mustard.NewToolbar(tab)
-
-    fmt.Printf("Toolbar children: %d\n", len(toolbar.Children))
-    fmt.Printf("Has BackBtn: %v\n", toolbar.BackBtn != nil)
-    fmt.Printf("Has AddressBar: %v\n", toolbar.AddressBar != nil)
-    fmt.Printf("AddressBar placeholder: %s\n", toolbar.AddressBar.Placeholder)
-
-    // Output:
-    // Toolbar children: 6
-    // Has BackBtn: true
-    // Has AddressBar: true
-    // AddressBar placeholder: Enter URL or search...
-}
-```
-
-Run with: `go test -run Example_Toolbar ./mustard`
-
----
-
-## 8.19 Summary
+## 8.14 Summary
 
 - **mustard** = UI toolkit: windows, widgets, event loop, OpenGL
-- **App** = Manages multiple windows/tabs
-- **Tab** = Web content container with isolated WindowContext
-- **TabBar** = Horizontal frame with tab buttons + new tab button
-- **Toolbar** = Navigation buttons + address bar + search
-- **Window** = GLFW window + OpenGL + widget tree + event loop
-- **Event loop** = Process events → JS microtasks → Reflow → Repaint → Swap
-- **Focus management** = Keyboard input routing
-- **Context menus** = Right-click actions
-- **History** = Back/forward navigation per tab
+- **App** = Manages multiple windows/tabs (`CreateNewApp`, `AddWindow`, `ActivateWindow`, `DestroyWindow`)
+- **Window** = GLFW window + OpenGL + widget tree + event loop (`CreateNewWindow`, `SetRootFrame`, `Show`)
+- **Widget** = UI component interface with `Buffer`, `SetBuffer`, `NeedsRepaint`, `Widgets`, `ComputedBox`, `SetWindow`, `BaseWidget`, `draw`
+- **baseWidget** = Common widget implementation with visibility, rect, hit testing, attach/detach
+- **Button/Label/Input/Canvas/Text/Image/Tree/ScrollBar** = Concrete widget types with type-specific setters
+- **Frame** = Container widget with vertical/horizontal orientation
+- **Overlay** = Floating UI layer (active or static)
+- **Context Menu** = Right-click menu with entries and actions
+- **Event Processing** = Keyboard, text, pointer, scroll, click, tree, button, input handling
+- **Constants** = MustardKey, KeyboardAction, FrameOrientation, ScrollBarOrientation, cursorType, widgetType, widgetPosition
 
 ---
 
-## 8.20 Next Steps
+## 8.15 Next Steps
 
 You've now completed the textbook! The chapters cover:
 
@@ -759,21 +803,16 @@ You've now completed the textbook! The chapters cover:
 5. **Layout Engine** — Block, inline, flexbox layout
 6. **Rendering & Graphics** — gg 2D graphics, mustard UI toolkit
 7. **JavaScript Runtime** — Goja VM, DOM bindings, Fetch, events
-8. **UI Toolkit & Application** — Tabs, toolbar, window management
+8. **UI Toolkit & Application** — Windows, widgets, event handling, overlays, context menus
 
 ---
 
-## 8.21 Further Reading
+## 8.16 Further Reading
 
 - **Mozilla Developer Network (MDN)**: https://developer.mozilla.org/
 - **Firefox Source Code (Searchfox)**: https://searchfox.org/mozilla-central/
 - **HTML Spec (WHATWG)**: https://html.spec.whatwg.org/
 - **CSS Specs (W3C)**: https://www.w3.org/Style/CSS/
 - **JavaScript Spec (ECMAScript)**: https://tc39.es/ecma262/
-- **Goja Engine**: https://github.com/dop251/goja
-- **gg Graphics**: https://github.com/fogleman/gg
-- **kjk/flex (Yoga port)**: https://github.com/kjk/flex
-
----
-
-*Key terms from this chapter: [Chrome](../glossary.md#chrome), [Focus](../glossary.md#focus), [Frame](../glossary.md#frame), [Hit Testing](../glossary.md#hit-testing), [Layout](../glossary.md#layout), [Tab](../glossary.md#tab), [Widget](../glossary.md#widget), [Window](../glossary.md#window)*
+- **Goja (JavaScript engine)**: https://github.com/dop251/goja
+- **gg (2D graphics)**: https://github.com/fogleman/gg
