@@ -13,6 +13,8 @@ use (
 	./mayo
 	./mustard
 	./pages
+	./platform
 	./profiler
 	./sauce
+	./webview
 )

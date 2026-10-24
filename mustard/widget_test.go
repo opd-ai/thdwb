@@ -411,7 +411,7 @@ func TestWidgetWindow(t *testing.T) {
 	btn.SetHeight(50)
 
 	// Create a minimal window for testing
-	window := &Window{
+	window := &WindowBase{
 		width:  800,
 		height: 600,
 	}
@@ -440,7 +440,7 @@ func TestRequestReflow(t *testing.T) {
 	btn.SetWidth(100)
 	btn.SetHeight(50)
 
-	window := &Window{
+	window := &WindowBase{
 		width:  800,
 		height: 600,
 	}

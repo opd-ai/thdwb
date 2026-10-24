@@ -8,7 +8,7 @@ import (
 )
 
 func TestCreateNewApp(t *testing.T) {
-	app := CreateNewApp("test")
+	app := CreateNewApp(nil, "test")
 	if app == nil {
 		t.Fatal("CreateNewApp returned nil")
 	}
@@ -21,8 +21,8 @@ func TestCreateNewApp(t *testing.T) {
 }
 
 func TestAppAddWindow(t *testing.T) {
-	app := CreateNewApp("test")
-	window := &Window{active: true}
+	app := CreateNewApp(nil, "test")
+	window := &WindowBase{active: true}
 	app.AddWindow(window)
 	if len(app.windows) != 1 {
 		t.Errorf("Expected 1 window, got %d", len(app.windows))
@@ -33,21 +33,21 @@ func TestAppAddWindow(t *testing.T) {
 }
 
 func TestAppContainsWindow(t *testing.T) {
-	app := CreateNewApp("test")
-	window := &Window{active: true}
+	app := CreateNewApp(nil, "test")
+	window := &WindowBase{active: true}
 	app.AddWindow(window)
 	if !app.containsWindow(window) {
 		t.Error("containsWindow should return true for added window")
 	}
-	if app.containsWindow(&Window{}) {
+	if app.containsWindow(&WindowBase{}) {
 		t.Error("containsWindow should return false for unknown window")
 	}
 }
 
 func TestAppActivateWindow(t *testing.T) {
-	app := CreateNewApp("test")
-	first := &Window{active: true}
-	second := &Window{active: true}
+	app := CreateNewApp(nil, "test")
+	first := &WindowBase{active: true}
+	second := &WindowBase{active: true}
 	app.AddWindow(first)
 	app.AddWindow(second)
 
@@ -69,15 +69,15 @@ func TestAppActivateWindow(t *testing.T) {
 }
 
 func TestAppActivateWindowNotManaged(t *testing.T) {
-	app := CreateNewApp("test")
-	if err := app.ActivateWindow(&Window{}); err == nil {
+	app := CreateNewApp(nil, "test")
+	if err := app.ActivateWindow(&WindowBase{}); err == nil {
 		t.Error("Expected error when activating unmanaged window")
 	}
 }
 
 func TestAppDestroyWindow(t *testing.T) {
-	app := CreateNewApp("test")
-	window := &Window{active: true}
+	app := CreateNewApp(nil, "test")
+	window := &WindowBase{active: true}
 	app.AddWindow(window)
 	app.ActivateWindow(window)
 	// Manually test the destroy path without calling window.destroy() which needs GLFW
@@ -92,14 +92,14 @@ func TestAppDestroyWindow(t *testing.T) {
 }
 
 func TestAppDestroyWindowNotActive(t *testing.T) {
-	app := CreateNewApp("test")
-	first := &Window{active: true}
-	second := &Window{active: true}
+	app := CreateNewApp(nil, "test")
+	first := &WindowBase{active: true}
+	second := &WindowBase{active: true}
 	app.AddWindow(first)
 	app.AddWindow(second)
 	app.ActivateWindow(first)
 	// Manually test the destroy path without calling window.destroy() which needs GLFW
-	app.windows = []*Window{first}
+	app.windows = []Window{first}
 	if len(app.windows) != 1 {
 		t.Errorf("Expected 1 window, got %d", len(app.windows))
 	}
@@ -109,8 +109,8 @@ func TestAppDestroyWindowNotActive(t *testing.T) {
 }
 
 func TestAppWindows(t *testing.T) {
-	app := CreateNewApp("test")
-	window := &Window{active: true}
+	app := CreateNewApp(nil, "test")
+	window := &WindowBase{active: true}
 	app.AddWindow(window)
 	windows := app.Windows()
 	if len(windows) != 1 {
@@ -782,7 +782,7 @@ func TestBaseWidgetRect(t *testing.T) {
 func TestBaseWidgetIsPointInside(t *testing.T) {
 	widget := &baseWidget{
 		computedBox: box{top: 10, left: 20, width: 100, height: 50},
-		window: &Window{
+		window: &WindowBase{
 			width:  200,
 			height: 200,
 		},
@@ -859,7 +859,7 @@ func TestBoxCoords(t *testing.T) {
 }
 
 func TestWindowSize(t *testing.T) {
-	window := &Window{
+	window := &WindowBase{
 		width:  800,
 		height: 600,
 	}
@@ -870,7 +870,7 @@ func TestWindowSize(t *testing.T) {
 }
 
 func TestWindowIsActive(t *testing.T) {
-	window := &Window{}
+	window := &WindowBase{}
 	if !window.IsActive() {
 		t.Error("Expected new window to be active by default")
 	}
@@ -885,7 +885,7 @@ func TestWindowIsActive(t *testing.T) {
 }
 
 func TestWindowSetTitle(t *testing.T) {
-	window := &Window{}
+	window := &WindowBase{}
 	// SetTitle requires a valid glw window; just verify the struct field
 	window.title = "New Title"
 	if window.title != "New Title" {
@@ -894,7 +894,7 @@ func TestWindowSetTitle(t *testing.T) {
 }
 
 func TestWindowRegisterTree(t *testing.T) {
-	window := &Window{}
+	window := &WindowBase{}
 	tree := &TreeWidget{}
 	window.RegisterTree(tree)
 	if len(window.registeredTrees) != 1 {
@@ -906,7 +906,7 @@ func TestWindowRegisterTree(t *testing.T) {
 }
 
 func TestWindowRegisterButton(t *testing.T) {
-	window := &Window{}
+	window := &WindowBase{}
 	button := &ButtonWidget{}
 	callback := func() {}
 	window.RegisterButton(button, callback)
@@ -921,7 +921,7 @@ func TestWindowRegisterButton(t *testing.T) {
 }
 
 func TestWindowUnregisterButton(t *testing.T) {
-	window := &Window{}
+	window := &WindowBase{}
 	button := &ButtonWidget{}
 	window.RegisterButton(button, func() {})
 	if len(window.registeredButtons) != 1 {
@@ -934,7 +934,7 @@ func TestWindowUnregisterButton(t *testing.T) {
 }
 
 func TestWindowRegisterInput(t *testing.T) {
-	window := &Window{}
+	window := &WindowBase{}
 	input := &InputWidget{}
 	window.RegisterInput(input)
 	if len(window.registeredInputs) != 1 {
@@ -947,7 +947,7 @@ func TestWindowRegisterInput(t *testing.T) {
 }
 
 func TestWindowAttachEventListeners(t *testing.T) {
-	window := &Window{}
+	window := &WindowBase{}
 	window.AttachPointerPositionEventListener(func(x, y float64) {})
 	if len(window.pointerPositionEventListeners) != 1 {
 		t.Errorf("Expected 1 pointer position listener, got %d", len(window.pointerPositionEventListeners))
@@ -980,7 +980,7 @@ func TestWindowAttachEventListeners(t *testing.T) {
 }
 
 func TestWindowAttachActiveChangeListener(t *testing.T) {
-	window := &Window{active: true}
+	window := &WindowBase{active: true}
 	var calls []bool
 	window.AttachActiveChangeListener(func(active bool) { calls = append(calls, active) })
 	if len(calls) != 1 || !calls[0] {
@@ -999,7 +999,7 @@ func TestWindowSetCursor(t *testing.T) {
 }
 
 func TestOverlayManagement(t *testing.T) {
-	window := &Window{}
+	window := &WindowBase{}
 	overlay := &Overlay{
 		ref:    "test",
 		active: true,
@@ -1019,22 +1019,22 @@ func TestOverlayManagement(t *testing.T) {
 }
 
 func TestStaticOverlayManagement(t *testing.T) {
-	window := &Window{}
+	window := &WindowBase{}
 	ctx := gg.NewContext(100, 50)
-	overlay := CreateStaticOverlay("test", ctx, image.Point{10, 20})
+	overlay := CreateOverlay("test", ctx.Image().(*image.RGBA), image.Point{10, 20})
 	window.AddStaticOverlay(overlay)
 	if !window.hasStaticOverlay {
 		t.Error("Expected hasStaticOverlay to be true after AddStaticOverlay")
 	}
-	window.RemoveStaticOverlay("test")
+	window.RemoveStaticOverlay(overlay)
 	if window.hasStaticOverlay {
 		t.Error("Expected hasStaticOverlay to be false after RemoveStaticOverlay")
 	}
 }
 
-func TestCreateStaticOverlay(t *testing.T) {
+func TestCreateOverlay(t *testing.T) {
 	ctx := gg.NewContext(100, 50)
-	overlay := CreateStaticOverlay("test", ctx, image.Point{10, 20})
+	overlay := CreateOverlay("test", ctx.Image().(*image.RGBA), image.Point{10, 20})
 	if overlay.ref != "test" {
 		t.Errorf("Expected ref 'test', got '%s'", overlay.ref)
 	}
@@ -1344,7 +1344,7 @@ func TestGetCoreWidgets(t *testing.T) {
 }
 
 func TestAppRun(t *testing.T) {
-	app := CreateNewApp("test")
+	app := CreateNewApp(nil, "test")
 	// Run will block forever, just verify it starts
 	// We can't easily test Run without a window, so just verify app creation
 	if app == nil {

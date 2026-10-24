@@ -1,16 +1,12 @@
 package mustard
 
 import (
-	assets "github.com/danfragoso/thdwb/assets"
-
-	"github.com/go-gl/glfw/v3.3/glfw"
-	"github.com/goki/freetype/truetype"
+	gg "github.com/danfragoso/thdwb/gg"
 )
 
 // CreateScrollBarWidget - Creates and returns a new ScrollBar Widget
 func CreateScrollBarWidget(orientation ScrollBarOrientation) *ScrollBarWidget {
 	var widgets []Widget
-	font, _ := truetype.Parse(assets.OpenSans(400))
 
 	return &ScrollBarWidget{
 		baseWidget: baseWidget{
@@ -19,11 +15,7 @@ func CreateScrollBarWidget(orientation ScrollBarOrientation) *ScrollBarWidget {
 
 			widgetType: scrollbarWidget,
 
-			cursor: glfw.CreateStandardCursor(glfw.ArrowCursor),
-
 			backgroundColor: "#fff",
-
-			font: font,
 		},
 		orientation: orientation,
 	}
@@ -72,7 +64,7 @@ func (scrollBar *ScrollBarWidget) SetScrollerOffset(scrollerOffset float64) {
 }
 
 func (scrollBar *ScrollBarWidget) draw() {
-	context := scrollBar.window.context
+	context := scrollBar.window.context.(*gg.Context)
 
 	top := float64(scrollBar.computedBox.top)
 	left := float64(scrollBar.computedBox.left)

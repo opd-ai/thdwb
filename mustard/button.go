@@ -1,17 +1,13 @@
 package mustard
 
 import (
-	assets "github.com/danfragoso/thdwb/assets"
 	gg "github.com/danfragoso/thdwb/gg"
-
-	"github.com/go-gl/glfw/v3.3/glfw"
 	"github.com/goki/freetype/truetype"
 )
 
 // CreateButtonWidget - Creates and returns a new Button Widget
 func CreateButtonWidget(label string, asset []byte) *ButtonWidget {
 	var widgets []Widget
-	font, _ := truetype.Parse(assets.OpenSans(400))
 	icon, _ := gg.LoadAsset(asset)
 
 	return &ButtonWidget{
@@ -21,11 +17,7 @@ func CreateButtonWidget(label string, asset []byte) *ButtonWidget {
 
 			widgetType: buttonWidget,
 
-			cursor: glfw.CreateStandardCursor(glfw.HandCursor),
-
 			backgroundColor: "#fff",
-
-			font: font,
 		},
 
 		icon:      icon,
@@ -95,7 +87,7 @@ func (button *ButtonWidget) SetBackgroundColor(backgroundColor string) {
 }
 
 func (button *ButtonWidget) draw() {
-	context := button.window.context
+	context := button.window.context.(*gg.Context)
 	top, left, width, height := button.computedBox.GetCoords()
 
 	if button.selected {
@@ -114,7 +106,7 @@ func (button *ButtonWidget) draw() {
 
 	if button.content != "" {
 		context.SetHexColor(button.fontColor)
-		context.SetFont(button.font, button.fontSize)
+		context.SetFont(button.font.(*truetype.Font), button.fontSize)
 		context.DrawString(button.content, float64(left)+button.padding, float64(top)+button.padding+button.fontSize)
 	}
 

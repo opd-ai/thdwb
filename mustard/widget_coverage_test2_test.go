@@ -8,7 +8,7 @@ import (
 )
 
 func TestAppRunWithNoWindows(t *testing.T) {
-	app := CreateNewApp("test")
+	app := CreateNewApp(nil, "test")
 	called := false
 	// Run with no windows should just call callback and block on empty loop
 	// We can't easily test Run since it blocks forever, but we can verify app state
@@ -19,8 +19,8 @@ func TestAppRunWithNoWindows(t *testing.T) {
 }
 
 func TestAppAddWindowSetsWindow(t *testing.T) {
-	app := CreateNewApp("test")
-	window := &Window{
+	app := CreateNewApp(nil, "test")
+	window := &WindowBase{
 		active: true,
 		rootFrame: &Frame{
 			baseWidget: baseWidget{
@@ -77,7 +77,7 @@ func TestCreateCtxScrollBar(t *testing.T) {
 }
 
 func TestEnableContextMenus(t *testing.T) {
-	window := &Window{}
+	window := &WindowBase{}
 	window.EnableContextMenus()
 	if window.contextMenu == nil {
 		t.Error("Expected contextMenu to be initialized")
@@ -88,7 +88,7 @@ func TestEnableContextMenus(t *testing.T) {
 }
 
 func TestAddContextMenuEntry(t *testing.T) {
-	window := &Window{}
+	window := &WindowBase{}
 	window.EnableContextMenus()
 	window.AddContextMenuEntry("Test", func() {})
 	if len(window.contextMenu.entries) != 1 {
@@ -99,7 +99,7 @@ func TestAddContextMenuEntry(t *testing.T) {
 func TestDestroyContextMenu(t *testing.T) {
 	// DestroyContextMenu calls SetCursor which requires a valid glw window
 	// Just verify the method exists and can be referenced
-	window := &Window{}
+	window := &WindowBase{}
 	_ = window.DestroyContextMenu
 }
 
@@ -112,7 +112,7 @@ func TestPrepEntryLong(t *testing.T) {
 }
 
 func TestDrawContextMenu(t *testing.T) {
-	window := &Window{
+	window := &WindowBase{
 		width:  800,
 		height: 600,
 		cursorX: 100,
@@ -127,7 +127,7 @@ func TestDrawContextMenu(t *testing.T) {
 }
 
 func TestSetContextMenuOverlay(t *testing.T) {
-	window := &Window{}
+	window := &WindowBase{}
 	window.EnableContextMenus()
 	ctx := gg.NewContext(100, 50)
 	overlay := extractOverlay(ctx.Image().(*image.RGBA), image.Point{10, 20})
@@ -141,7 +141,7 @@ func TestSetContextMenuOverlay(t *testing.T) {
 }
 
 func TestRefreshContextMenu(t *testing.T) {
-	window := &Window{}
+	window := &WindowBase{}
 	window.EnableContextMenus()
 	window.AddContextMenuEntry("Test", func() {})
 	window.contextMenu.overlay = &Overlay{
@@ -168,19 +168,19 @@ func TestExtractOverlay(t *testing.T) {
 func TestSelectEntry(t *testing.T) {
 	// SelectEntry calls refreshContextMenu which requires a valid gg.Context
 	// Just verify the method exists and can be referenced
-	window := &Window{}
+	window := &WindowBase{}
 	_ = window.SelectEntry
 }
 
 func TestDeselectEntries(t *testing.T) {
 	// DeselectEntries calls refreshContextMenu which requires a valid gg.Context
 	// Just verify the method exists and can be referenced
-	window := &Window{}
+	window := &WindowBase{}
 	_ = window.DeselectEntries
 }
 
 func TestProcessKeyboardInput(t *testing.T) {
-	window := &Window{}
+	window := &WindowBase{}
 	called := false
 	window.AttachKeyboardInputEventListener(func(input KeyboardInput) { called = true })
 	window.ProcessKeyboardInput(KeyboardInput{Key: "Enter", Action: KeyboardPress})
@@ -190,7 +190,7 @@ func TestProcessKeyboardInput(t *testing.T) {
 }
 
 func TestProcessTextInput(t *testing.T) {
-	window := &Window{}
+	window := &WindowBase{}
 	called := false
 	window.AttachTextInputEventListener(func(char rune) { called = true })
 	window.ProcessTextInput('a')
@@ -203,19 +203,19 @@ func TestProcessPointerPosition(t *testing.T) {
 	// ProcessPointerPosition calls selectWidget, ProcessButtons, ProcessTrees, ProcessInputs
 	// which require valid window context with glw
 	// Just verify the method exists and can be referenced
-	window := &Window{}
+	window := &WindowBase{}
 	_ = window.ProcessPointerPosition
 }
 
 func TestSelectWidget(t *testing.T) {
 	// selectWidget requires a valid window context
 	// Just verify the method exists and can be referenced
-	window := &Window{}
+	window := &WindowBase{}
 	_ = window.selectWidget
 }
 
 func TestProcessPointerClick(t *testing.T) {
-	window := &Window{
+	window := &WindowBase{
 		cursorX: 50,
 		cursorY: 50,
 	}
@@ -230,7 +230,7 @@ func TestProcessPointerClick(t *testing.T) {
 func TestProcessScroll(t *testing.T) {
 	// ProcessScroll requires a valid window context
 	// Just verify the method exists and can be referenced
-	window := &Window{}
+	window := &WindowBase{}
 	_ = window.ProcessScroll
 }
 
@@ -249,7 +249,7 @@ func TestScrollWidgetAtOutside(t *testing.T) {
 }
 
 func TestProcessReturnKey(t *testing.T) {
-	window := &Window{}
+	window := &WindowBase{}
 	input := &InputWidget{
 		baseWidget: baseWidget{
 			widgetType: inputWidget,
@@ -267,7 +267,7 @@ func TestProcessReturnKey(t *testing.T) {
 }
 
 func TestProcessArrowKeys(t *testing.T) {
-	window := &Window{}
+	window := &WindowBase{}
 	input := &InputWidget{
 		baseWidget: baseWidget{
 			widgetType: inputWidget,
@@ -286,26 +286,26 @@ func TestProcessArrowKeys(t *testing.T) {
 func TestProcessTrees(t *testing.T) {
 	// ProcessTrees requires a valid window context with glw
 	// Just verify the method exists and can be referenced
-	window := &Window{}
+	window := &WindowBase{}
 	_ = window.ProcessTrees
 }
 
 func TestProcessButtons(t *testing.T) {
 	// ProcessButtons requires a valid window context with glw
 	// Just verify the method exists and can be referenced
-	window := &Window{}
+	window := &WindowBase{}
 	_ = window.ProcessButtons
 }
 
 func TestProcessInputs(t *testing.T) {
 	// ProcessInputs requires a valid window context with glw
 	// Just verify the method exists and can be referenced
-	window := &Window{}
+	window := &WindowBase{}
 	_ = window.ProcessInputs
 }
 
 func TestProcessInputActivation(t *testing.T) {
-	window := &Window{}
+	window := &WindowBase{}
 	input := &InputWidget{
 		baseWidget: baseWidget{
 			widgetType: inputWidget,
@@ -321,7 +321,7 @@ func TestProcessInputActivation(t *testing.T) {
 }
 
 func TestProcessButtonClick(t *testing.T) {
-	window := &Window{}
+	window := &WindowBase{}
 	called := false
 	button := &ButtonWidget{
 		baseWidget: baseWidget{
@@ -339,7 +339,7 @@ func TestProcessButtonClick(t *testing.T) {
 }
 
 func TestProcessTreeClick(t *testing.T) {
-	window := &Window{}
+	window := &WindowBase{}
 	tree := &TreeWidget{
 		baseWidget: baseWidget{
 			widgetType: treeWidget,
@@ -356,13 +356,13 @@ func TestProcessTreeClick(t *testing.T) {
 }
 
 func TestFirePointerPositionEvents(t *testing.T) {
-	window := &Window{}
+	window := &WindowBase{}
 	window.AttachPointerPositionEventListener(func(x, y float64) {})
 	window.firePointerPositionEvents()
 }
 
 func TestFireScrollEvents(t *testing.T) {
-	window := &Window{}
+	window := &WindowBase{}
 	called := false
 	window.AttachScrollEventListener(func(direction int) { called = true })
 	window.fireScrollEvents(0, 1)
@@ -372,19 +372,19 @@ func TestFireScrollEvents(t *testing.T) {
 }
 
 func TestFireClickEvents(t *testing.T) {
-	window := &Window{}
+	window := &WindowBase{}
 	window.AttachClickEventListener(func(key MustardKey) {})
 	window.fireClickEvents(MouseLeft)
 }
 
 func TestFirePointerClickEvents(t *testing.T) {
-	window := &Window{}
+	window := &WindowBase{}
 	window.AttachPointerClickEventListener(func(x, y float64, key MustardKey) {})
 	window.firePointerClickEvents(MouseLeft)
 }
 
 func TestProcessContextMenu(t *testing.T) {
-	window := &Window{
+	window := &WindowBase{
 		cursorX: 50,
 		cursorY: 50,
 	}
@@ -403,6 +403,6 @@ func TestProcessContextMenu(t *testing.T) {
 func TestProcessContextMenuClick(t *testing.T) {
 	// ProcessContextMenuClick calls SetCursor which requires a valid glw window
 	// Just verify the method exists and can be referenced
-	window := &Window{}
+	window := &WindowBase{}
 	_ = window.ProcessContextMenuClick
 }

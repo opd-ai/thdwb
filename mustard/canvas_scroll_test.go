@@ -10,7 +10,7 @@ import (
 )
 
 func TestProcessScrollUpdatesScrollableCanvasWithinBounds(t *testing.T) {
-	window := &Window{cursorX: 10, cursorY: 10}
+	window := &WindowBase{cursorX: 10, cursorY: 10}
 	root := &Frame{baseWidget: baseWidget{visible: true}}
 	canvas := &CanvasWidget{
 		baseWidget:     baseWidget{visible: true},
@@ -59,7 +59,7 @@ func TestCanvasOffsetSetBeforeLayoutSurvivesContextInitialization(t *testing.T) 
 }
 
 func TestCanvasScrollClearsOldViewportPixels(t *testing.T) {
-	window := &Window{width: 4, height: 2, context: gg.NewContext(4, 2)}
+	window := &WindowBase{width: 4, height: 2, context: gg.NewContext(4, 2)}
 	root := CreateFrame(VerticalFrame)
 	root.SetVisible(true)
 	canvas := &CanvasWidget{
@@ -83,7 +83,7 @@ func TestCanvasScrollClearsOldViewportPixels(t *testing.T) {
 	canvas.SetOffset(2)
 	drawRootFrame(window)
 
-	pixels := window.context.Image().(*image.RGBA)
+	pixels := window.context.(*gg.Context).Image().(*image.RGBA)
 	if got := pixels.RGBAAt(0, 0); got != (color.RGBA{R: 255, G: 255, B: 255, A: 255}) {
 		t.Fatalf("pixel at scrolled transparent row = %v, want cleared frame background", got)
 	}
@@ -93,7 +93,7 @@ func TestCanvasScrollClearsOldViewportPixels(t *testing.T) {
 }
 
 func TestCanvasDrawUsesLocalViewportCoordinates(t *testing.T) {
-	window := &Window{context: gg.NewContext(8, 5)}
+	window := &WindowBase{context: gg.NewContext(8, 5)}
 	canvas := &CanvasWidget{
 		baseWidget:     baseWidget{needsRepaint: true, window: window},
 		context:        gg.NewContext(3, 2),
@@ -107,7 +107,7 @@ func TestCanvasDrawUsesLocalViewportCoordinates(t *testing.T) {
 
 	canvas.draw()
 
-	pixels := window.context.Image().(*image.RGBA)
+	pixels := window.context.(*gg.Context).Image().(*image.RGBA)
 	if got := pixels.RGBAAt(2, 1); got != (color.RGBA{R: 255, A: 255}) {
 		t.Fatalf("canvas pixel at its origin = %v, want red", got)
 	}

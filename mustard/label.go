@@ -1,16 +1,13 @@
 package mustard
 
 import (
-	assets "github.com/danfragoso/thdwb/assets"
-
-	"github.com/go-gl/glfw/v3.3/glfw"
+	gg "github.com/danfragoso/thdwb/gg"
 	"github.com/goki/freetype/truetype"
 )
 
 // CreateLabelWidget - Creates and returns a new Label Widget
 func CreateLabelWidget(content string) *LabelWidget {
 	var widgets []Widget
-	font, _ := truetype.Parse(assets.OpenSans(400))
 
 	return &LabelWidget{
 		baseWidget: baseWidget{
@@ -19,11 +16,7 @@ func CreateLabelWidget(content string) *LabelWidget {
 
 			widgetType: labelWidget,
 
-			cursor: glfw.CreateStandardCursor(glfw.ArrowCursor),
-
 			backgroundColor: "#fff",
-
-			font: font,
 		},
 		content: content,
 
@@ -80,7 +73,7 @@ func (label *LabelWidget) SetBackgroundColor(backgroundColor string) {
 }
 
 func (label *LabelWidget) draw() {
-	context := label.window.context
+	context := label.window.context.(*gg.Context)
 	top, left, width, height := label.computedBox.GetCoords()
 
 	context.SetHexColor(label.backgroundColor)
@@ -88,7 +81,7 @@ func (label *LabelWidget) draw() {
 	context.Fill()
 
 	context.SetHexColor(label.fontColor)
-	context.SetFont(label.font, label.fontSize)
+	context.SetFont(label.font.(*truetype.Font), label.fontSize)
 	context.DrawString(label.content, float64(left)+label.fontSize/4, float64(top)+label.fontSize*2/2)
 	context.Fill()
 

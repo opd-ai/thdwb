@@ -1,17 +1,13 @@
 package mustard
 
 import (
-	assets "github.com/danfragoso/thdwb/assets"
 	gg "github.com/danfragoso/thdwb/gg"
-
-	"github.com/go-gl/glfw/v3.3/glfw"
 	"github.com/goki/freetype/truetype"
 )
 
 // CreateInputWidget - Creates and returns a new Input Widget
 func CreateInputWidget() *InputWidget {
 	var widgets []Widget
-	font, _ := truetype.Parse(assets.OpenSans(400))
 
 	return &InputWidget{
 		baseWidget: baseWidget{
@@ -20,11 +16,7 @@ func CreateInputWidget() *InputWidget {
 
 			widgetType: inputWidget,
 
-			cursor: glfw.CreateStandardCursor(glfw.IBeamCursor),
-
 			backgroundColor: "#fff",
-
-			font: font,
 		},
 
 		fontSize:  20,
@@ -91,37 +83,38 @@ func (input *InputWidget) draw() {
 	input.padding = 4
 	top, left, width, height := input.computedBox.GetCoords()
 	totalPadding := input.padding * 2
-	if input.context == nil || input.context.Width() != int(width-totalPadding) || input.context.Height() != int(height-totalPadding) {
+	if input.context == nil || input.context.(*gg.Context).Width() != int(width-totalPadding) || input.context.(*gg.Context).Height() != int(height-totalPadding) {
 		input.context = gg.NewContext(int(width-totalPadding), int(height-totalPadding))
 	}
 
 	window := input.window
-	context := input.context
+	context := window.context.(*gg.Context)
+	windowContext := window.context.(*gg.Context)
 
 	if input.selected {
-		window.context.SetHexColor("#e4e4e4")
+		windowContext.SetHexColor("#e4e4e4")
 		context.SetHexColor("#e4e4e4")
 		context.Clear()
 	} else {
-		window.context.SetHexColor("#efefef")
+		windowContext.SetHexColor("#efefef")
 		context.SetHexColor("#efefef")
 		context.Clear()
 	}
 
 	if input.active {
-		window.context.SetHexColor("#fff")
+		windowContext.SetHexColor("#fff")
 		context.SetHexColor("#fff")
 		context.Clear()
 	} else {
 		input.cursorPosition = 0
 	}
 
-	window.context.DrawRectangle(float64(left), float64(top), float64(width), float64(height))
-	window.context.Fill()
+	windowContext.DrawRectangle(float64(left), float64(top), float64(width), float64(height))
+	windowContext.Fill()
 
 	context.SetHexColor("#2f2f2f")
 
-	context.SetFont(input.font, input.fontSize)
+	context.SetFont(input.font.(*truetype.Font), input.fontSize)
 	w, h := context.MeasureString(input.value)
 
 	cursorP := width - totalPadding*2
@@ -164,19 +157,19 @@ func (input *InputWidget) draw() {
 		context.Fill()
 	}
 
-	window.context.DrawImage(context.Image(), int(left+totalPadding/2), int(top+totalPadding/2))
-	window.context.SetHexColor("#000")
-	window.context.SetLineWidth(.4)
+	windowContext.DrawImage(context.Image(), int(left+totalPadding/2), int(top+totalPadding/2))
+	windowContext.SetHexColor("#000")
+	windowContext.SetLineWidth(.4)
 
-	window.context.DrawRectangle(
+	windowContext.DrawRectangle(
 		left+1,
 		top+1,
 		width-2,
 		height-2,
 	)
 
-	window.context.SetLineJoinRound()
-	window.context.Stroke()
+	windowContext.SetLineJoinRound()
+	windowContext.Stroke()
 
-	copyWidgetToBuffer(input, window.context.Image())
+	copyWidgetToBuffer(input, windowContext.Image())
 }

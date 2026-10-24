@@ -11,7 +11,6 @@ import (
 	"github.com/danfragoso/thdwb/assets"
 	"github.com/danfragoso/thdwb/mustard"
 	sauce "github.com/danfragoso/thdwb/sauce"
-	"github.com/go-gl/glfw/v3.3/glfw"
 	"golang.org/x/net/html"
 
 	profiler "github.com/danfragoso/thdwb/profiler"
@@ -229,8 +228,8 @@ func TestInactiveWindowBlocksScriptsAndDefersReflow(t *testing.T) {
 }
 
 func TestAppTabActivationControlsBoundWindowContexts(t *testing.T) {
-	app := mustard.CreateNewApp("tabs")
-	firstWindow, secondWindow := &mustard.Window{}, &mustard.Window{}
+	app := mustard.CreateNewApp(nil, "tabs")
+	firstWindow, secondWindow := &mustard.WindowBase{}, &mustard.WindowBase{}
 	app.AddWindow(firstWindow)
 	app.AddWindow(secondWindow)
 	firstContext := NewWindowContext(&Settings{}, &assets.BuildInfo{}, profiler.CreateProfiler())
@@ -671,7 +670,7 @@ func TestDOMMutationsFromJS(t *testing.T) {
 }
 
 // parseHTMLForTest parses HTML using the ketchup parser for testing.
-func setupMouseClickTestWindow(t *testing.T) (*WindowContext, *mustard.Window) {
+func setupMouseClickTestWindow(t *testing.T) (*WindowContext, *mustard.WindowBase) {
 	t.Helper()
 	wc := NewWindowContext(&Settings{}, &assets.BuildInfo{}, profiler.CreateProfiler())
 	doc, err := parseHTMLForTest(`<html><body><button id="target"></button></body></html>`, wc)
@@ -690,7 +689,7 @@ func setupMouseClickTestWindow(t *testing.T) (*WindowContext, *mustard.Window) {
 	if _, err := wc.RunJS(`var clickCount = 0; var clickWasCorrect = false; var button = document.querySelector("#target"); button.addEventListener("click", function(event) { clickCount++; clickWasCorrect = event.target === button && event.currentTarget === button && event.button === 0 && event.clientX === 0 && event.clientY === 0; });`); err != nil {
 		t.Fatal(err)
 	}
-	window := &mustard.Window{}
+	window := &mustard.WindowBase{}
 	wc.BindWindowInput(window)
 	return wc, window
 }
@@ -700,15 +699,15 @@ func TestWindowPointerClickDispatchIsIsolated(t *testing.T) {
 	wc2, window2 := setupMouseClickTestWindow(t)
 	defer wc1.Destroy()
 	defer wc2.Destroy()
-	window1.ProcessPointerClick(glfw.MouseButtonLeft)
+	window1.ProcessPointerClick(mustard.MouseLeft)
 	assertJSResult(t, wc1, `clickCount + ":" + clickWasCorrect`, "1:true")
 	assertJSResult(t, wc2, `clickCount + ":" + clickWasCorrect`, "0:false")
-	window2.ProcessPointerClick(glfw.MouseButtonLeft)
+	window2.ProcessPointerClick(mustard.MouseLeft)
 	assertJSResult(t, wc1, `clickCount + ":" + clickWasCorrect`, "1:true")
 	assertJSResult(t, wc2, `clickCount + ":" + clickWasCorrect`, "1:true")
 }
 
-func setupKeyboardTestWindow(t *testing.T) (*WindowContext, *mustard.Window) {
+func setupKeyboardTestWindow(t *testing.T) (*WindowContext, *mustard.WindowBase) {
 	t.Helper()
 	wc := NewWindowContext(&Settings{}, &assets.BuildInfo{}, profiler.CreateProfiler())
 	doc, err := parseHTMLForTest(`<html><body><input id="target"></body></html>`, wc)
@@ -727,7 +726,7 @@ func setupKeyboardTestWindow(t *testing.T) (*WindowContext, *mustard.Window) {
 	if _, err := wc.RunJS(`var keyboardEvents = []; var focused = document.querySelector("#target"); focused.addEventListener("keydown", function(e) { keyboardEvents.push("down:" + e.key + ":" + e.shiftKey + ":" + e.repeat); }); focused.addEventListener("keyup", function(e) { keyboardEvents.push("up:" + e.key + ":" + e.repeat); }); focused.addEventListener("keypress", function(e) { keyboardEvents.push("press:" + e.key); }); focused.addEventListener("input", function(e) { keyboardEvents.push("input:" + e.data); });`); err != nil {
 		t.Fatal(err)
 	}
-	window := &mustard.Window{}
+	window := &mustard.WindowBase{}
 	wc.BindWindowInput(window)
 	return wc, window
 }

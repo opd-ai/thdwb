@@ -1,5 +1,9 @@
 package mustard
 
+import (
+	gg "github.com/danfragoso/thdwb/gg"
+)
+
 // CreateFrame - Creates and returns a new Frame
 func CreateFrame(orientation FrameOrientation) *Frame {
 	var widgets []Widget
@@ -57,7 +61,7 @@ func (frame *Frame) RemoveWidget(index int) {
 	}
 }
 
-func drawRootFrame(window *Window) {
+func drawRootFrame(window *WindowBase) {
 	window.rootFrame.computedBox.SetCoords(0, 0, float64(window.width), float64(window.height))
 
 	window.rootFrame.draw()
@@ -69,7 +73,7 @@ func (frame *Frame) draw() {
 	}
 	top, left, width, height := frame.computedBox.GetCoords()
 	window := frame.window
-	context := window.context
+	context := window.context.(*gg.Context)
 	context.SetHexColor(frame.backgroundColor)
 	context.DrawRectangle(float64(left), float64(top), float64(width), float64(height))
 	context.Fill()

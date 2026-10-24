@@ -9,7 +9,7 @@ import (
 
 func BenchmarkCreateNewApp(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		CreateNewApp("bench")
+		CreateNewApp(nil, "bench")
 	}
 }
 
@@ -71,7 +71,7 @@ func BenchmarkBaseWidgetRect(b *testing.B) {
 func BenchmarkBaseWidgetIsPointInside(b *testing.B) {
 	widget := &baseWidget{
 		computedBox: box{top: 10, left: 20, width: 100, height: 50},
-		window: &Window{
+		window: &WindowBase{
 			width:  200,
 			height: 200,
 		},

@@ -4,8 +4,6 @@ import (
 	"log"
 
 	gg "github.com/danfragoso/thdwb/gg"
-
-	"github.com/go-gl/glfw/v3.3/glfw"
 )
 
 // CreateImageWidget - Creates and returns a new Image Widget
@@ -23,8 +21,6 @@ func CreateImageWidget(path []byte) *ImageWidget {
 			widgets:      widgets,
 
 			widgetType: imageWidget,
-
-			cursor: glfw.CreateStandardCursor(glfw.ArrowCursor),
 
 			backgroundColor: "#fff",
 		},
@@ -50,7 +46,8 @@ func (label *ImageWidget) SetHeight(height float64) {
 
 func (im *ImageWidget) draw() {
 	top, left, _, _ := im.computedBox.GetCoords()
-	im.window.context.DrawImage(im.img, int(left)+15, int(top)+3)
+	context := im.window.context.(*gg.Context)
+	context.DrawImage(im.img, int(left)+15, int(top)+3)
 
-	copyWidgetToBuffer(im, im.window.context.Image())
+	copyWidgetToBuffer(im, context.Image())
 }

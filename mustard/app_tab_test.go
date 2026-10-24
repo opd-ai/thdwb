@@ -3,9 +3,9 @@ package mustard
 import "testing"
 
 func TestAppActivationSwitchesTabsWithoutForcingReflow(t *testing.T) {
-	app := CreateNewApp("tabs")
-	first := &Window{active: true}
-	second := &Window{active: true}
+	app := CreateNewApp(nil, "tabs")
+	first := &WindowBase{active: true}
+	second := &WindowBase{active: true}
 	app.AddWindow(first)
 	app.AddWindow(second)
 
@@ -31,18 +31,18 @@ func TestAppActivationSwitchesTabsWithoutForcingReflow(t *testing.T) {
 }
 
 func TestAppTabModeAddsInactiveWindowsAndRejectsUnknownActivation(t *testing.T) {
-	app := CreateNewApp("tabs")
-	first := &Window{active: true}
+	app := CreateNewApp(nil, "tabs")
+	first := &WindowBase{active: true}
 	app.AddWindow(first)
 	if err := app.ActivateWindow(first); err != nil {
 		t.Fatal(err)
 	}
-	added := &Window{active: true}
+	added := &WindowBase{active: true}
 	app.AddWindow(added)
 	if added.active {
 		t.Fatal("new window was active before being selected")
 	}
-	if err := app.ActivateWindow(&Window{}); err == nil {
+	if err := app.ActivateWindow(&WindowBase{}); err == nil {
 		t.Fatal("activation accepted a window not managed by the app")
 	}
 }

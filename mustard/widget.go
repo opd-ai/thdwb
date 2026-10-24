@@ -177,7 +177,7 @@ func (widget *baseWidget) SetBuffer(buffer *image.RGBA) {
 	widget.buffer = buffer
 }
 
-func (widget *baseWidget) SetWindow(window *Window) {
+func (widget *baseWidget) SetWindow(window *WindowBase) {
 	widget.window = window
 
 	for _, childWidget := range widget.widgets {
@@ -227,7 +227,7 @@ func (widget *baseWidget) BaseWidget() *baseWidget {
 }
 
 // GetWindow returns the window associated with this widget.
-func (widget *baseWidget) GetWindow() *Window {
+func (widget *baseWidget) GetWindow() *WindowBase {
 	return widget.window
 }
 

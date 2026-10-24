@@ -3,94 +3,60 @@ package mustard
 import (
 	"image"
 	"image/draw"
-	"log"
-	"os"
 
 	gg "github.com/danfragoso/thdwb/gg"
-
-	"github.com/go-gl/gl/v3.2-core/gl"
-	"github.com/go-gl/glfw/v3.3/glfw"
 )
 
-func SetGLFWHints() {
-	glfw.WindowHint(glfw.ContextVersionMajor, 3)
-	glfw.WindowHint(glfw.ContextVersionMinor, 2)
-	glfw.WindowHint(glfw.OpenGLProfile, glfw.OpenGLCoreProfile)
-	glfw.WindowHint(glfw.OpenGLForwardCompatible, glfw.True)
+func CreateNewWindow(driver Driver, title string, width, height int, hiDPI bool) (Window, error) {
+	return driver.NewWindow(title, width, height, hiDPI)
 }
 
-func CreateNewWindow(title string, width, height int, hiDPI bool) *Window {
-	glw, err := glfw.CreateWindow(width, height, title, nil, nil)
-	if err != nil {
-		log.Fatal(err)
-	}
-	glw.SetSizeLimits(300, 200, glfw.DontCare, glfw.DontCare)
-
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	xscale, yscale := float32(1), float32(1)
-	if hiDPI {
-		xscale, yscale = glw.GetContentScale()
-	}
-
-	window := &Window{
-		title:  title,
-		width:  int(float32(width) / xscale),
-		height: int(float32(height) / yscale),
-		hiDPI:  hiDPI,
-		glw:    glw,
-		active: true,
-
-		defaultCursor: glfw.CreateStandardCursor(glfw.ArrowCursor),
-		pointerCursor: glfw.CreateStandardCursor(glfw.HandCursor),
-	}
-
-	window.RecreateContext()
-	glw.MakeContextCurrent()
-
-	window.backend = createGLBackend()
-	window.addEvents()
-	window.generateTexture()
-	return window
-}
-
-func (window *Window) destroy() {
-	/* @TODO
-	Discover what is the best way to destroy structs
-	and its fields.
-	*/
-
-	window.visible = false
-	window.glw.Destroy()
-
-	window.glw = nil
-	window.context = nil
-	window.backend = nil
-	window.frameBuffer = nil
-
-	window.defaultCursor = nil
-	window.pointerCursor = nil
-
-	window.registeredButtons = nil
-	window.registeredInputs = nil
-	window.activeInput = nil
-
-	window.rootFrame = nil
-
-	window = nil
-}
-
-// Show - Show the window
-func (window *Window) Show() {
+func (window *WindowBase) Show() {
 	window.needsReflow = true
 	window.visible = true
-	window.glw.Show()
+}
+
+func (window *WindowBase) Hide() {
+	window.visible = false
+}
+
+func (window *WindowBase) Close() {
+}
+
+func (window *WindowBase) IsClosed() bool {
+	return false
+}
+
+func (window *WindowBase) SetTitle(title string) {
+	window.title = title
+}
+
+func (window *WindowBase) Size() (int, int) {
+	return window.width, window.height
+}
+
+func (window *WindowBase) SetSize(width, height int) {
+	window.width = width
+	window.height = height
+}
+
+func (window *WindowBase) PollEvents() {
+}
+
+func (window *WindowBase) ShouldClose() bool {
+	return false
+}
+
+func (window *WindowBase) GetCursorPosition() (float64, float64) {
+	return window.cursorX, window.cursorY
+}
+
+func (window *WindowBase) SetCursor(cursor Cursor) {
+	window.cursor = cursor
 }
 
 // AttachActiveChangeListener registers a callback and immediately reports the current state.
-func (window *Window) AttachActiveChangeListener(callback func(bool)) {
+func (window *WindowBase) AttachActiveChangeListener(callback func(bool)) {
 	if callback == nil {
 		return
 	}
@@ -99,11 +65,11 @@ func (window *Window) AttachActiveChangeListener(callback func(bool)) {
 }
 
 // IsActive reports whether this window is active; new unmanaged windows default to active.
-func (window *Window) IsActive() bool {
+func (window *WindowBase) IsActive() bool {
 	return !window.activeSet || window.active
 }
 
-func (window *Window) setActive(active bool) {
+func (window *WindowBase) setActive(active bool) {
 	wasActive := window.IsActive()
 	window.activeSet = true
 	if wasActive == active {
@@ -117,44 +83,20 @@ func (window *Window) setActive(active bool) {
 }
 
 // SetRootFrame - Sets the window root frame
-func (window *Window) SetRootFrame(frame *Frame) {
+func (window *WindowBase) SetRootFrame(frame *Frame) {
 	window.rootFrame = frame
 }
 
-// SetRootFrame - Sets the window root frame
-func (window *Window) GetSize() (int, int) {
+// GetSize returns the window dimensions.
+func (window *WindowBase) GetSize() (int, int) {
 	return window.width, window.height
 }
 
-func (window *Window) processFrame() {
-	window.glw.MakeContextCurrent()
-	window.glw.SwapBuffers()
-
-	if window.needsReflow {
-		drawRootFrame(window)
-		window.needsReflow = false
-	} else {
-		redrawWidgets(window.rootFrame)
-	}
-
-	window.generateTexture()
-
-	xscale, yscale := float32(1), float32(1)
-	if window.hiDPI {
-		xscale, yscale = window.glw.GetContentScale()
-	}
-
-	gl.Viewport(0, 0, int32(float32(window.width)*xscale), int32(float32(window.height)*yscale))
-	gl.DrawArrays(gl.TRIANGLES, 0, 6)
-
-	glfw.PollEvents()
-}
-
-func (window *Window) RequestReflow() {
+func (window *WindowBase) RequestReflow() {
 	window.needsReflow = true
 }
 
-func (window *Window) resize(width, height int, xscale, yscale float32) {
+func (window *WindowBase) resize(width, height int, xscale, yscale float32) {
 	if width <= 0 || height <= 0 {
 		return
 	}
@@ -170,144 +112,9 @@ func (window *Window) resize(width, height int, xscale, yscale float32) {
 		return
 	}
 	window.width, window.height = swidth, sheight
-	window.RecreateContext()
+	window.context = gg.NewContext(window.width, window.height)
 	window.frameBuffer = nil
 	window.needsReflow = true
-}
-
-func (window *Window) SetTitle(title string) {
-	window.glw.SetTitle(title)
-}
-
-func (window *Window) RecreateContext() {
-	window.context = gg.NewContext(window.width, window.height)
-}
-
-// GetContext returns the gg.Context for this window.
-func (window *Window) GetContext() *gg.Context {
-	return window.context
-}
-
-func (window *Window) addEvents() {
-	window.glw.SetFocusCallback(func(w *glfw.Window, focused bool) {
-	})
-
-	window.glw.SetSizeCallback(func(w *glfw.Window, width, height int) {
-		xscale, yscale := float32(1), float32(1)
-		if window.hiDPI {
-			xscale, yscale = w.GetContentScale()
-		}
-		window.resize(width, height, xscale, yscale)
-	})
-
-	window.glw.SetCursorPosCallback(func(w *glfw.Window, x, y float64) {
-		xscale, yscale := float32(1), float32(1)
-		if window.hiDPI {
-			xscale, yscale = w.GetContentScale()
-		}
-
-		window.cursorX, window.cursorY = x/float64(xscale), y/float64(yscale)
-		window.ProcessPointerPosition()
-	})
-
-	window.glw.SetCharCallback(func(w *glfw.Window, char rune) {
-		window.ProcessTextInput(char)
-		if window.activeInput != nil {
-			inputVal, cursorPos := window.activeInput.value, window.activeInput.cursorPosition
-
-			window.activeInput.value = inputVal[:len(inputVal)+cursorPos] + string(char) + inputVal[len(inputVal)+cursorPos:]
-			window.activeInput.needsRepaint = true
-		}
-	})
-
-	window.glw.SetCloseCallback(func(w *glfw.Window) {
-		os.Exit(0)
-	})
-
-	window.glw.SetKeyCallback(func(w *glfw.Window, key glfw.Key, sc int, action glfw.Action, mods glfw.ModifierKey) {
-		if input, ok := keyboardInputFromGLFW(key, sc, action, mods); ok {
-			window.ProcessKeyboardInput(input)
-		}
-		switch key {
-		case glfw.KeyBackspace:
-			if action == glfw.Repeat || action == glfw.Release {
-				if window.activeInput != nil && len(window.activeInput.value) > 0 {
-					if window.activeInput.cursorPosition == 0 {
-						window.activeInput.value = window.activeInput.value[:len(window.activeInput.value)-1]
-					} else {
-						inputVal, cursorPos := window.activeInput.value, window.activeInput.cursorPosition
-
-						if cursorPos+len(inputVal) > 0 {
-							window.activeInput.value = inputVal[:len(inputVal)+cursorPos-1] + inputVal[len(inputVal)+cursorPos:]
-						}
-					}
-					window.activeInput.needsRepaint = true
-				}
-			}
-			break
-		case glfw.KeyEscape:
-			if action == glfw.Release {
-				window.DestroyContextMenu()
-
-				if window.activeInput != nil {
-					window.activeInput.active = false
-					window.activeInput.selected = false
-					window.activeInput.needsRepaint = true
-					window.activeInput = nil
-				}
-			}
-
-			break
-		case glfw.KeyUp:
-			if action == glfw.Release || action == glfw.Repeat {
-				window.ProcessArrowKeys("up")
-			}
-			break
-		case glfw.KeyDown:
-			if action == glfw.Release || action == glfw.Repeat {
-				window.ProcessArrowKeys("down")
-			}
-			break
-		case glfw.KeyLeft:
-			if action == glfw.Release || action == glfw.Repeat {
-				window.ProcessArrowKeys("left")
-			}
-			break
-		case glfw.KeyRight:
-			if action == glfw.Release || action == glfw.Repeat {
-				window.ProcessArrowKeys("right")
-			}
-			break
-		case glfw.KeyV:
-			if action == glfw.Release && mods == glfw.ModControl {
-				if window.activeInput != nil {
-					if window.activeInput.cursorPosition == 0 {
-						window.activeInput.value = window.activeInput.value + glfw.GetClipboardString()
-					} else {
-						inputVal, cursorPos := window.activeInput.value, window.activeInput.cursorPosition
-						window.activeInput.value = inputVal[:len(inputVal)+cursorPos] + glfw.GetClipboardString() + inputVal[len(inputVal)+cursorPos:]
-					}
-					window.activeInput.needsRepaint = true
-				}
-			}
-			break
-		case glfw.KeyEnter:
-			if action == glfw.Release {
-				window.ProcessReturnKey()
-			}
-			break
-		}
-	})
-
-	window.glw.SetMouseButtonCallback(func(w *glfw.Window, button glfw.MouseButton, action glfw.Action, mod glfw.ModifierKey) {
-		if action == glfw.Release {
-			window.ProcessPointerClick(button)
-		}
-	})
-
-	window.glw.SetScrollCallback(func(w *glfw.Window, x, y float64) {
-		window.ProcessScroll(x, y)
-	})
 }
 
 func compositeWidget(buffer *image.RGBA, widget Widget) {
@@ -330,60 +137,16 @@ func compositeAll(buffer *image.RGBA, widget Widget) {
 	}
 }
 
-func (window *Window) generateTexture() {
-	gl.DeleteTextures(1, &window.backend.texture)
-	window.frameBuffer = window.context.Image().(*image.RGBA)
-
-	if window.rootFrame != nil {
-		compositeAll(window.frameBuffer, window.rootFrame)
-	}
-
-	if window.hasStaticOverlay {
-		nBuffer := image.NewRGBA(window.frameBuffer.Bounds())
-		draw.Draw(nBuffer, window.frameBuffer.Bounds(), window.frameBuffer, image.ZP, draw.Over)
-		window.frameBuffer = nBuffer
-
-		for _, overlay := range window.staticOverlays {
-			draw.Draw(window.frameBuffer, overlay.buffer.Bounds().Add(overlay.position), overlay.buffer, image.ZP, draw.Over)
-		}
-	}
-
-	if window.hasActiveOverlay {
-		nBuffer := image.NewRGBA(window.frameBuffer.Bounds())
-		draw.Draw(nBuffer, window.frameBuffer.Bounds(), window.frameBuffer, image.ZP, draw.Over)
-		window.frameBuffer = nBuffer
-
-		for _, overlay := range window.overlays {
-			draw.Draw(window.frameBuffer, overlay.buffer.Bounds().Add(overlay.position), overlay.buffer, image.ZP, draw.Over)
-		}
-	}
-
-	gl.GenTextures(1, &window.backend.texture)
-	gl.ActiveTexture(gl.TEXTURE0)
-	gl.BindTexture(gl.TEXTURE_2D, window.backend.texture)
-	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
-
-	gl.TexImage2D(
-		gl.TEXTURE_2D, 0, gl.RGBA,
-		int32(window.frameBuffer.Rect.Size().X), int32(window.frameBuffer.Rect.Size().Y),
-		0, gl.RGBA, gl.UNSIGNED_BYTE, gl.Ptr(window.frameBuffer.Pix),
-	)
-}
-
-func (window *Window) GetCursorPosition() (float64, float64) {
-	return window.cursorX, window.cursorY
-}
-
-func (window *Window) RegisterTree(tree *TreeWidget) {
+func (window *WindowBase) RegisterTree(tree *TreeWidget) {
 	window.registeredTrees = append(window.registeredTrees, tree)
 }
 
-func (window *Window) RegisterButton(button *ButtonWidget, callback func()) {
+func (window *WindowBase) RegisterButton(button *ButtonWidget, callback func()) {
 	button.onClick = callback
 	window.registeredButtons = append(window.registeredButtons, button)
 }
 
-func (window *Window) UnregisterButton(button *ButtonWidget) {
+func (window *WindowBase) UnregisterButton(button *ButtonWidget) {
 	for i, btn := range window.registeredButtons {
 		if btn == button {
 			window.registeredButtons = append(window.registeredButtons[:i], window.registeredButtons[i+1:]...)
@@ -392,11 +155,11 @@ func (window *Window) UnregisterButton(button *ButtonWidget) {
 	}
 }
 
-func (window *Window) RegisterInput(input *InputWidget) {
+func (window *WindowBase) RegisterInput(input *InputWidget) {
 	window.registeredInputs = append(window.registeredInputs, input)
 }
 
-func (window *Window) UnregisterInput(input *InputWidget) {
+func (window *WindowBase) UnregisterInput(input *InputWidget) {
 	for i, in := range window.registeredInputs {
 		if in == input {
 			window.registeredInputs = append(window.registeredInputs[:i], window.registeredInputs[i+1:]...)
@@ -405,98 +168,82 @@ func (window *Window) UnregisterInput(input *InputWidget) {
 	}
 }
 
-func (window *Window) AttachPointerPositionEventListener(callback func(pointerX, pointerY float64)) {
+func (window *WindowBase) AttachPointerPositionEventListener(callback func(pointerX, pointerY float64)) {
 	window.pointerPositionEventListeners = append(window.pointerPositionEventListeners, callback)
 }
 
-func (window *Window) AttachScrollEventListener(callback func(direction int)) {
+func (window *WindowBase) AttachScrollEventListener(callback func(direction int)) {
 	window.scrollEventListeners = append(window.scrollEventListeners, callback)
 }
 
-func (window *Window) AttachClickEventListener(callback func(MustardKey)) {
+func (window *WindowBase) AttachClickEventListener(callback func(MustardKey)) {
 	window.clickEventListeners = append(window.clickEventListeners, callback)
 }
 
-func (window *Window) AttachPointerClickEventListener(callback func(float64, float64, MustardKey)) {
+func (window *WindowBase) AttachPointerClickEventListener(callback func(float64, float64, MustardKey)) {
 	window.pointerClickEventListeners = append(window.pointerClickEventListeners, callback)
 }
 
-func (window *Window) AttachKeyboardInputEventListener(callback func(KeyboardInput)) {
+func (window *WindowBase) AttachKeyboardInputEventListener(callback func(KeyboardInput)) {
 	window.keyboardInputEventListeners = append(window.keyboardInputEventListeners, callback)
 }
 
-func (window *Window) AttachTextInputEventListener(callback func(rune)) {
+func (window *WindowBase) AttachTextInputEventListener(callback func(rune)) {
 	window.textInputEventListeners = append(window.textInputEventListeners, callback)
 }
 
-func (window *Window) SetCursor(cursorType cursorType) {
-	switch cursorType {
-	case PointerCursor:
-		window.glw.SetCursor(window.pointerCursor)
-		break
-
-	default:
-		window.glw.SetCursor(window.defaultCursor)
-	}
-}
-
-func (window *Window) AddOverlay(overlay *Overlay) {
+func (window *WindowBase) AddOverlay(overlay *Overlay) {
 	window.overlays = append(
 		window.overlays,
 		overlay,
 	)
-
 	window.hasActiveOverlay = true
 }
 
-func (window *Window) RemoveOverlay(overlay *Overlay) {
-	for idx, cOverlay := range window.overlays {
-		if cOverlay == overlay {
-			window.overlays = append(window.overlays[:idx], window.overlays[idx+1:]...)
-			break
+func (window *WindowBase) RemoveOverlay(overlay *Overlay) {
+	var nOverlays []*Overlay
+	for _, o := range window.overlays {
+		if o != overlay {
+			nOverlays = append(nOverlays, o)
 		}
 	}
-
-	if len(window.overlays) < 1 {
+	window.overlays = nOverlays
+	if len(window.overlays) == 0 {
 		window.hasActiveOverlay = false
 	}
 }
 
-func (window *Window) AddStaticOverlay(overlay *Overlay) {
+func (window *WindowBase) AddStaticOverlay(overlay *Overlay) {
 	window.staticOverlays = append(
 		window.staticOverlays,
 		overlay,
 	)
-
 	window.hasStaticOverlay = true
 }
 
-func (window *Window) RemoveStaticOverlay(ref string) {
-	for idx, cOverlay := range window.staticOverlays {
-		if cOverlay.ref == ref {
-			window.staticOverlays = append(window.staticOverlays[:idx], window.staticOverlays[idx+1:]...)
+func (window *WindowBase) RemoveStaticOverlay(overlay *Overlay) {
+	var nOverlays []*Overlay
+	for _, o := range window.staticOverlays {
+		if o != overlay {
+			nOverlays = append(nOverlays, o)
 		}
 	}
-
-	if len(window.staticOverlays) < 1 {
+	window.staticOverlays = nOverlays
+	if len(window.staticOverlays) == 0 {
 		window.hasStaticOverlay = false
 	}
 }
 
-func CreateStaticOverlay(ref string, ctx *gg.Context, position image.Point) *Overlay {
-	buffer := ctx.Image().(*image.RGBA)
-
+func CreateOverlay(ref string, buffer *image.RGBA, position image.Point) *Overlay {
 	return &Overlay{
 		ref:    ref,
 		active: true,
-
-		top:  float64(position.Y),
-		left: float64(position.X),
-
+		top:    float64(position.Y),
+		left:   float64(position.X),
 		width:  float64(buffer.Rect.Max.X),
 		height: float64(buffer.Rect.Max.Y),
-
 		position: position,
 		buffer:   buffer,
 	}
 }
+

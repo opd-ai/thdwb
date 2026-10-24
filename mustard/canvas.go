@@ -2,8 +2,6 @@ package mustard
 
 import (
 	gg "github.com/danfragoso/thdwb/gg"
-
-	"github.com/go-gl/glfw/v3.3/glfw"
 )
 
 // CreateImageWidget - Creates and returns a new Image Widget
@@ -16,8 +14,6 @@ func CreateCanvasWidget(renderer func(*CanvasWidget)) *CanvasWidget {
 			widgets:      widgets,
 
 			widgetType: canvasWidget,
-
-			cursor: glfw.CreateStandardCursor(glfw.ArrowCursor),
 
 			backgroundColor: "#fff",
 		},
@@ -71,7 +67,7 @@ func (canvas *CanvasWidget) GetOffset() int {
 }
 
 func (canvas *CanvasWidget) GetContext() *gg.Context {
-	return canvas.drawingContext
+	return canvas.drawingContext.(*gg.Context)
 }
 
 func (canvas *CanvasWidget) SetContext(ctx *gg.Context) {
@@ -83,7 +79,8 @@ func (cavas *CanvasWidget) SetDrawingRepaint(repaint bool) {
 }
 
 func (ctx *CanvasWidget) draw() {
-	context := ctx.window.context
+	windowContext := ctx.window.context.(*gg.Context)
+	canvasContext := ctx.context.(*gg.Context)
 	top, left, width, height := ctx.computedBox.GetCoords()
 	ctx.ensureContexts(int(width), int(height))
 
@@ -92,32 +89,32 @@ func (ctx *CanvasWidget) draw() {
 		ctx.drawingRepaint = false
 	}
 
-	ctx.context.SetHexColor(ctx.backgroundColor)
-	ctx.context.Clear()
-	ctx.context.DrawImage(ctx.drawingContext.Image(), 0, -ctx.offset)
-	context.DrawImage(ctx.context.Image(), int(left), int(top))
-	copyWidgetToBuffer(ctx, context.Image())
+	canvasContext.SetHexColor(ctx.backgroundColor)
+	canvasContext.Clear()
+	canvasContext.DrawImage(ctx.drawingContext.(*gg.Context).Image(), 0, -ctx.offset)
+	windowContext.DrawImage(canvasContext.Image(), int(left), int(top))
+	copyWidgetToBuffer(ctx, canvasContext.Image())
 }
 
 func (canvas *CanvasWidget) maxOffset() (int, bool) {
-	if canvas.drawingContext == nil || canvas.drawingContext.Height() == 0 {
+	if canvas.drawingContext == nil || canvas.drawingContext.(*gg.Context).Height() == 0 {
 		return 0, false
 	}
 	viewportHeight := int(canvas.computedBox.height)
 	if viewportHeight <= 0 && canvas.context != nil {
-		viewportHeight = canvas.context.Height()
+		viewportHeight = canvas.context.(*gg.Context).Height()
 	}
 	if viewportHeight <= 0 {
 		return 0, false
 	}
-	if canvas.drawingContext.Height() <= viewportHeight {
+	if canvas.drawingContext.(*gg.Context).Height() <= viewportHeight {
 		return 0, true
 	}
-	return canvas.drawingContext.Height() - viewportHeight, true
+	return canvas.drawingContext.(*gg.Context).Height() - viewportHeight, true
 }
 
 func (canvas *CanvasWidget) ensureContexts(width, height int) {
-	currentSize := canvas.context.Image().Bounds().Size()
+	currentSize := canvas.context.(*gg.Context).Image().Bounds().Size()
 	if currentSize.X != width || currentSize.Y != height {
 		canvas.context = gg.NewContext(width, height)
 		canvas.drawingContext = gg.NewContext(width, 12000)
@@ -128,7 +125,7 @@ func (canvas *CanvasWidget) ensureContexts(width, height int) {
 
 func createCtxScrollBar(ctx *CanvasWidget) {
 	top, _, width, height := ctx.computedBox.GetCoords()
-	context := ctx.window.context
+	context := ctx.window.context.(*gg.Context)
 
 	// Scroll Track
 	context.SetHexColor("#c1c1c1")

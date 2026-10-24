@@ -81,7 +81,7 @@ type WindowContext struct {
 	History *History
 
 	// Mustard window reference
-	Window *mustard.Window
+	Window *mustard.WindowBase
 
 	// Profiling
 	Profiler *profiler.Profiler
@@ -134,7 +134,7 @@ type WindowContext struct {
 
 	// Debug state
 	DebugFlag   bool
-	DebugWindow *mustard.Window
+	DebugWindow *mustard.WindowBase
 	DebugTree   *mustard.TreeWidget
 }
 
@@ -521,7 +521,7 @@ func (wc *WindowContext) RunJS(script string) (goja.Value, error) {
 }
 
 // BindWindowInput routes pointer clicks from a mustard window to this window context.
-func (wc *WindowContext) BindWindowInput(window *mustard.Window) {
+func (wc *WindowContext) BindWindowInput(window *mustard.WindowBase) {
 	if wc == nil || window == nil {
 		return
 	}

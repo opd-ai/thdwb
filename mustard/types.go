@@ -2,21 +2,9 @@ package mustard
 
 import (
 	"image"
-
-	gg "github.com/danfragoso/thdwb/gg"
-
-	"github.com/go-gl/glfw/v3.3/glfw"
-	"github.com/goki/freetype/truetype"
 )
 
-type App struct {
-	name         string
-	windows      []*Window
-	activeWindow *Window
-	tabbedMode   bool
-}
-
-type Window struct {
+type WindowBase struct {
 	title  string
 	width  int
 	height int
@@ -27,19 +15,13 @@ type Window struct {
 	visible     bool
 	active      bool
 	activeSet   bool
-	// This flag is active when drawing is happening on a thread that is not the
-	// main one; When the asyncFlag is active the window frame processor function
-	// should pool the status of the drawing routine and when it ends reflow? the
-	// entire window surface?
-	asyncFlag bool
+	asyncFlag   bool
 
-	glw         *glfw.Window
-	context     *gg.Context
-	backend     *glBackend
+	context     interface{}
 	frameBuffer *image.RGBA
 
-	defaultCursor  *glfw.Cursor
-	pointerCursor  *glfw.Cursor
+	cursor Cursor
+
 	selectedWidget Widget
 
 	registeredTrees   []*TreeWidget
@@ -102,16 +84,6 @@ type menuEntry struct {
 	height float64
 }
 
-type glBackend struct {
-	program uint32
-
-	vao uint32
-	vbo uint32
-
-	texture uint32
-	quad    []float32
-}
-
 type box struct {
 	top    float64
 	left   float64
@@ -130,6 +102,7 @@ func (box *box) GetCoords() (float64, float64, float64, float64) {
 	return box.top, box.left, box.width, box.height
 }
 
+
 type Widget interface {
 	Buffer() *image.RGBA
 	SetBuffer(*image.RGBA)
@@ -137,7 +110,7 @@ type Widget interface {
 	NeedsRepaint() bool
 	Widgets() []Widget
 	ComputedBox() *box
-	SetWindow(*Window)
+	SetWindow(*WindowBase)
 	BaseWidget() *baseWidget
 
 	draw()
@@ -148,7 +121,7 @@ type baseWidget struct {
 	computedBox    box
 	widgetPosition widgetPosition
 
-	font *truetype.Font
+	font interface{}
 
 	needsRepaint bool
 	fixedWidth   bool
@@ -159,7 +132,7 @@ type baseWidget struct {
 	backgroundColor string
 
 	widgetType widgetType
-	cursor     *glfw.Cursor
+	cursor     Cursor
 
 	focusable  bool
 	selectable bool
@@ -170,7 +143,7 @@ type baseWidget struct {
 	visible bool
 
 	buffer *image.RGBA
-	window *Window
+	window *WindowBase
 }
 
 type cursorType int
@@ -351,8 +324,8 @@ type ImageWidget struct {
 type CanvasWidget struct {
 	baseWidget
 
-	context        *gg.Context
-	drawingContext *gg.Context
+	context        interface{}
+	drawingContext interface{}
 
 	renderer func(*CanvasWidget)
 
@@ -382,7 +355,7 @@ type InputWidget struct {
 	active          bool
 	padding         float64
 	fontSize        float64
-	context         *gg.Context
+	context         interface{}
 	fontColor       string
 	cursorFloat     bool
 	cursorPosition  int

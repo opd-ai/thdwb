@@ -2,70 +2,33 @@ package mustard
 
 import (
 	"math"
-
-	"github.com/go-gl/glfw/v3.3/glfw"
 )
 
-func keyboardInputFromGLFW(key glfw.Key, scancode int, action glfw.Action, mods glfw.ModifierKey) (KeyboardInput, bool) {
-	input := KeyboardInput{Key: glfwKeyName(key, scancode)}
-	switch action {
-	case glfw.Press:
-		input.Action = KeyboardPress
-	case glfw.Repeat:
-		input.Action = KeyboardRepeat
-	case glfw.Release:
-		input.Action = KeyboardRelease
-	default:
-		return KeyboardInput{}, false
-	}
-	input.Control = mods&glfw.ModControl != 0
-	input.Shift = mods&glfw.ModShift != 0
-	input.Alt = mods&glfw.ModAlt != 0
-	input.Super = mods&glfw.ModSuper != 0
-	return input, true
-}
-
-func glfwKeyName(key glfw.Key, scancode int) string {
-	switch key {
-	case glfw.KeyBackspace:
-		return "Backspace"
-	case glfw.KeyDelete:
-		return "Delete"
-	case glfw.KeyEnter:
-		return "Enter"
-	case glfw.KeyEscape:
-		return "Escape"
-	case glfw.KeyTab:
-		return "Tab"
-	case glfw.KeyLeft:
-		return "ArrowLeft"
-	case glfw.KeyRight:
-		return "ArrowRight"
-	case glfw.KeyUp:
-		return "ArrowUp"
-	case glfw.KeyDown:
-		return "ArrowDown"
-	default:
-		if name := glfw.GetKeyName(key, scancode); name != "" {
-			return name
-		}
-		return "Unidentified"
+// keyboardInputFromDriver converts platform-agnostic input to KeyboardInput.
+func keyboardInputFromDriver(key string, action KeyboardAction, control, shift, alt, super bool) KeyboardInput {
+	return KeyboardInput{
+		Key:     key,
+		Action:  action,
+		Control: control,
+		Shift:   shift,
+		Alt:     alt,
+		Super:   super,
 	}
 }
 
-func (window *Window) ProcessKeyboardInput(input KeyboardInput) {
+func (window *WindowBase) ProcessKeyboardInput(input KeyboardInput) {
 	for _, listener := range window.keyboardInputEventListeners {
 		listener(input)
 	}
 }
 
-func (window *Window) ProcessTextInput(char rune) {
+func (window *WindowBase) ProcessTextInput(char rune) {
 	for _, listener := range window.textInputEventListeners {
 		listener(char)
 	}
 }
 
-func (window *Window) ProcessPointerPosition() {
+func (window *WindowBase) ProcessPointerPosition() {
 	if window.hasActiveOverlay {
 		window.ProcessContextMenu()
 	} else {
@@ -82,7 +45,7 @@ func (window *Window) ProcessPointerPosition() {
 	}
 }
 
-func (window *Window) selectWidget(widget Widget) {
+func (window *WindowBase) selectWidget(widget Widget) {
 	if widget.BaseWidget().IsPointInside(window.cursorX, window.cursorY) {
 		window.selectedWidget = widget
 
@@ -92,24 +55,24 @@ func (window *Window) selectWidget(widget Widget) {
 	}
 }
 
-func (window *Window) ProcessPointerClick(button glfw.MouseButton) {
+func (window *WindowBase) ProcessPointerClick(button MustardKey) {
 	if window.hasActiveOverlay {
 		window.ProcessContextMenuClick()
 	} else {
-		if button == glfw.MouseButtonLeft {
+		if button == MouseLeft {
 			window.ProcessButtonClick()
 			window.ProcessTreeClick()
 			window.ProcessInputActivation()
 			window.fireClickEvents(MouseLeft)
 			window.firePointerClickEvents(MouseLeft)
-		} else if button == glfw.MouseButtonRight {
+		} else if button == MouseRight {
 			window.fireClickEvents(MouseRight)
 			window.firePointerClickEvents(MouseRight)
 		}
 	}
 }
 
-func (window *Window) ProcessScroll(x, y float64) {
+func (window *WindowBase) ProcessScroll(x, y float64) {
 	if y != 0 && window.rootFrame != nil {
 		scrollWidgetAt(window.rootFrame, window.cursorX, window.cursorY, -int(math.Round(y*40)))
 	}
@@ -135,7 +98,7 @@ func scrollWidgetAt(widget Widget, x, y float64, delta int) bool {
 	return canvas.offset != offset
 }
 
-func (window *Window) ProcessReturnKey() {
+func (window *WindowBase) ProcessReturnKey() {
 	if window.activeInput != nil && window.activeInput.active == true {
 		window.activeInput.active = false
 
@@ -145,7 +108,7 @@ func (window *Window) ProcessReturnKey() {
 	}
 }
 
-func (window *Window) ProcessArrowKeys(arrowKey string) {
+func (window *WindowBase) ProcessArrowKeys(arrowKey string) {
 	if window.activeInput != nil && window.activeInput.active == true {
 		if arrowKey == "left" && (window.activeInput.cursorPosition+len(window.activeInput.value)) > 0 {
 			window.activeInput.cursorPosition--
@@ -159,7 +122,7 @@ func (window *Window) ProcessArrowKeys(arrowKey string) {
 	}
 }
 
-func (window *Window) ProcessTrees() {
+func (window *WindowBase) ProcessTrees() {
 	x, y := window.cursorX, window.cursorY
 
 	for _, tree := range window.registeredTrees {
@@ -169,7 +132,6 @@ func (window *Window) ProcessTrees() {
 			y < float64(tree.computedBox.top+tree.computedBox.height) {
 			tree.selected = true
 			tree.needsRepaint = true
-			window.glw.SetCursor(tree.cursor)
 			break
 		} else {
 			tree.selected = false
@@ -178,7 +140,7 @@ func (window *Window) ProcessTrees() {
 	}
 }
 
-func (window *Window) ProcessButtons() {
+func (window *WindowBase) ProcessButtons() {
 	x, y := window.cursorX, window.cursorY
 
 	for _, button := range window.registeredButtons {
@@ -188,7 +150,7 @@ func (window *Window) ProcessButtons() {
 			y < float64(button.computedBox.top+button.computedBox.height)-button.padding {
 			button.selected = true
 			button.needsRepaint = true
-			window.glw.SetCursor(button.cursor)
+			window.SetCursor(button.cursor)
 			break
 		} else {
 			button.selected = false
@@ -197,7 +159,7 @@ func (window *Window) ProcessButtons() {
 	}
 }
 
-func (window *Window) ProcessInputs() {
+func (window *WindowBase) ProcessInputs() {
 	x, y := window.cursorX, window.cursorY
 
 	for _, input := range window.registeredInputs {
@@ -207,7 +169,7 @@ func (window *Window) ProcessInputs() {
 			y < float64(input.computedBox.top+input.computedBox.height)-input.padding {
 			input.selected = true
 			input.needsRepaint = true
-			window.glw.SetCursor(input.cursor)
+			window.SetCursor(input.cursor)
 			break
 		} else {
 			input.selected = false
@@ -216,7 +178,7 @@ func (window *Window) ProcessInputs() {
 	}
 }
 
-func (window *Window) ProcessInputActivation() {
+func (window *WindowBase) ProcessInputActivation() {
 	for _, input := range window.registeredInputs {
 		if input.selected == true {
 			window.activeInput = input
@@ -233,7 +195,7 @@ func (window *Window) ProcessInputActivation() {
 	}
 }
 
-func (window *Window) ProcessButtonClick() {
+func (window *WindowBase) ProcessButtonClick() {
 	for _, button := range window.registeredButtons {
 		if button.selected == true {
 			button.onClick()
@@ -243,7 +205,7 @@ func (window *Window) ProcessButtonClick() {
 	}
 }
 
-func (window *Window) ProcessTreeClick() {
+func (window *WindowBase) ProcessTreeClick() {
 	for _, tree := range window.registeredTrees {
 		if tree.selected == true {
 			tree.Click()
@@ -253,31 +215,31 @@ func (window *Window) ProcessTreeClick() {
 	}
 }
 
-func (window *Window) firePointerPositionEvents() {
+func (window *WindowBase) firePointerPositionEvents() {
 	for _, eventCallback := range window.pointerPositionEventListeners {
 		eventCallback(window.cursorX, window.cursorY)
 	}
 }
 
-func (window *Window) fireScrollEvents(x, y float64) {
+func (window *WindowBase) fireScrollEvents(x, y float64) {
 	for _, eventCallback := range window.scrollEventListeners {
 		eventCallback(int(y))
 	}
 }
 
-func (window *Window) fireClickEvents(key MustardKey) {
+func (window *WindowBase) fireClickEvents(key MustardKey) {
 	for _, eventCallback := range window.clickEventListeners {
 		eventCallback(key)
 	}
 }
 
-func (window *Window) firePointerClickEvents(button MustardKey) {
+func (window *WindowBase) firePointerClickEvents(button MustardKey) {
 	for _, eventCallback := range window.pointerClickEventListeners {
 		eventCallback(window.cursorX, window.cursorY, button)
 	}
 }
 
-func (window *Window) ProcessContextMenu() {
+func (window *WindowBase) ProcessContextMenu() {
 	if len(window.contextMenu.entries) > 0 {
 		x, y := window.GetCursorPosition()
 
@@ -301,7 +263,7 @@ func (window *Window) ProcessContextMenu() {
 	}
 }
 
-func (window *Window) ProcessContextMenuClick() {
+func (window *WindowBase) ProcessContextMenuClick() {
 	if window.contextMenu.selectedEntry != nil {
 		window.contextMenu.selectedEntry.action()
 	}

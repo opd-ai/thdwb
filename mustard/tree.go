@@ -2,16 +2,13 @@ package mustard
 
 import (
 	assets "github.com/danfragoso/thdwb/assets"
-	"github.com/danfragoso/thdwb/gg"
-
-	"github.com/go-gl/glfw/v3.3/glfw"
+	gg "github.com/danfragoso/thdwb/gg"
 	"github.com/goki/freetype/truetype"
 )
 
 // CreateTreeWidget - Creates and returns a new Tree Widget
 func CreateTreeWidget() *TreeWidget {
 	var widgets []Widget
-	font, _ := truetype.Parse(assets.OpenSans(400))
 
 	openIcon, _ := gg.LoadAsset(assets.DownChevron())
 	closeIcon, _ := gg.LoadAsset(assets.RightChevron())
@@ -23,11 +20,7 @@ func CreateTreeWidget() *TreeWidget {
 
 			widgetType: treeWidget,
 
-			cursor: glfw.CreateStandardCursor(glfw.ArrowCursor),
-
 			backgroundColor: "#fff",
-
-			font: font,
 		},
 
 		openIcon:  openIcon,
@@ -168,7 +161,7 @@ func (tree *TreeWidget) SetBackgroundColor(backgroundColor string) {
 }
 
 func (tree *TreeWidget) draw() {
-	context := tree.window.context
+	context := tree.window.context.(*gg.Context)
 	top, left, width, height := tree.computedBox.GetCoords()
 
 	context.SetHexColor(tree.backgroundColor)
@@ -226,7 +219,7 @@ func drawNode(context *gg.Context, node *TreeWidgetNode, tree *TreeWidget, level
 	}
 
 	context.SetHexColor(tree.fontColor)
-	context.SetFont(tree.font, tree.fontSize)
+	context.SetFont(tree.font.(*truetype.Font), tree.fontSize)
 	context.DrawString(node.Key, float64(left)+20+tree.fontSize/4, float64(top)+tree.fontSize*2/2)
 	context.Fill()
 
