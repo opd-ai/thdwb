@@ -1410,7 +1410,9 @@ func (w *JSWindowWrapper) postMessage(call goja.FunctionCall) goja.Value {
 		eventObj.Set("origin", windowOrigin)
 		eventObj.Set("source", targetRuntime.Get("window")) // reference to target's window
 
-		// Emit message event on the target window
+		// Emit message event on the target window. jsRuntimeMu is not held
+		// during RunJS/SetJSValue (Goja is internally synchronized), so this
+		// does not deadlock when the target is the same window.
 		targetWC.EmitEvent("message", eventObj)
 	}
 

@@ -1,10 +1,13 @@
 package hotdog
 
 import (
+	"bytes"
 	"fmt"
 	"net/http"
 	"net/url"
 	"reflect"
+	"runtime"
+	"strconv"
 	"sync"
 	"time"
 
@@ -14,6 +17,67 @@ import (
 	sauce "github.com/danfragoso/thdwb/sauce"
 	goja "github.com/dop251/goja"
 )
+
+// goroutineID returns the ID of the calling goroutine.
+// Used for reentrant locking of the per-window Goja runtime.
+func goroutineID() uint64 {
+	buf := make([]byte, 64)
+	buf = buf[:runtime.Stack(buf, false)]
+	// Format: "goroutine N ["
+	buf = buf[len("goroutine "):]
+	if i := bytes.IndexByte(buf, ' '); i >= 0 {
+		buf = buf[:i]
+	}
+	id, err := strconv.ParseUint(string(buf), 10, 64)
+	if err != nil {
+		return 0
+	}
+	return id
+}
+
+// reentrantMutex is a mutex that can be locked multiple times by the same
+// goroutine. Different goroutines block until the owner releases it.
+// This prevents deadlocks when JS callbacks (run under jsRuntimeMu) re-enter
+// RunJS/SetJSValue on the same goroutine, while still serializing access
+// across goroutines (Goja is not thread-safe).
+type reentrantMutex struct {
+	mu     sync.Mutex
+	cond   *sync.Cond
+	owner  uint64
+	depth  int
+}
+
+func newReentrantMutex() *reentrantMutex {
+	m := &reentrantMutex{}
+	m.cond = sync.NewCond(&m.mu)
+	return m
+}
+
+func (m *reentrantMutex) lock() {
+	id := goroutineID()
+	m.mu.Lock()
+	for m.owner != 0 && m.owner != id {
+		m.cond.Wait()
+	}
+	m.owner = id
+	m.depth++
+	m.mu.Unlock()
+}
+
+func (m *reentrantMutex) unlock() {
+	id := goroutineID()
+	m.mu.Lock()
+	if m.owner != id {
+		m.mu.Unlock()
+		return
+	}
+	m.depth--
+	if m.depth == 0 {
+		m.owner = 0
+		m.cond.Broadcast()
+	}
+	m.mu.Unlock()
+}
 
 // WindowRegistry manages all window contexts for cross-window communication.
 type WindowRegistry struct {
@@ -119,7 +183,8 @@ type WindowContext struct {
 	destroyed             bool
 
 	// JS runtime (Goja VM) - per window isolation
-	jsRuntimeMu sync.Mutex
+	// reentrant so JS callbacks can call RunJS/SetJSValue without deadlocking.
+	jsRuntimeMu *reentrantMutex
 	jsRuntime   *goja.Runtime
 
 	// Session storage manager (per-window, origin-partitioned)
@@ -159,6 +224,7 @@ func NewWindowContext(settings *Settings, buildInfo *assets.BuildInfo, profiler 
 	}
 
 	// Initialize per-window Goja VM for JavaScript execution
+	wc.jsRuntimeMu = newReentrantMutex()
 	wc.jsRuntime = goja.New()
 
 	// Initialize per-window cookie jar and HTTP client for cookie isolation
@@ -336,8 +402,8 @@ func (wc *WindowContext) scheduleAnimationFrameLocked() {
 }
 
 func (wc *WindowContext) runAnimationFrame() {
-	wc.jsRuntimeMu.Lock()
-	defer wc.jsRuntimeMu.Unlock()
+	wc.jsRuntimeMu.lock()
+	defer wc.jsRuntimeMu.unlock()
 
 	wc.animationFrameMu.Lock()
 	if !wc.active || wc.jsRuntime == nil {
@@ -350,8 +416,9 @@ func (wc *WindowContext) runAnimationFrame() {
 
 	// Run callbacks one at a time, re-checking active after each so that
 	// SetActive(false) during a callback defers remaining callbacks.
-	// jsRuntimeMu is held to prevent concurrent RunJS/SetJSValue access to
-	// the Goja runtime (which would be a data race).
+	// jsRuntimeMu is held during callback execution because Goja is not
+	// thread-safe. The mutex is reentrant, so callbacks that call RunJS or
+	// SetJSValue do not deadlock.
 	for {
 		wc.animationFrameMu.Lock()
 		if !wc.active || len(wc.animationFrames) == 0 {
@@ -486,9 +553,12 @@ func (wc *WindowContext) GetJSRuntime() *goja.Runtime {
 }
 
 // SetJSValue sets a global while serializing access to this window's Goja runtime.
+// jsRuntimeMu is held during script execution because Goja is not thread-safe.
+// The mutex is reentrant, so JS callbacks that call SetJSValue from within
+// RunJS do not deadlock.
 func (wc *WindowContext) SetJSValue(name string, value interface{}) error {
-	wc.jsRuntimeMu.Lock()
-	defer wc.jsRuntimeMu.Unlock()
+	wc.jsRuntimeMu.lock()
+	defer wc.jsRuntimeMu.unlock()
 	if !wc.IsActive() {
 		return fmt.Errorf("window context is inactive")
 	}
@@ -499,9 +569,12 @@ func (wc *WindowContext) SetJSValue(name string, value interface{}) error {
 }
 
 // RunJS executes a script while serializing access to this window's Goja runtime.
+// jsRuntimeMu is held during script execution because Goja is not thread-safe.
+// The mutex is reentrant, so JS callbacks that call RunJS from within RunJS
+// (e.g. postMessage handlers) do not deadlock.
 func (wc *WindowContext) RunJS(script string) (goja.Value, error) {
-	wc.jsRuntimeMu.Lock()
-	defer wc.jsRuntimeMu.Unlock()
+	wc.jsRuntimeMu.lock()
+	defer wc.jsRuntimeMu.unlock()
 	if !wc.IsActive() {
 		return nil, fmt.Errorf("window context is inactive")
 	}
@@ -557,9 +630,9 @@ func mouseClickDetails(button mustard.MustardKey) (string, int, bool) {
 }
 
 func (wc *WindowContext) dispatchMouseEventAt(target *NodeDOM, eventType string, button int, x, y float64) {
-	wc.jsRuntimeMu.Lock()
+	wc.jsRuntimeMu.lock()
+	defer wc.jsRuntimeMu.unlock()
 	if wc.jsRuntime == nil || !wc.IsActive() {
-		wc.jsRuntimeMu.Unlock()
 		return
 	}
 	runtime := wc.jsRuntime
@@ -568,9 +641,6 @@ func (wc *WindowContext) dispatchMouseEventAt(target *NodeDOM, eventType string,
 	event.Set("button", button)
 	event.Set("clientX", x)
 	event.Set("clientY", y)
-	wc.jsRuntimeMu.Unlock()
-	// Release jsRuntimeMu before dispatching; event handlers may call RunJS/SetJSValue
-	// which acquire jsRuntimeMu. Holding it here would deadlock.
 	wrapper.dispatchDOMEvent(event)
 }
 
@@ -612,9 +682,9 @@ func (wc *WindowContext) focusedDOMNode() *NodeDOM {
 }
 
 func (wc *WindowContext) dispatchKeyboardEventAt(target *NodeDOM, eventType string, properties map[string]interface{}) {
-	wc.jsRuntimeMu.Lock()
+	wc.jsRuntimeMu.lock()
+	defer wc.jsRuntimeMu.unlock()
 	if wc.jsRuntime == nil || !wc.IsActive() {
-		wc.jsRuntimeMu.Unlock()
 		return
 	}
 	runtime := wc.jsRuntime
@@ -625,9 +695,6 @@ func (wc *WindowContext) dispatchKeyboardEventAt(target *NodeDOM, eventType stri
 	for name, value := range properties {
 		event.Set(name, value)
 	}
-	wc.jsRuntimeMu.Unlock()
-	// Release jsRuntimeMu before dispatching; event handlers may call RunJS/SetJSValue
-	// which acquire jsRuntimeMu. Holding it here would deadlock.
 	(&JSDOMWrapper{node: target, runtime: runtime, windowCtx: wc}).dispatchDOMEvent(event)
 }
 
@@ -663,8 +730,8 @@ func (wc *WindowContext) GetInputState(key string) (interface{}, bool) {
 
 // Destroy cleans up the window context resources.
 func (wc *WindowContext) Destroy() {
-	wc.jsRuntimeMu.Lock()
-	defer wc.jsRuntimeMu.Unlock()
+	wc.jsRuntimeMu.lock()
+	defer wc.jsRuntimeMu.unlock()
 	wc.ActiveDocument = nil
 	wc.Documents = nil
 	wc.Viewport = nil
