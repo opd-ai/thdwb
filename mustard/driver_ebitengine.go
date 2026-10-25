@@ -1,5 +1,3 @@
-//go:build !cgo
-
 package mustard
 
 import (
@@ -7,7 +5,6 @@ import (
 	"image/color"
 
 	"github.com/hajimehoshi/ebiten/v2"
-	"github.com/hajimehoshi/ebiten/v2/inpututil"
 )
 
 // ebitenDriver implements Driver using Ebitengine.
@@ -21,12 +18,13 @@ func NewDriver() Driver {
 }
 
 func (d *ebitenDriver) NewWindow(title string, width, height int, hiDPI bool) (Window, error) {
-	return &ebitenWindow{
+	w := &WindowBase{
 		title:   title,
 		width:   width,
 		height:  height,
 		visible: true,
-	}, nil
+	}
+	return w, nil
 }
 
 func (d *ebitenDriver) NewRenderer(w Window) (Renderer, error) {
@@ -37,7 +35,7 @@ func (d *ebitenDriver) NewRenderer(w Window) (Renderer, error) {
 	return &ebitenRenderer{window: ew}, nil
 }
 
-func (d *ebitenDriver) NewApp(name string) App {
+func (d *ebitenDriver) NewApp(name string) AppDriver {
 	return &ebitenApp{name: name}
 }
 
@@ -54,7 +52,7 @@ type ebitenWindow struct {
 func (w *ebitenWindow) Show() { w.visible = true }
 func (w *ebitenWindow) Hide() { w.visible = false }
 func (w *ebitenWindow) Close() { w.closed = true }
-func (w *ebitenWindow) IsClosed() bool { return w.closed || inpututil.IsWindowBeingClosed() }
+func (w *ebitenWindow) IsClosed() bool { return w.closed }
 func (w *ebitenWindow) SetTitle(title string) {
 	w.title = title
 	ebiten.SetWindowTitle(title)
@@ -89,8 +87,8 @@ func (r *ebitenRenderer) DrawImage(img image.Image, x, y float64) {
 	_ = x
 	_ = y
 }
-func (r *ebitenRenderer) SetColor(r, g, b, a float32) {
-	_ = r
+func (r *ebitenRenderer) SetColor(rf, g, b, a float32) {
+	_ = rf
 	_ = g
 	_ = b
 	_ = a
@@ -115,6 +113,16 @@ type ebitenApp struct {
 	name     string
 	windows  []Window
 	callback func()
+}
+
+func (a *ebitenApp) NewWindow(title string, width, height int, hiDPI bool) (Window, error) {
+	w := &WindowBase{
+		title:   title,
+		width:   width,
+		height:  height,
+		visible: true,
+	}
+	return w, nil
 }
 
 func (a *ebitenApp) Run(callback func()) {

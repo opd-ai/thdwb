@@ -1,4 +1,5 @@
 github.com/Masterminds/semver/v3 v3.5.0 h1:kQceYJfbupGfZOKZQg0kou0DgAKhzDg2NZPAwZ/2OOE=
+github.com/Masterminds/semver/v3 v3.5.0/go.mod h1:4V+yj/TJE1HU9XfppCwVMZq3I84lprf4nC11bSS5beM=
 github.com/andybalholm/cascadia v1.3.4 h1:vM2lgh0Vru9Vwyfm4cQqWP2HHMW0u0+2PAW7Q38Qufg=
 github.com/andybalholm/cascadia v1.3.4/go.mod h1:BLRmbRjpEtNKieZOCCvYj4RqN+KRA41GBe/5O+G93kM=
 github.com/danfragoso/thdwb/assets v0.0.0-20210612223625-beb2b4a85bbb h1:cBIhq1aSHfk4cTqPPSQsJxUi4FN/22BuiRrbCrThq7I=
@@ -7,8 +8,12 @@ github.com/danfragoso/thdwb/gg v0.0.0-20210612223625-beb2b4a85bbb h1:KhU9EuC8nlk
 github.com/danfragoso/thdwb/gg v0.0.0-20210612223625-beb2b4a85bbb/go.mod h1:v2nmvay4XFmMFWYPpbuCE8WtWPBZUq5N87a4d71PEpE=
 github.com/danfragoso/thdwb/mustard v0.0.0-20210612223625-beb2b4a85bbb h1:78CtJ2TvVJBhhH8mWiki1Kk1QRKyJaHv49w9vmEw1sw=
 github.com/danfragoso/thdwb/mustard v0.0.0-20210612223625-beb2b4a85bbb/go.mod h1:41CSte9hkX9mY5MbI/z9zC1FkR6zq67xhmaY5/vq5FU=
+github.com/danfragoso/thdwb/pages v0.0.0-20210612223625-beb2b4a85bbb h1:OltkEgNmjbguNnkXwTRnzi7xfLKHPmCqTuW1c5eX0s8=
+github.com/danfragoso/thdwb/pages v0.0.0-20210612223625-beb2b4a85bbb/go.mod h1:2FjK7SNIT50OXq6hs4Zy+tweI/sWguPqbm8BTIUax58=
 github.com/danfragoso/thdwb/profiler v0.0.0-20210612223625-beb2b4a85bbb h1:lgooLiwfHhpgs1gu66xhlNxTMh34lhuA5WkdgSZtywY=
 github.com/danfragoso/thdwb/profiler v0.0.0-20210612223625-beb2b4a85bbb/go.mod h1:KVziougIc5PXbPgIQIG+fDYRUvx15n7vNzLhy8MDq8A=
+github.com/danfragoso/thdwb/sauce v0.0.0-20210612223625-beb2b4a85bbb h1:bwMeAatAS5shQCBgytMaHZkDYIdzJFmP7ykwdvyFLik=
+github.com/danfragoso/thdwb/sauce v0.0.0-20210612223625-beb2b4a85bbb/go.mod h1:rFNrwGTVbfLtJ6/sprxi8rO/+p70dlmkqsNjvd3PiLI=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/dlclark/regexp2/v2 v2.5.2 h1:HAsucWRhsqcDzl6Ua9aR8JwYOTzrZyPrF0/FNxJVAI0=
@@ -22,6 +27,7 @@ github.com/go-gl/glfw/v3.3/glfw v0.0.0-20260802143932-8fa725040a18/go.mod h1:SyR
 github.com/go-sourcemap/sourcemap v2.1.3+incompatible h1:W1iEw64niKVGogNgBN3ePyLFfuisuzeidWPMPWmECqU=
 github.com/go-sourcemap/sourcemap v2.1.3+incompatible/go.mod h1:F8jJfvm2KbVjc5NqelyYJmf/v5J0dwNLS2mL4sNA1Jg=
 github.com/goccy/go-yaml v1.19.2 h1:PmFC1S6h8ljIz6gMRBopkjP1TVT7xuwrButHID66PoM=
+github.com/goccy/go-yaml v1.19.2/go.mod h1:XBurs7gK8ATbW4ZPGKgcbrY1Br56PdM69F7LkFRi1kA=
 github.com/goki/freetype v1.0.5 h1:yi2lQeUhXnBgSMqYd0vVmPw6RnnfIeTP3N4uvaJXd7A=
 github.com/goki/freetype v1.0.5/go.mod h1:wKmKxddbzKmeci9K96Wknn5kjTWLyfC8tKOqAFbEX8E=
 github.com/google/pprof v0.0.0-20230207041349-798e818bf904 h1:4/hN5RUoecvl+RmJRE2YxKWtnnQls6rQjjW5oV7qg2U=
@@ -36,5 +42,7 @@ golang.org/x/net v0.57.0 h1:K5+3DljvIuDG9/Jv9rvyMywYNFCQ9RSUY6OOTTkT+tE=
 golang.org/x/net v0.57.0/go.mod h1:KpXc8iv+r3XplLAG/f7Jsf9RPszJzdR0f58q9vGOuEU=
 golang.org/x/text v0.40.0 h1:Ub2Z6/xjgF1WrYQz2nuITOEegKFtiIy+rieRJ5lHZKs=
 golang.org/x/text v0.40.0/go.mod h1:hpnzDAfGV753zIKo+wk3u1bVKCGPbrnF7+7LBF/UHVY=
+gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405 h1:yhCVgyC4o1eVCa2tZl7eS0r+SDo693bJlVdllGtEeKM=
+gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405/go.mod h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=
 gopkg.in/yaml.v3 v3.0.1 h1:fxVm/GzAzEWqLHuvctI91KS9hhNmmWOoWu0XTYJS7CA=
 gopkg.in/yaml.v3 v3.0.1/go.mod h1:K4uyk7z7BCEPqu6E+C64Yfv1cQ7kz7rIZviUmN+EgEM=

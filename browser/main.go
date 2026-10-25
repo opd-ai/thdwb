@@ -41,7 +41,11 @@ func main() {
 		return
 	}
 
-	wb := window.(*mustard.WindowBase)
+	wb, ok := window.(*mustard.WindowBase)
+	if !ok {
+		fmt.Printf("Window is not WindowBase: %T\n", window)
+		return
+	}
 	windowContext.Window = wb
 
 	// Create root frame
