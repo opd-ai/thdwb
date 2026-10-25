@@ -48,6 +48,81 @@ type Input interface {
 	IsKeyPressed(key Key) bool
 	// IsMouseButtonPressed returns true if the given mouse button is pressed.
 	IsMouseButtonPressed(button MouseButton) bool
+	// TouchPoints returns the current touch points (mobile only).
+	TouchPoints() []TouchPoint
+}
+
+// TouchInput is an optional interface for platforms that support touch input.
+type TouchInput interface {
+	// TouchPoints returns the current touch points.
+	TouchPoints() []TouchPoint
+}
+
+// Lifecycle is an optional interface for platforms with app lifecycle management.
+type Lifecycle interface {
+	// SetLifecycleState sets the application lifecycle state.
+	SetLifecycleState(state LifecycleState)
+	// LifecycleState returns the current lifecycle state.
+	LifecycleState() LifecycleState
+}
+
+// OrientationProvider is an optional interface for platforms that report orientation.
+type OrientationProvider interface {
+	// SetOrientation sets the device orientation.
+	SetOrientation(orientation Orientation)
+	// Orientation returns the current device orientation.
+	Orientation() Orientation
+}
+
+// Orientation represents the device orientation.
+type Orientation int
+
+const (
+	OrientationPortrait Orientation = iota
+	OrientationLandscapeLeft
+	OrientationLandscapeRight
+	OrientationPortraitUpsideDown
+)
+
+// LifecycleState represents the application lifecycle state.
+type LifecycleState int
+
+const (
+	LifecycleForeground LifecycleState = iota
+	LifecycleBackground
+	LifecyclePaused
+)
+
+// TouchPoint represents a single touch point.
+type TouchPoint struct {
+	ID      interface{}
+	X, Y    float64
+	Pressed bool
+}
+
+// GPUBackend represents the underlying GPU backend in use.
+type GPUBackend int
+
+const (
+	GPUBackendUnknown GPUBackend = iota
+	GPUBackendDirect3D12
+	GPUBackendMetal
+	GPUBackendVulkan
+	GPUBackendOpenGL
+	GPUBackendSoftware
+)
+
+// GPUInfo provides information about the GPU backend.
+type GPUInfo struct {
+	Backend GPUBackend
+	Vendor  string
+	Device  string
+}
+
+// GPUProvider is an optional interface for platforms that expose GPU information.
+type GPUProvider interface {
+	// GPUInfo returns information about the active GPU backend.
+	GPUInfo() GPUInfo
 }
 
 // Key represents a keyboard key.

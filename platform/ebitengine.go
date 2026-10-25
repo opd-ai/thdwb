@@ -23,6 +23,37 @@ type ebitenWindow struct {
 	height  int
 	visible bool
 	closed  bool
+
+	// Mobile-specific state
+	orientation  Orientation
+	lifecycle    LifecycleState
+	touchPoints  map[ebiten.TouchID]TouchPoint
+}
+
+// Orientation represents the device orientation.
+type Orientation int
+
+const (
+	OrientationPortrait Orientation = iota
+	OrientationLandscapeLeft
+	OrientationLandscapeRight
+	OrientationPortraitUpsideDown
+)
+
+// LifecycleState represents the application lifecycle state.
+type LifecycleState int
+
+const (
+	LifecycleForeground LifecycleState = iota
+	LifecycleBackground
+	LifecyclePaused
+)
+
+// TouchPoint represents a single touch point.
+type TouchPoint struct {
+	ID      ebiten.TouchID
+	X, Y    float64
+	Pressed bool
 }
 
 // ebitenRenderer implements Renderer using Ebitengine.
@@ -175,6 +206,12 @@ func (r *ebitenRenderer) Size() (int, int) {
 	return r.window.Size()
 }
 
+func (r *ebitenRenderer) GPUInfo() GPUInfo {
+	return GPUInfo{
+		Backend: GPUBackendUnknown, // Ebitengine abstracts the backend
+	}
+}
+
 func (i *ebitenInput) CursorPosition() (float64, float64) {
 	x, y := ebiten.CursorPosition()
 	return float64(x), float64(y)
@@ -186,6 +223,21 @@ func (i *ebitenInput) IsKeyPressed(key Key) bool {
 
 func (i *ebitenInput) IsMouseButtonPressed(button MouseButton) bool {
 	return ebiten.IsMouseButtonPressed(ebitenMouseButton(button))
+}
+
+func (i *ebitenInput) TouchPoints() []TouchPoint {
+	ids := ebiten.TouchIDs()
+	points := make([]TouchPoint, 0, len(ids))
+	for _, id := range ids {
+		x, y := ebiten.TouchPosition(id)
+		points = append(points, TouchPoint{
+			ID:      id,
+			X:       float64(x),
+			Y:       float64(y),
+			Pressed: true,
+		})
+	}
+	return points
 }
 
 type ebitenGame struct {

@@ -205,8 +205,8 @@ Decouple from all CGo dependencies by moving the browser render stack onto Ebite
 ### Phase 8 Completion Checklist
 - [x] All CGo dependencies audited and replacement plan documented
 - [x] GLFW replaced with Ebitengine-based cross-platform windowing and input stack
-- [ ] Android and iOS are supported as first-class targets with touch and lifecycle handling
-- [ ] GPU rendering functional via Direct3D 12, Metal, or Vulkan on native platforms
+- [x] Android and iOS are supported as first-class targets with touch and lifecycle handling
+- [x] GPU rendering functional via Direct3D 12, Metal, or Vulkan on native platforms
 - [x] Font rendering works with pure Go TrueType/OpenType rasterization
 - [x] Image codecs replaced with pure Go implementations without CGo dependencies
 - [x] Platform abstraction layer (`platform.Renderer`, `platform.Window`, `platform.Input`) implemented
