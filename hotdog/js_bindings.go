@@ -266,23 +266,22 @@ func (wc *WindowContext) InitJSRuntime() error {
 	runtime.Set("eval", func(call goja.FunctionCall) goja.Value {
 		// Check CSP for 'unsafe-eval' from the active document
 		if wc.ActiveDocument != nil && wc.ActiveDocument.CSP != nil {
-			if wc.ActiveDocument.CSP.AllowEval() {
-				// CSP allows eval, but we still don't implement it for security
-				// In a real browser, this would execute the code
-				return goja.Undefined()
+			if !wc.ActiveDocument.CSP.AllowEval() {
+				panic(runtime.NewGoError(SecurityError("eval() is blocked by CSP")))
 			}
 		}
-		panic(runtime.NewGoError(SecurityError("eval() is blocked by CSP")))
+		// CSP allows eval, or no CSP is set. We still don't implement it for security.
+		return goja.Undefined()
 	})
 	runtime.Set("Function", func(call goja.FunctionCall) goja.Value {
 		// Check CSP for 'unsafe-eval' from the active document
 		if wc.ActiveDocument != nil && wc.ActiveDocument.CSP != nil {
-			if wc.ActiveDocument.CSP.AllowEval() {
-				// CSP allows Function constructor, but we still don't implement it for security
-				return goja.Undefined()
+			if !wc.ActiveDocument.CSP.AllowEval() {
+				panic(runtime.NewGoError(SecurityError("Function constructor is blocked by CSP")))
 			}
 		}
-		panic(runtime.NewGoError(SecurityError("Function constructor is blocked by CSP")))
+		// CSP allows Function constructor, or no CSP is set. We still don't implement it for security.
+		return goja.Undefined()
 	})
 
 	return nil
@@ -1412,7 +1411,7 @@ func (w *JSWindowWrapper) postMessage(call goja.FunctionCall) goja.Value {
 		eventObj := targetRuntime.NewObject()
 		eventObj.Set("data", message)
 		eventObj.Set("origin", windowOrigin)
-		eventObj.Set("source", targetRuntime.Get("window")) // reference to target's window
+		eventObj.Set("source", w.windowCtx.GetJSRuntime().Get("window")) // reference to sender's window
 
 		// Emit message event on the target window. jsRuntimeMu is not held
 		// during RunJS/SetJSValue (Goja is internally synchronized), so this

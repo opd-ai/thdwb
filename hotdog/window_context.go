@@ -166,6 +166,7 @@ type WindowContext struct {
 	inputState     map[string]interface{}
 
 	// Event registry for this window
+	eventMu           sync.Mutex
 	eventRegistry     map[string][]eventHandler
 	nodeEventRegistry map[*NodeDOM]map[string][]eventHandler
 	nodeWrappers      map[*NodeDOM]*goja.Object
@@ -214,6 +215,7 @@ func NewWindowContext(settings *Settings, buildInfo *assets.BuildInfo, profiler 
 		layoutCache:       make(map[string]interface{}),
 		pendingReflows:    make(map[*NodeDOM]struct{}),
 		inputState:        make(map[string]interface{}),
+		eventMu:           sync.Mutex{},
 		eventRegistry:     make(map[string][]eventHandler),
 		nodeEventRegistry: make(map[*NodeDOM]map[string][]eventHandler),
 		nodeWrappers:      make(map[*NodeDOM]*goja.Object),
@@ -277,6 +279,8 @@ func (wc *WindowContext) RegisterEvent(eventName string, handler func(interface{
 }
 
 func (wc *WindowContext) registerEvent(eventName string, key uintptr, handler func(interface{})) {
+	wc.eventMu.Lock()
+	defer wc.eventMu.Unlock()
 	wc.eventRegistry[eventName] = append(wc.eventRegistry[eventName], eventHandler{key: key, handler: handler})
 }
 
@@ -284,6 +288,8 @@ func (wc *WindowContext) registerNodeEvent(node *NodeDOM, eventName string, key 
 	if node == nil {
 		return
 	}
+	wc.eventMu.Lock()
+	defer wc.eventMu.Unlock()
 	if wc.nodeEventRegistry[node] == nil {
 		wc.nodeEventRegistry[node] = make(map[string][]eventHandler)
 	}
@@ -291,6 +297,11 @@ func (wc *WindowContext) registerNodeEvent(node *NodeDOM, eventName string, key 
 }
 
 func (wc *WindowContext) RemoveNodeEventByKey(node *NodeDOM, eventName string, key uintptr) {
+	if node == nil {
+		return
+	}
+	wc.eventMu.Lock()
+	defer wc.eventMu.Unlock()
 	handlers := wc.nodeEventRegistry[node][eventName]
 	filtered := handlers[:0]
 	for _, handler := range handlers {
@@ -312,12 +323,17 @@ func (wc *WindowContext) EmitNodeEvent(node *NodeDOM, eventName string, data int
 	if !wc.IsActive() {
 		return
 	}
-	for _, handler := range wc.nodeEventRegistry[node][eventName] {
+	wc.eventMu.Lock()
+	handlers := wc.nodeEventRegistry[node][eventName]
+	wc.eventMu.Unlock()
+	for _, handler := range handlers {
 		handler.handler(data)
 	}
 }
 
 func (wc *WindowContext) RemoveEventByKey(eventName string, key uintptr) {
+	wc.eventMu.Lock()
+	defer wc.eventMu.Unlock()
 	handlers := wc.eventRegistry[eventName]
 	filtered := handlers[:0]
 	for _, handler := range handlers {
@@ -337,10 +353,11 @@ func (wc *WindowContext) EmitEvent(eventName string, data interface{}) {
 	if !wc.IsActive() {
 		return
 	}
-	if handlers, ok := wc.eventRegistry[eventName]; ok {
-		for _, handler := range handlers {
-			handler.handler(data)
-		}
+	wc.eventMu.Lock()
+	handlers := wc.eventRegistry[eventName]
+	wc.eventMu.Unlock()
+	for _, handler := range handlers {
+		handler.handler(data)
 	}
 }
 

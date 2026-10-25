@@ -52,6 +52,9 @@ func paintInlineElement(ctx *gg.Context, node *hotdog.NodeDOM) {
 }
 
 func fetchNodeImage(node *hotdog.NodeDOM) (image.Image, error) {
+	if node == nil || node.Document == nil || node.Document.URL == nil {
+		return nil, fmt.Errorf("cannot fetch image: nil document or URL")
+	}
 	imgPath := node.Attr("src")
 
 	imgURL, err := node.Document.URL.Parse(imgPath)

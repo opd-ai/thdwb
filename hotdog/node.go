@@ -603,6 +603,9 @@ func (node *NodeDOM) LoadIframeContent() (*Document, error) {
 	}
 
 	// Parse the iframe source URL
+	if node.Document == nil || node.Document.URL == nil {
+		return nil, fmt.Errorf("iframe document or URL is nil")
+	}
 	iframeURL, err := node.Document.URL.Parse(node.IframeSrc)
 	if err != nil {
 		return nil, err

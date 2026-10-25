@@ -73,6 +73,9 @@ func (history *History) Push(URL *url.URL) {
 }
 
 func (history *History) Last() *url.URL {
+	if len(history.previousPages) == 0 {
+		return nil
+	}
 	return history.previousPages[len(history.previousPages)-1]
 }
 
