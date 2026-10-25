@@ -274,9 +274,10 @@ func applyStylesToFlexNode(flexNode *flex.Node, style *hotdog.Stylesheet) {
 		if style.Left != 0 {
 			flexNode.StyleSetPosition(flex.EdgeLeft, float32(style.Left))
 		}
-		if style.Position == "absolute" {
+		switch style.Position {
+		case "absolute":
 			flexNode.StyleSetPositionType(flex.PositionTypeAbsolute)
-		} else if style.Position == "relative" {
+		case "relative":
 			flexNode.StyleSetPositionType(flex.PositionTypeRelative)
 		}
 	}

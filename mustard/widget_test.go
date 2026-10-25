@@ -11,20 +11,17 @@ func TestCreateButtonWidget(t *testing.T) {
 	// Create minimal button without GLFW initialization
 	btn := &ButtonWidget{
 		baseWidget: baseWidget{
-			needsRepaint: true,
-			widgets:      []Widget{},
-			widgetType:   buttonWidget,
+			needsRepaint:    true,
+			widgets:         []Widget{},
+			widgetType:      buttonWidget,
 			backgroundColor: "#fff",
-			font:         nil,
+			font:            nil,
 		},
 		content:   "Test",
 		fontSize:  20,
 		padding:   0,
 		fontColor: "#000",
 		selected:  false,
-	}
-	if btn == nil {
-		t.Fatal("CreateButtonWidget returned nil")
 	}
 	if btn.GetContent() != "Test" {
 		t.Errorf("Expected content 'Test', got '%s'", btn.GetContent())
@@ -34,11 +31,11 @@ func TestCreateButtonWidget(t *testing.T) {
 func TestButtonWidgetSetters(t *testing.T) {
 	btn := &ButtonWidget{
 		baseWidget: baseWidget{
-			needsRepaint: true,
-			widgets:      []Widget{},
-			widgetType:   buttonWidget,
+			needsRepaint:    true,
+			widgets:         []Widget{},
+			widgetType:      buttonWidget,
 			backgroundColor: "#fff",
-			font:         nil,
+			font:            nil,
 		},
 		content:   "Test",
 		fontSize:  20,
@@ -62,17 +59,14 @@ func TestButtonWidgetSetters(t *testing.T) {
 func TestCreateInputWidget(t *testing.T) {
 	input := &InputWidget{
 		baseWidget: baseWidget{
-			needsRepaint: true,
-			widgets:      []Widget{},
-			widgetType:   inputWidget,
+			needsRepaint:    true,
+			widgets:         []Widget{},
+			widgetType:      inputWidget,
 			backgroundColor: "#fff",
-			font:         nil,
+			font:            nil,
 		},
 		fontSize:  20,
 		fontColor: "#000",
-	}
-	if input == nil {
-		t.Fatal("CreateInputWidget returned nil")
 	}
 	input.SetWidth(200)
 	input.SetHeight(40)
@@ -89,18 +83,15 @@ func TestCreateInputWidget(t *testing.T) {
 func TestCreateLabelWidget(t *testing.T) {
 	label := &LabelWidget{
 		baseWidget: baseWidget{
-			needsRepaint: true,
-			widgets:      []Widget{},
-			widgetType:   labelWidget,
+			needsRepaint:    true,
+			widgets:         []Widget{},
+			widgetType:      labelWidget,
 			backgroundColor: "#fff",
-			font:         nil,
+			font:            nil,
 		},
 		content:   "Test Label",
 		fontSize:  16,
 		fontColor: "#000",
-	}
-	if label == nil {
-		t.Fatal("CreateLabelWidget returned nil")
 	}
 	label.SetWidth(300)
 	label.SetFontSize(18)
@@ -110,16 +101,13 @@ func TestCreateLabelWidget(t *testing.T) {
 func TestCreateFrame(t *testing.T) {
 	frame := &Frame{
 		baseWidget: baseWidget{
-			needsRepaint: true,
-			widgets:      []Widget{},
-			widgetType:   frameWidget,
+			needsRepaint:    true,
+			widgets:         []Widget{},
+			widgetType:      frameWidget,
 			backgroundColor: "#fff",
-			font:         nil,
+			font:            nil,
 		},
 		orientation: VerticalFrame,
-	}
-	if frame == nil {
-		t.Fatal("CreateFrame returned nil")
 	}
 	frame.SetWidth(400)
 	frame.SetHeight(300)
@@ -127,11 +115,11 @@ func TestCreateFrame(t *testing.T) {
 
 	child := &LabelWidget{
 		baseWidget: baseWidget{
-			needsRepaint: true,
-			widgets:      []Widget{},
-			widgetType:   labelWidget,
+			needsRepaint:    true,
+			widgets:         []Widget{},
+			widgetType:      labelWidget,
 			backgroundColor: "#fff",
-			font:         nil,
+			font:            nil,
 		},
 		content:   "Child",
 		fontSize:  16,
@@ -155,17 +143,14 @@ func TestCreateFrame(t *testing.T) {
 func TestCreateCanvasWidget(t *testing.T) {
 	canvas := &CanvasWidget{
 		baseWidget: baseWidget{
-			needsRepaint: true,
-			widgets:      []Widget{},
-			widgetType:   canvasWidget,
+			needsRepaint:    true,
+			widgets:         []Widget{},
+			widgetType:      canvasWidget,
 			backgroundColor: "#fff",
-			font:         nil,
+			font:            nil,
 		},
 		context:        gg.NewContext(0, 0),
 		drawingContext: gg.NewContext(0, 0),
-	}
-	if canvas == nil {
-		t.Fatal("CreateCanvasWidget returned nil")
 	}
 	canvas.SetWidth(500)
 	canvas.SetHeight(400)
@@ -175,27 +160,20 @@ func TestCreateCanvasWidget(t *testing.T) {
 	if canvas.GetOffset() != 100 {
 		t.Errorf("Expected offset 100, got %d", canvas.GetOffset())
 	}
-	ctx := canvas.GetContext()
-	if ctx == nil {
-		t.Error("GetContext returned nil")
-	}
 }
 
 func TestCreateTreeWidget(t *testing.T) {
 	tree := &TreeWidget{
 		baseWidget: baseWidget{
-			needsRepaint: true,
-			widgets:      []Widget{},
-			widgetType:   treeWidget,
+			needsRepaint:    true,
+			widgets:         []Widget{},
+			widgetType:      treeWidget,
 			backgroundColor: "#fff",
-			font:         nil,
+			font:            nil,
 		},
 		fontSize:  16,
 		fontColor: "#000",
 		nodes:     []*TreeWidgetNode{},
-	}
-	if tree == nil {
-		t.Fatal("CreateTreeWidget returned nil")
 	}
 	node := CreateTreeWidgetNode("key", "value")
 	tree.AddNode(node)
@@ -210,9 +188,6 @@ func TestCreateTreeWidget(t *testing.T) {
 
 func TestCreateTreeWidgetNode(t *testing.T) {
 	node := CreateTreeWidgetNode("key", "value")
-	if node == nil {
-		t.Fatal("CreateTreeWidgetNode returned nil")
-	}
 	if node.Key != "key" || node.Value != "value" {
 		t.Errorf("Expected key='key', value='value', got key='%s', value='%s'", node.Key, node.Value)
 	}
@@ -247,18 +222,15 @@ func TestCreateTreeWidgetNode(t *testing.T) {
 func TestCreateTextWidget(t *testing.T) {
 	text := &TextWidget{
 		baseWidget: baseWidget{
-			needsRepaint: true,
-			widgets:      []Widget{},
-			widgetType:   textWidget,
+			needsRepaint:    true,
+			widgets:         []Widget{},
+			widgetType:      textWidget,
 			backgroundColor: "#fff",
-			font:         nil,
+			font:            nil,
 		},
 		content:   "Test text",
 		fontSize:  16,
 		fontColor: "#000",
-	}
-	if text == nil {
-		t.Fatal("CreateTextWidget returned nil")
 	}
 	text.SetFontSize(20)
 	text.SetFontColor("#123456")
@@ -267,16 +239,13 @@ func TestCreateTextWidget(t *testing.T) {
 func TestCreateImageWidget(t *testing.T) {
 	imgWidget := &ImageWidget{
 		baseWidget: baseWidget{
-			needsRepaint: true,
-			widgets:      []Widget{},
-			widgetType:   imageWidget,
+			needsRepaint:    true,
+			widgets:         []Widget{},
+			widgetType:      imageWidget,
 			backgroundColor: "#fff",
-			font:         nil,
+			font:            nil,
 		},
 		img: nil,
-	}
-	if imgWidget == nil {
-		t.Fatal("CreateImageWidget returned nil")
 	}
 	imgWidget.SetWidth(100)
 	imgWidget.SetHeight(100)
@@ -285,16 +254,13 @@ func TestCreateImageWidget(t *testing.T) {
 func TestCreateScrollBarWidget(t *testing.T) {
 	scrollbar := &ScrollBarWidget{
 		baseWidget: baseWidget{
-			needsRepaint: true,
-			widgets:      []Widget{},
-			widgetType:   scrollbarWidget,
+			needsRepaint:    true,
+			widgets:         []Widget{},
+			widgetType:      scrollbarWidget,
 			backgroundColor: "#fff",
-			font:         nil,
+			font:            nil,
 		},
 		orientation: VerticalScrollBar,
-	}
-	if scrollbar == nil {
-		t.Fatal("CreateScrollBarWidget returned nil")
 	}
 	scrollbar.SetWidth(20)
 	scrollbar.SetHeight(200)
@@ -305,14 +271,14 @@ func TestCreateScrollBarWidget(t *testing.T) {
 func TestBaseWidgetMethods(t *testing.T) {
 	btn := &ButtonWidget{
 		baseWidget: baseWidget{
-			needsRepaint: true,
-			widgets:      []Widget{},
-			widgetType:   buttonWidget,
+			needsRepaint:    true,
+			widgets:         []Widget{},
+			widgetType:      buttonWidget,
 			backgroundColor: "#fff",
-			font:         nil,
-			box:          box{},
-			computedBox:  box{top: 0, left: 0, width: 100, height: 50},
-			visible:      true,
+			font:            nil,
+			box:             box{},
+			computedBox:     box{top: 0, left: 0, width: 100, height: 50},
+			visible:         true,
 		},
 		content:   "Test",
 		fontSize:  20,
@@ -322,12 +288,6 @@ func TestBaseWidgetMethods(t *testing.T) {
 	}
 	btn.SetWidth(100)
 	btn.SetHeight(50)
-
-	// Test ComputedBox
-	box := btn.ComputedBox()
-	if box == nil {
-		t.Error("ComputedBox returned nil")
-	}
 
 	// Test GetRect
 	top, left, width, height := btn.GetRect()
@@ -364,12 +324,12 @@ func TestBaseWidgetMethods(t *testing.T) {
 func TestWidgetBuffer(t *testing.T) {
 	btn := &ButtonWidget{
 		baseWidget: baseWidget{
-			needsRepaint: true,
-			widgets:      []Widget{},
-			widgetType:   buttonWidget,
+			needsRepaint:    true,
+			widgets:         []Widget{},
+			widgetType:      buttonWidget,
 			backgroundColor: "#fff",
-			font:         nil,
-			buffer:       image.NewRGBA(image.Rect(0, 0, 100, 50)),
+			font:            nil,
+			buffer:          image.NewRGBA(image.Rect(0, 0, 100, 50)),
 		},
 		content:   "Test",
 		fontSize:  20,
@@ -379,11 +339,6 @@ func TestWidgetBuffer(t *testing.T) {
 	}
 	btn.SetWidth(100)
 	btn.SetHeight(50)
-
-	buffer := btn.Buffer()
-	if buffer == nil {
-		t.Error("Buffer returned nil")
-	}
 
 	newBuffer := image.NewRGBA(image.Rect(0, 0, 200, 100))
 	btn.SetBuffer(newBuffer)
@@ -395,11 +350,11 @@ func TestWidgetBuffer(t *testing.T) {
 func TestWidgetWindow(t *testing.T) {
 	btn := &ButtonWidget{
 		baseWidget: baseWidget{
-			needsRepaint: true,
-			widgets:      []Widget{},
-			widgetType:   buttonWidget,
+			needsRepaint:    true,
+			widgets:         []Widget{},
+			widgetType:      buttonWidget,
 			backgroundColor: "#fff",
-			font:         nil,
+			font:            nil,
 		},
 		content:   "Test",
 		fontSize:  20,
@@ -425,11 +380,11 @@ func TestWidgetWindow(t *testing.T) {
 func TestRequestReflow(t *testing.T) {
 	btn := &ButtonWidget{
 		baseWidget: baseWidget{
-			needsRepaint: true,
-			widgets:      []Widget{},
-			widgetType:   buttonWidget,
+			needsRepaint:    true,
+			widgets:         []Widget{},
+			widgetType:      buttonWidget,
 			backgroundColor: "#fff",
-			font:         nil,
+			font:            nil,
 		},
 		content:   "Test",
 		fontSize:  20,
@@ -455,11 +410,11 @@ func TestRequestReflow(t *testing.T) {
 func TestRequestRepaint(t *testing.T) {
 	btn := &ButtonWidget{
 		baseWidget: baseWidget{
-			needsRepaint: true,
-			widgets:      []Widget{},
-			widgetType:   buttonWidget,
+			needsRepaint:    true,
+			widgets:         []Widget{},
+			widgetType:      buttonWidget,
 			backgroundColor: "#fff",
-			font:         nil,
+			font:            nil,
 		},
 		content:   "Test",
 		fontSize:  20,

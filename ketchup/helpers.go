@@ -19,9 +19,10 @@ func buildNodeDOMFromHTML(node *html.Node, document *hotdog.Document, windowCtx 
 	var sandboxFlags hotdog.SandboxFlags
 	if node.Type == html.ElementNode && node.Data == "iframe" {
 		for _, attr := range attributes {
-			if attr.Name == "src" {
+			switch attr.Name {
+			case "src":
 				iframeSrc = attr.Value
-			} else if attr.Name == "sandbox" {
+			case "sandbox":
 				sandboxFlags = hotdog.ParseSandboxAttribute(attr.Value)
 			}
 		}

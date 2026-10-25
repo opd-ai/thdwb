@@ -1,7 +1,7 @@
 package mayo
 
 import (
-	"io/ioutil"
+	"os"
 	"testing"
 
 	"golang.org/x/net/html"
@@ -15,7 +15,7 @@ import (
 func TestParseStylesheet(t *testing.T) {
 	tests := [...]string{}
 	for _, testName := range tests {
-		testData, err := ioutil.ReadFile("test_assets/" + testName + ".css")
+		testData, err := os.ReadFile("test_assets/" + testName + ".css")
 		if err != nil {
 			t.Fatalf("got unexpected error: %s", err)
 		}

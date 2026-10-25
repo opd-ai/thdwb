@@ -79,7 +79,7 @@ func TestAppDestroyWindow(t *testing.T) {
 	app := CreateNewApp(nil, "test")
 	window := &WindowBase{active: true}
 	app.AddWindow(window)
-	app.ActivateWindow(window)
+	_ = app.ActivateWindow(window)
 	// Manually test the destroy path without calling window.destroy() which needs GLFW
 	app.windows = nil
 	app.activeWindow = nil
@@ -97,7 +97,7 @@ func TestAppDestroyWindowNotActive(t *testing.T) {
 	second := &WindowBase{active: true}
 	app.AddWindow(first)
 	app.AddWindow(second)
-	app.ActivateWindow(first)
+	_ = app.ActivateWindow(first)
 	// Manually test the destroy path without calling window.destroy() which needs GLFW
 	app.windows = []Window{first}
 	if len(app.windows) != 1 {
@@ -121,11 +121,11 @@ func TestAppWindows(t *testing.T) {
 func TestButtonWidgetSettersCoverage(t *testing.T) {
 	btn := &ButtonWidget{
 		baseWidget: baseWidget{
-			needsRepaint: true,
-			widgets:      []Widget{},
-			widgetType:   buttonWidget,
+			needsRepaint:    true,
+			widgets:         []Widget{},
+			widgetType:      buttonWidget,
 			backgroundColor: "#fff",
-			font:         nil,
+			font:            nil,
 		},
 		content:   "Test",
 		fontSize:  20,
@@ -167,11 +167,11 @@ func TestButtonWidgetSettersCoverage(t *testing.T) {
 func TestButtonWidgetSettersInvalidColorCoverage(t *testing.T) {
 	btn := &ButtonWidget{
 		baseWidget: baseWidget{
-			needsRepaint: true,
-			widgets:      []Widget{},
-			widgetType:   buttonWidget,
+			needsRepaint:    true,
+			widgets:         []Widget{},
+			widgetType:      buttonWidget,
 			backgroundColor: "#fff",
-			font:         nil,
+			font:            nil,
 		},
 		content:   "Test",
 		fontColor: "#000",
@@ -189,11 +189,11 @@ func TestButtonWidgetSettersInvalidColorCoverage(t *testing.T) {
 func TestLabelWidgetSetters(t *testing.T) {
 	label := &LabelWidget{
 		baseWidget: baseWidget{
-			needsRepaint: true,
-			widgets:      []Widget{},
-			widgetType:   labelWidget,
+			needsRepaint:    true,
+			widgets:         []Widget{},
+			widgetType:      labelWidget,
 			backgroundColor: "#fff",
-			font:         nil,
+			font:            nil,
 		},
 		content:   "Test Label",
 		fontSize:  16,
@@ -229,11 +229,11 @@ func TestLabelWidgetSetters(t *testing.T) {
 func TestLabelWidgetSettersInvalidColor(t *testing.T) {
 	label := &LabelWidget{
 		baseWidget: baseWidget{
-			needsRepaint: true,
-			widgets:      []Widget{},
-			widgetType:   labelWidget,
+			needsRepaint:    true,
+			widgets:         []Widget{},
+			widgetType:      labelWidget,
 			backgroundColor: "#fff",
-			font:         nil,
+			font:            nil,
 		},
 		content:   "Test",
 		fontColor: "#000",
@@ -251,11 +251,11 @@ func TestLabelWidgetSettersInvalidColor(t *testing.T) {
 func TestInputWidgetSetters(t *testing.T) {
 	input := &InputWidget{
 		baseWidget: baseWidget{
-			needsRepaint: true,
-			widgets:      []Widget{},
-			widgetType:   inputWidget,
+			needsRepaint:    true,
+			widgets:         []Widget{},
+			widgetType:      inputWidget,
 			backgroundColor: "#fff",
-			font:         nil,
+			font:            nil,
 		},
 		fontSize:  20,
 		fontColor: "#000",
@@ -294,11 +294,11 @@ func TestInputWidgetSetters(t *testing.T) {
 func TestInputWidgetSettersInvalidColor(t *testing.T) {
 	input := &InputWidget{
 		baseWidget: baseWidget{
-			needsRepaint: true,
-			widgets:      []Widget{},
-			widgetType:   inputWidget,
+			needsRepaint:    true,
+			widgets:         []Widget{},
+			widgetType:      inputWidget,
 			backgroundColor: "#fff",
-			font:         nil,
+			font:            nil,
 		},
 		fontColor: "#000",
 	}
@@ -315,11 +315,11 @@ func TestInputWidgetSettersInvalidColor(t *testing.T) {
 func TestTextWidgetSetters(t *testing.T) {
 	text := &TextWidget{
 		baseWidget: baseWidget{
-			needsRepaint: true,
-			widgets:      []Widget{},
-			widgetType:   textWidget,
+			needsRepaint:    true,
+			widgets:         []Widget{},
+			widgetType:      textWidget,
 			backgroundColor: "#fff",
-			font:         nil,
+			font:            nil,
 		},
 		content:   "Test Text",
 		fontSize:  16,
@@ -355,11 +355,11 @@ func TestTextWidgetSetters(t *testing.T) {
 func TestTextWidgetSettersInvalidColor(t *testing.T) {
 	text := &TextWidget{
 		baseWidget: baseWidget{
-			needsRepaint: true,
-			widgets:      []Widget{},
-			widgetType:   textWidget,
+			needsRepaint:    true,
+			widgets:         []Widget{},
+			widgetType:      textWidget,
 			backgroundColor: "#fff",
-			font:         nil,
+			font:            nil,
 		},
 		content:   "Test",
 		fontColor: "#000",
@@ -377,9 +377,9 @@ func TestTextWidgetSettersInvalidColor(t *testing.T) {
 func TestCanvasWidgetSetters(t *testing.T) {
 	canvas := &CanvasWidget{
 		baseWidget: baseWidget{
-			needsRepaint: true,
-			widgets:      []Widget{},
-			widgetType:   canvasWidget,
+			needsRepaint:    true,
+			widgets:         []Widget{},
+			widgetType:      canvasWidget,
 			backgroundColor: "#fff",
 		},
 		context:        gg.NewContext(0, 0),
@@ -420,9 +420,9 @@ func TestCanvasWidgetSetters(t *testing.T) {
 func TestCanvasWidgetGetContext(t *testing.T) {
 	canvas := &CanvasWidget{
 		baseWidget: baseWidget{
-			needsRepaint: true,
-			widgets:      []Widget{},
-			widgetType:   canvasWidget,
+			needsRepaint:    true,
+			widgets:         []Widget{},
+			widgetType:      canvasWidget,
 			backgroundColor: "#fff",
 		},
 		context:        gg.NewContext(0, 0),
@@ -437,11 +437,11 @@ func TestCanvasWidgetGetContext(t *testing.T) {
 func TestCanvasWidgetMaxOffset(t *testing.T) {
 	canvas := &CanvasWidget{
 		baseWidget: baseWidget{
-			needsRepaint: true,
-			widgets:      []Widget{},
-			widgetType:   canvasWidget,
+			needsRepaint:    true,
+			widgets:         []Widget{},
+			widgetType:      canvasWidget,
 			backgroundColor: "#fff",
-			computedBox:  box{height: 100},
+			computedBox:     box{height: 100},
 		},
 		context:        gg.NewContext(0, 0),
 		drawingContext: gg.NewContext(100, 500),
@@ -458,9 +458,9 @@ func TestCanvasWidgetMaxOffset(t *testing.T) {
 func TestCanvasWidgetMaxOffsetUnknown(t *testing.T) {
 	canvas := &CanvasWidget{
 		baseWidget: baseWidget{
-			needsRepaint: true,
-			widgets:      []Widget{},
-			widgetType:   canvasWidget,
+			needsRepaint:    true,
+			widgets:         []Widget{},
+			widgetType:      canvasWidget,
 			backgroundColor: "#fff",
 		},
 		context:        gg.NewContext(0, 0),
@@ -478,9 +478,9 @@ func TestCanvasWidgetMaxOffsetUnknown(t *testing.T) {
 func TestFrameWidgetSetters(t *testing.T) {
 	frame := &Frame{
 		baseWidget: baseWidget{
-			needsRepaint: true,
-			widgets:      []Widget{},
-			widgetType:   frameWidget,
+			needsRepaint:    true,
+			widgets:         []Widget{},
+			widgetType:      frameWidget,
 			backgroundColor: "#fff",
 		},
 		orientation: VerticalFrame,
@@ -506,9 +506,9 @@ func TestFrameWidgetSetters(t *testing.T) {
 func TestFrameWidgetSettersInvalidColor(t *testing.T) {
 	frame := &Frame{
 		baseWidget: baseWidget{
-			needsRepaint: true,
-			widgets:      []Widget{},
-			widgetType:   frameWidget,
+			needsRepaint:    true,
+			widgets:         []Widget{},
+			widgetType:      frameWidget,
 			backgroundColor: "#fff",
 		},
 	}
@@ -521,17 +521,17 @@ func TestFrameWidgetSettersInvalidColor(t *testing.T) {
 func TestFrameWidgetRemoveWidget(t *testing.T) {
 	frame := &Frame{
 		baseWidget: baseWidget{
-			needsRepaint: true,
-			widgets:      []Widget{},
-			widgetType:   frameWidget,
+			needsRepaint:    true,
+			widgets:         []Widget{},
+			widgetType:      frameWidget,
 			backgroundColor: "#fff",
 		},
 	}
 	child := &LabelWidget{
 		baseWidget: baseWidget{
-			needsRepaint: true,
-			widgets:      []Widget{},
-			widgetType:   labelWidget,
+			needsRepaint:    true,
+			widgets:         []Widget{},
+			widgetType:      labelWidget,
 			backgroundColor: "#fff",
 		},
 		content: "child",
@@ -549,9 +549,9 @@ func TestFrameWidgetRemoveWidget(t *testing.T) {
 func TestFrameWidgetRemoveWidgetInvalidIndex(t *testing.T) {
 	frame := &Frame{
 		baseWidget: baseWidget{
-			needsRepaint: true,
-			widgets:      []Widget{},
-			widgetType:   frameWidget,
+			needsRepaint:    true,
+			widgets:         []Widget{},
+			widgetType:      frameWidget,
 			backgroundColor: "#fff",
 		},
 	}
@@ -565,9 +565,9 @@ func TestFrameWidgetRemoveWidgetInvalidIndex(t *testing.T) {
 func TestTreeWidgetSetters(t *testing.T) {
 	tree := &TreeWidget{
 		baseWidget: baseWidget{
-			needsRepaint: true,
-			widgets:      []Widget{},
-			widgetType:   treeWidget,
+			needsRepaint:    true,
+			widgets:         []Widget{},
+			widgetType:      treeWidget,
 			backgroundColor: "#fff",
 		},
 		fontSize:  20,
@@ -599,9 +599,9 @@ func TestTreeWidgetSetters(t *testing.T) {
 func TestTreeWidgetSettersInvalidColor(t *testing.T) {
 	tree := &TreeWidget{
 		baseWidget: baseWidget{
-			needsRepaint: true,
-			widgets:      []Widget{},
-			widgetType:   treeWidget,
+			needsRepaint:    true,
+			widgets:         []Widget{},
+			widgetType:      treeWidget,
 			backgroundColor: "#fff",
 		},
 		fontColor: "#000",
@@ -684,9 +684,9 @@ func TestTreeWidgetNodeSiblings(t *testing.T) {
 func TestScrollBarWidgetSetters(t *testing.T) {
 	scrollBar := &ScrollBarWidget{
 		baseWidget: baseWidget{
-			needsRepaint: true,
-			widgets:      []Widget{},
-			widgetType:   scrollbarWidget,
+			needsRepaint:    true,
+			widgets:         []Widget{},
+			widgetType:      scrollbarWidget,
 			backgroundColor: "#fff",
 		},
 		orientation: VerticalScrollBar,
@@ -725,9 +725,9 @@ func TestScrollBarWidgetSetters(t *testing.T) {
 func TestScrollBarWidgetSettersInvalidColor(t *testing.T) {
 	scrollBar := &ScrollBarWidget{
 		baseWidget: baseWidget{
-			needsRepaint: true,
-			widgets:      []Widget{},
-			widgetType:   scrollbarWidget,
+			needsRepaint:    true,
+			widgets:         []Widget{},
+			widgetType:      scrollbarWidget,
 			backgroundColor: "#fff",
 		},
 	}
@@ -739,11 +739,11 @@ func TestScrollBarWidgetSettersInvalidColor(t *testing.T) {
 
 func TestBaseWidgetVisibility(t *testing.T) {
 	widget := &baseWidget{
-		needsRepaint: true,
-		widgets:      []Widget{},
-		widgetType:   labelWidget,
+		needsRepaint:    true,
+		widgets:         []Widget{},
+		widgetType:      labelWidget,
 		backgroundColor: "#fff",
-		visible:      true,
+		visible:         true,
 	}
 	if !widget.GetVisible() {
 		t.Error("Expected widget to be visible by default")
@@ -801,17 +801,17 @@ func TestBaseWidgetIsPointInside(t *testing.T) {
 func TestBaseWidgetAttachDetachWidget(t *testing.T) {
 	parent := &Frame{
 		baseWidget: baseWidget{
-			needsRepaint: true,
-			widgets:      []Widget{},
-			widgetType:   frameWidget,
+			needsRepaint:    true,
+			widgets:         []Widget{},
+			widgetType:      frameWidget,
 			backgroundColor: "#fff",
 		},
 	}
 	child := &LabelWidget{
 		baseWidget: baseWidget{
-			needsRepaint: true,
-			widgets:      []Widget{},
-			widgetType:   labelWidget,
+			needsRepaint:    true,
+			widgets:         []Widget{},
+			widgetType:      labelWidget,
 			backgroundColor: "#fff",
 		},
 		content: "child",
@@ -1060,10 +1060,19 @@ func TestKeyboardInputFromGLFW(t *testing.T) {
 	}
 }
 
+// TestGlfwKeyName verifies the GLFW key-name mapping constants exist.
+// The underlying glfwKeyName helper (which called the cgo-backed glfw.GetKeyName)
+// was removed as part of CGO elimination; only the constants are asserted here.
 func TestGlfwKeyName(t *testing.T) {
-	// glfwKeyName calls glfw.GetKeyName which requires GLFW initialization
-	// Just verify the function exists and returns a string
-	_ = glfwKeyName
+	if KeyboardPress != 0 {
+		t.Errorf("Expected KeyboardPress=0, got %d", KeyboardPress)
+	}
+	if KeyboardRepeat != 1 {
+		t.Errorf("Expected KeyboardRepeat=1, got %d", KeyboardRepeat)
+	}
+	if KeyboardRelease != 2 {
+		t.Errorf("Expected KeyboardRelease=2, got %d", KeyboardRelease)
+	}
 }
 
 func TestMustardKeyConstants(t *testing.T) {
@@ -1239,13 +1248,13 @@ func TestCalculateFlexibleHeightNegative(t *testing.T) {
 func TestCompositeWidget(t *testing.T) {
 	widget := &LabelWidget{
 		baseWidget: baseWidget{
-			needsRepaint: true,
-			computedBox:  box{top: 0, left: 0, width: 10, height: 10},
-			buffer:       image.NewRGBA(image.Rect(0, 0, 10, 10)),
-			widgetType:   labelWidget,
+			needsRepaint:    true,
+			computedBox:     box{top: 0, left: 0, width: 10, height: 10},
+			buffer:          image.NewRGBA(image.Rect(0, 0, 10, 10)),
+			widgetType:      labelWidget,
 			backgroundColor: "#fff",
 		},
-		content: "test",
+		content:   "test",
 		fontSize:  10,
 		fontColor: "#000",
 	}
@@ -1259,22 +1268,22 @@ func TestCompositeWidget(t *testing.T) {
 func TestCompositeAll(t *testing.T) {
 	parent := &Frame{
 		baseWidget: baseWidget{
-			needsRepaint: true,
-			computedBox:  box{top: 0, left: 0, width: 10, height: 10},
-			buffer:       image.NewRGBA(image.Rect(0, 0, 10, 10)),
-			widgetType:   frameWidget,
+			needsRepaint:    true,
+			computedBox:     box{top: 0, left: 0, width: 10, height: 10},
+			buffer:          image.NewRGBA(image.Rect(0, 0, 10, 10)),
+			widgetType:      frameWidget,
 			backgroundColor: "#fff",
 		},
 	}
 	child := &LabelWidget{
 		baseWidget: baseWidget{
-			needsRepaint: true,
-			computedBox:  box{top: 0, left: 0, width: 10, height: 10},
-			buffer:       image.NewRGBA(image.Rect(0, 0, 10, 10)),
-			widgetType:   labelWidget,
+			needsRepaint:    true,
+			computedBox:     box{top: 0, left: 0, width: 10, height: 10},
+			buffer:          image.NewRGBA(image.Rect(0, 0, 10, 10)),
+			widgetType:      labelWidget,
 			backgroundColor: "#fff",
 		},
-		content: "child",
+		content:   "child",
 		fontSize:  10,
 		fontColor: "#000",
 	}
@@ -1289,11 +1298,11 @@ func TestCompositeAll(t *testing.T) {
 func TestCopyWidgetToBuffer(t *testing.T) {
 	widget := &LabelWidget{
 		baseWidget: baseWidget{
-			computedBox: box{top: 0, left: 0, width: 10, height: 10},
-			widgetType:   labelWidget,
+			computedBox:     box{top: 0, left: 0, width: 10, height: 10},
+			widgetType:      labelWidget,
 			backgroundColor: "#fff",
 		},
-		content: "test",
+		content:   "test",
 		fontSize:  10,
 		fontColor: "#000",
 	}
@@ -1308,31 +1317,31 @@ func TestGetCoreWidgets(t *testing.T) {
 	widgets := []Widget{
 		&LabelWidget{
 			baseWidget: baseWidget{
-				visible: true,
-				widgetType: labelWidget,
+				visible:         true,
+				widgetType:      labelWidget,
 				backgroundColor: "#fff",
 			},
-			content: "a",
+			content:   "a",
 			fontSize:  10,
 			fontColor: "#000",
 		},
 		&LabelWidget{
 			baseWidget: baseWidget{
-				visible: false,
-				widgetType: labelWidget,
+				visible:         false,
+				widgetType:      labelWidget,
 				backgroundColor: "#fff",
 			},
-			content: "b",
+			content:   "b",
 			fontSize:  10,
 			fontColor: "#000",
 		},
 		&LabelWidget{
 			baseWidget: baseWidget{
-				visible: true,
-				widgetType: labelWidget,
+				visible:         true,
+				widgetType:      labelWidget,
 				backgroundColor: "#fff",
 			},
-			content: "c",
+			content:   "c",
 			fontSize:  10,
 			fontColor: "#000",
 		},

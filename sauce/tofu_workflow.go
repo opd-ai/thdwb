@@ -20,7 +20,7 @@ func InspectTOFUCertificate(ctx context.Context, address string) (*x509.Certific
 	if err != nil {
 		return nil, "", err
 	}
-	defer connection.Close()
+	defer func() { _ = connection.Close() }()
 	return inspectedCertificate(connection, hostname)
 }
 

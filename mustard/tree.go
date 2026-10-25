@@ -82,6 +82,8 @@ func selectNodeByValue(nodes []*TreeWidgetNode, value string) {
 }
 
 func selectNode(nodes []*TreeWidgetNode, node *TreeWidgetNode) {
+	_ = nodes
+	_ = node
 	for _, childNode := range nodes {
 		selectNode(childNode.Children, node)
 

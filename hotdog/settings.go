@@ -3,7 +3,7 @@ package hotdog
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"os"
 )
 
 type Settings struct {
@@ -29,7 +29,7 @@ var defaultSettings Settings = Settings{
 }
 
 func LoadSettings(path string) *Settings {
-	settingsData, err := ioutil.ReadFile(path)
+	settingsData, err := os.ReadFile(path)
 
 	if err == nil {
 		err = json.Unmarshal(settingsData, &defaultSettings)

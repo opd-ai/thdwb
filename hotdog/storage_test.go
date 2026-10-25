@@ -20,7 +20,7 @@ func TestMain(m *testing.M) {
 	}
 	if err := os.Setenv("XDG_CONFIG_HOME", configDir); err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		os.RemoveAll(configDir)
+		_ = os.RemoveAll(configDir)
 		os.Exit(1)
 	}
 	code := m.Run()

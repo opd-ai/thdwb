@@ -14,7 +14,7 @@ var save bool
 
 func TestMain(m *testing.M) {
 	flag.BoolVar(&save, "save", false, "save PNG output for each test case")
-	flag.CommandLine.Parse(os.Args[1:])
+	_ = flag.CommandLine.Parse(os.Args[1:])
 	os.Exit(m.Run())
 }
 
@@ -38,7 +38,7 @@ func saveImage(dc *Context, name string) error {
 
 func TestBlank(t *testing.T) {
 	dc := NewContext(100, 100)
-	saveImage(dc, "TestBlank")
+	_ = saveImage(dc, "TestBlank")
 	checkHash(t, dc, "4e0a293a5b638f0aba2c4fe2c3418d0e")
 }
 
@@ -53,7 +53,7 @@ func TestGrid(t *testing.T) {
 	}
 	dc.SetRGB(0, 0, 0)
 	dc.Stroke()
-	saveImage(dc, "TestGrid")
+	_ = saveImage(dc, "TestGrid")
 	checkHash(t, dc, "78606adda71d8abfbd8bb271087e4d69")
 }
 
@@ -72,7 +72,7 @@ func TestLines(t *testing.T) {
 		dc.SetRGB(rnd.Float64(), rnd.Float64(), rnd.Float64())
 		dc.Stroke()
 	}
-	saveImage(dc, "TestLines")
+	_ = saveImage(dc, "TestLines")
 	checkHash(t, dc, "036bd220e2529955cc48425dd72bb686")
 }
 
@@ -92,7 +92,7 @@ func TestCircles(t *testing.T) {
 		dc.SetLineWidth(rnd.Float64() * 3)
 		dc.Stroke()
 	}
-	saveImage(dc, "TestCircles")
+	_ = saveImage(dc, "TestCircles")
 	checkHash(t, dc, "cf4f1afe2c5087d184af3147ed035833")
 }
 
@@ -114,7 +114,7 @@ func TestQuadratic(t *testing.T) {
 		dc.SetRGB(rnd.Float64(), rnd.Float64(), rnd.Float64())
 		dc.Stroke()
 	}
-	saveImage(dc, "TestQuadratic")
+	_ = saveImage(dc, "TestQuadratic")
 	checkHash(t, dc, "56b842d814aee94b52495addae764a77")
 }
 
@@ -138,7 +138,7 @@ func TestCubic(t *testing.T) {
 		dc.SetRGB(rnd.Float64(), rnd.Float64(), rnd.Float64())
 		dc.Stroke()
 	}
-	saveImage(dc, "TestCubic")
+	_ = saveImage(dc, "TestCubic")
 	checkHash(t, dc, "4a7960fc4eaaa33ce74131c5ce0afca8")
 }
 
@@ -158,7 +158,7 @@ func TestFill(t *testing.T) {
 		dc.SetRGBA(rnd.Float64(), rnd.Float64(), rnd.Float64(), rnd.Float64())
 		dc.Fill()
 	}
-	saveImage(dc, "TestFill")
+	_ = saveImage(dc, "TestFill")
 	checkHash(t, dc, "7ccb3a2443906a825e57ab94db785467")
 }
 
@@ -177,7 +177,7 @@ func TestClip(t *testing.T) {
 		dc.SetRGBA(rnd.Float64(), rnd.Float64(), rnd.Float64(), rnd.Float64())
 		dc.Fill()
 	}
-	saveImage(dc, "TestClip")
+	_ = saveImage(dc, "TestClip")
 	checkHash(t, dc, "762c32374d529fd45ffa038b05be7865")
 }
 
@@ -192,7 +192,7 @@ func TestPushPop(t *testing.T) {
 		dc.Fill()
 		dc.Pop()
 	}
-	saveImage(dc, "TestPushPop")
+	_ = saveImage(dc, "TestPushPop")
 	checkHash(t, dc, "31e908ee1c2ea180da98fd5681a89d05")
 }
 
@@ -202,7 +202,7 @@ func TestDrawStringWrapped(t *testing.T) {
 	dc.Clear()
 	dc.SetRGB(0, 0, 0)
 	dc.DrawStringWrapped("Hello, world! How are you?", 50, 50, 0.5, 0.5, 90, 1.5, AlignCenter)
-	saveImage(dc, "TestDrawStringWrapped")
+	_ = saveImage(dc, "TestDrawStringWrapped")
 	checkHash(t, dc, "c56d9177c26061dd928c4ff4a44d255d")
 }
 
@@ -222,7 +222,7 @@ func TestDrawImage(t *testing.T) {
 	dc.SetRGB(0, 0, 0)
 	dc.Clear()
 	dc.DrawImage(src.Image(), 50, 50)
-	saveImage(dc, "TestDrawImage")
+	_ = saveImage(dc, "TestDrawImage")
 	checkHash(t, dc, "282afbc134676722960b6bec21305b15")
 }
 
@@ -240,7 +240,7 @@ func TestSetPixel(t *testing.T) {
 			i++
 		}
 	}
-	saveImage(dc, "TestSetPixel")
+	_ = saveImage(dc, "TestSetPixel")
 	checkHash(t, dc, "27dda6b4b1d94f061018825b11982793")
 }
 
@@ -256,7 +256,7 @@ func TestDrawPoint(t *testing.T) {
 			dc.Fill()
 		}
 	}
-	saveImage(dc, "TestDrawPoint")
+	_ = saveImage(dc, "TestDrawPoint")
 	checkHash(t, dc, "55af8874531947ea6eeb62222fb33e0e")
 }
 
@@ -269,7 +269,7 @@ func TestLinearGradient(t *testing.T) {
 	dc.SetFillStyle(g)
 	dc.DrawRectangle(0, 0, 100, 100)
 	dc.Fill()
-	saveImage(dc, "TestLinearGradient")
+	_ = saveImage(dc, "TestLinearGradient")
 	checkHash(t, dc, "75eb9385c1219b1d5bb6f4c961802c7a")
 }
 
@@ -282,7 +282,7 @@ func TestRadialGradient(t *testing.T) {
 	dc.SetFillStyle(g)
 	dc.DrawRectangle(0, 0, 100, 100)
 	dc.Fill()
-	saveImage(dc, "TestRadialGradient")
+	_ = saveImage(dc, "TestRadialGradient")
 	checkHash(t, dc, "f170f39c3f35c29de11e00428532489d")
 }
 
@@ -302,7 +302,7 @@ func TestDashes(t *testing.T) {
 		dc.SetRGB(rnd.Float64(), rnd.Float64(), rnd.Float64())
 		dc.Stroke()
 	}
-	saveImage(dc, "TestDashes")
+	_ = saveImage(dc, "TestDashes")
 	checkHash(t, dc, "d188069c69dcc3970edfac80f552b53c")
 }
 

@@ -17,13 +17,13 @@ func BenchmarkSetOrigin(b *testing.B) {
 	wc := NewWindowContext(nil, nil, nil)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		wc.SetOrigin("https://example.com")
+		_ = wc.SetOrigin("https://example.com")
 	}
 }
 
 func BenchmarkGetOrigin(b *testing.B) {
 	wc := NewWindowContext(nil, nil, nil)
-	wc.SetOrigin("https://example.com:8080/path")
+	_ = wc.SetOrigin("https://example.com:8080/path")
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		wc.GetOrigin()
@@ -81,4 +81,3 @@ func BenchmarkSetActive(b *testing.B) {
 		wc.SetActive(false)
 	}
 }
-

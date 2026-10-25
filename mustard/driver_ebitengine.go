@@ -35,38 +35,6 @@ func (d *ebitenDriver) NewApp(name string) AppDriver {
 	return &ebitenApp{name: name}
 }
 
-// ebitenWindow implements Window using Ebitengine.
-type ebitenWindow struct {
-	title   string
-	width   int
-	height  int
-	visible bool
-	closed  bool
-	cursor  Cursor
-}
-
-func (w *ebitenWindow) Show() { w.visible = true }
-func (w *ebitenWindow) Hide() { w.visible = false }
-func (w *ebitenWindow) Close() { w.closed = true }
-func (w *ebitenWindow) IsClosed() bool { return w.closed }
-func (w *ebitenWindow) SetTitle(title string) {
-	w.title = title
-	ebiten.SetWindowTitle(title)
-}
-func (w *ebitenWindow) Size() (int, int) { return w.width, w.height }
-func (w *ebitenWindow) SetSize(width, height int) {
-	w.width = width
-	w.height = height
-	ebiten.SetWindowSize(width, height)
-}
-func (w *ebitenWindow) PollEvents() {}
-func (w *ebitenWindow) ShouldClose() bool { return w.IsClosed() }
-func (w *ebitenWindow) GetCursorPosition() (float64, float64) {
-	x, y := ebiten.CursorPosition()
-	return float64(x), float64(y)
-}
-func (w *ebitenWindow) SetCursor(cursor Cursor) { w.cursor = cursor }
-
 // ebitenRenderer implements Renderer using Ebitengine.
 type ebitenRenderer struct {
 	window Window
@@ -78,17 +46,20 @@ func (r *ebitenRenderer) Clear() {
 		r.screen.Fill(color.RGBA{0, 0, 0, 0})
 	}
 }
+
 func (r *ebitenRenderer) DrawImage(img image.Image, x, y float64) {
 	_ = img
 	_ = x
 	_ = y
 }
+
 func (r *ebitenRenderer) SetColor(rf, g, b, a float32) {
 	_ = rf
 	_ = g
 	_ = b
 	_ = a
 }
+
 func (r *ebitenRenderer) DrawRectangle(x, y, width, height float64) {
 	_ = x
 	_ = y
@@ -131,7 +102,7 @@ func (a *ebitenApp) Run(callback func()) {
 	ws, hs := w.Size()
 	ebiten.SetWindowSize(ws, hs)
 	ebiten.SetWindowTitle(a.name)
-	ebiten.RunGame(&ebitenGame{app: a})
+	_ = ebiten.RunGame(&ebitenGame{app: a})
 }
 
 func (a *ebitenApp) AddWindow(w Window) {
@@ -172,10 +143,4 @@ func (g *ebitenGame) Layout(outsideWidth, outsideHeight int) (int, int) {
 		return g.app.windows[0].Size()
 	}
 	return 640, 480
-}
-
-type errInvalidWindow struct{}
-
-func (e *errInvalidWindow) Error() string {
-	return "mustard: invalid window type for ebitengine driver"
 }

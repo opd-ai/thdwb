@@ -25,7 +25,7 @@ func BenchmarkWidgetSetters(b *testing.B) {
 			widgetType:      labelWidget,
 			backgroundColor: "#fff",
 		},
-		content: "test",
+		content:   "test",
 		fontSize:  16,
 		fontColor: "#000",
 	}
@@ -42,9 +42,9 @@ func BenchmarkWidgetSetters(b *testing.B) {
 
 func BenchmarkBaseWidgetVisibility(b *testing.B) {
 	widget := &baseWidget{
-		widgetType:   labelWidget,
+		widgetType:      labelWidget,
 		backgroundColor: "#fff",
-		visible:      true,
+		visible:         true,
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -112,31 +112,31 @@ func BenchmarkGetCoreWidgets(b *testing.B) {
 	widgets := []Widget{
 		&LabelWidget{
 			baseWidget: baseWidget{
-				visible: true,
-				widgetType: labelWidget,
+				visible:         true,
+				widgetType:      labelWidget,
 				backgroundColor: "#fff",
 			},
-			content: "a",
+			content:   "a",
 			fontSize:  10,
 			fontColor: "#000",
 		},
 		&LabelWidget{
 			baseWidget: baseWidget{
-				visible: false,
-				widgetType: labelWidget,
+				visible:         false,
+				widgetType:      labelWidget,
 				backgroundColor: "#fff",
 			},
-			content: "b",
+			content:   "b",
 			fontSize:  10,
 			fontColor: "#000",
 		},
 		&LabelWidget{
 			baseWidget: baseWidget{
-				visible: true,
-				widgetType: labelWidget,
+				visible:         true,
+				widgetType:      labelWidget,
 				backgroundColor: "#fff",
 			},
-			content: "c",
+			content:   "c",
 			fontSize:  10,
 			fontColor: "#000",
 		},
@@ -150,13 +150,13 @@ func BenchmarkGetCoreWidgets(b *testing.B) {
 func BenchmarkCompositeWidget(b *testing.B) {
 	widget := &LabelWidget{
 		baseWidget: baseWidget{
-			needsRepaint: true,
-			computedBox:  box{top: 0, left: 0, width: 10, height: 10},
-			buffer:       image.NewRGBA(image.Rect(0, 0, 10, 10)),
-			widgetType:   labelWidget,
+			needsRepaint:    true,
+			computedBox:     box{top: 0, left: 0, width: 10, height: 10},
+			buffer:          image.NewRGBA(image.Rect(0, 0, 10, 10)),
+			widgetType:      labelWidget,
 			backgroundColor: "#fff",
 		},
-		content: "test",
+		content:   "test",
 		fontSize:  10,
 		fontColor: "#000",
 	}

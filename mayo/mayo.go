@@ -37,6 +37,10 @@ var inheritableProperties = map[string]bool{
 	"opacity":        true,
 }
 
+// _ = inheritableProperties keeps the symbol referenced while it awaits
+// integration with the CSS inheritance cascade.
+var _ = inheritableProperties
+
 // getDefaultElementDisplay returns the default 'display' value for an HTML element.
 // Implements the User Agent (UA) stylesheet defaults per HTML spec.
 // Unknown elements default to 'block'.
@@ -258,7 +262,7 @@ func parseInlineStylesheet(attributes []*hotdog.Attribute, elementStylesheet *ho
 		if attributeName == "style" {
 
 			styleString := attributes[i].Value
-			styleProps := strings.Split(strings.Replace(styleString, " ", "", -1), ";")
+			styleProps := strings.Split(strings.ReplaceAll(styleString, " ", ""), ";")
 
 			for i := 0; i < len(styleProps); i++ {
 				styledProperty := strings.Split(styleProps[i], ":")

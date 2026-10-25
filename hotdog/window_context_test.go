@@ -43,7 +43,7 @@ func TestWindowContextJSRuntimeIsolation(t *testing.T) {
 	}
 
 	// Set a variable in runtime1
-	runtime1.Set("testVar", 42)
+	_ = runtime1.Set("testVar", 42)
 
 	// Verify runtime2 doesn't have that variable
 	val := runtime2.Get("testVar")
@@ -468,7 +468,7 @@ func TestWindowEventListenerRemoval(t *testing.T) {
 
 	runtime := wc.GetJSRuntime()
 	calls := 0
-	runtime.Set("onMessage", func(call goja.FunctionCall) goja.Value {
+	_ = runtime.Set("onMessage", func(call goja.FunctionCall) goja.Value {
 		calls++
 		return goja.Undefined()
 	})
@@ -851,8 +851,8 @@ func TestCrossOriginDOMAccess(t *testing.T) {
 	wc1 := NewWindowContext(settings, buildInfo, prof)
 	wc2 := NewWindowContext(settings, buildInfo, prof)
 
-	wc1.SetOrigin("https://example.com")
-	wc2.SetOrigin("https://other.com")
+	_ = wc1.SetOrigin("https://example.com")
+	_ = wc2.SetOrigin("https://other.com")
 
 	// Parse HTML for both windows with a div already in body
 	htmlContent := `<html><head></head><body><div id="test">Secret</div></body></html>`
@@ -1082,13 +1082,13 @@ func TestStoragePartitioningByOrigin(t *testing.T) {
 	origin2, _ := url.Parse("https://other.com:443")
 
 	wc1 := NewWindowContext(settings, buildInfo, prof)
-	wc1.SetOrigin(origin1.String())
+	_ = wc1.SetOrigin(origin1.String())
 
 	wc2 := NewWindowContext(settings, buildInfo, prof)
-	wc2.SetOrigin(origin1.String()) // Same origin as wc1
+	_ = wc2.SetOrigin(origin1.String()) // Same origin as wc1
 
 	wc3 := NewWindowContext(settings, buildInfo, prof)
-	wc3.SetOrigin(origin2.String()) // Different origin
+	_ = wc3.SetOrigin(origin2.String()) // Different origin
 
 	// Initialize JS runtimes
 	err := wc1.InitJSRuntime()
@@ -1217,7 +1217,7 @@ func TestStoragePartitioningByOrigin(t *testing.T) {
 	// Verify sessionStorage is cleared on window destroy
 	// Create new window with same origin
 	wc4 := NewWindowContext(settings, buildInfo, prof)
-	wc4.SetOrigin(origin1.String())
+	_ = wc4.SetOrigin(origin1.String())
 	err = wc4.InitJSRuntime()
 	if err != nil {
 		t.Fatalf("Failed to init wc4 JS runtime: %v", err)
@@ -1233,14 +1233,14 @@ func TestStoragePartitioningByOrigin(t *testing.T) {
 	}
 
 	// But localStorage should persist across window destroy
-	val, err = runtime4.RunString(`localStorage.setItem("persistKey", "persistValue")`)
+	_, err = runtime4.RunString(`localStorage.setItem("persistKey", "persistValue")`)
 	if err != nil {
 		t.Fatalf("wc4 failed to set localStorage: %v", err)
 	}
 	wc4.Destroy()
 
 	wc5 := NewWindowContext(settings, buildInfo, prof)
-	wc5.SetOrigin(origin1.String())
+	_ = wc5.SetOrigin(origin1.String())
 	err = wc5.InitJSRuntime()
 	if err != nil {
 		t.Fatalf("Failed to init wc5 JS runtime: %v", err)
@@ -1298,10 +1298,10 @@ func TestPostMessageTargetOriginValidation(t *testing.T) {
 	origin2, _ := url.Parse("https://other.com:443")
 
 	wc1 := NewWindowContext(settings, buildInfo, prof)
-	wc1.SetOrigin(origin1.String())
+	_ = wc1.SetOrigin(origin1.String())
 
 	wc2 := NewWindowContext(settings, buildInfo, prof)
-	wc2.SetOrigin(origin2.String())
+	_ = wc2.SetOrigin(origin2.String())
 
 	err := wc1.InitJSRuntime()
 	if err != nil {
@@ -1318,7 +1318,7 @@ func TestPostMessageTargetOriginValidation(t *testing.T) {
 	// Test 1: postMessage with "*" targetOrigin delivers to all windows
 	t.Run("wildcard targetOrigin delivers to all windows", func(t *testing.T) {
 		var receivedMsg interface{}
-		runtime2.Set("onMessageHandler", func(call goja.FunctionCall) goja.Value {
+		_ = runtime2.Set("onMessageHandler", func(call goja.FunctionCall) goja.Value {
 			receivedMsg = call.Arguments[0].Export()
 			return goja.Undefined()
 		})
@@ -1361,10 +1361,10 @@ func TestPostMessageSpecificTargetOrigin(t *testing.T) {
 	origin2, _ := url.Parse("https://other.com:443")
 
 	wc1 := NewWindowContext(settings, buildInfo, prof)
-	wc1.SetOrigin(origin1.String())
+	_ = wc1.SetOrigin(origin1.String())
 
 	wc2 := NewWindowContext(settings, buildInfo, prof)
-	wc2.SetOrigin(origin2.String())
+	_ = wc2.SetOrigin(origin2.String())
 
 	err := wc1.InitJSRuntime()
 	if err != nil {
@@ -1380,7 +1380,7 @@ func TestPostMessageSpecificTargetOrigin(t *testing.T) {
 
 	// Test: postMessage with specific targetOrigin delivers only to matching origin
 	var receivedMsg2 interface{}
-	runtime2.Set("onMessageHandler2", func(call goja.FunctionCall) goja.Value {
+	_ = runtime2.Set("onMessageHandler2", func(call goja.FunctionCall) goja.Value {
 		receivedMsg2 = call.Arguments[0].Export()
 		return goja.Undefined()
 	})
@@ -1421,10 +1421,10 @@ func TestPostMessageNonMatchingTargetOrigin(t *testing.T) {
 	origin2, _ := url.Parse("https://other.com:443")
 
 	wc1 := NewWindowContext(settings, buildInfo, prof)
-	wc1.SetOrigin(origin1.String())
+	_ = wc1.SetOrigin(origin1.String())
 
 	wc2 := NewWindowContext(settings, buildInfo, prof)
-	wc2.SetOrigin(origin2.String())
+	_ = wc2.SetOrigin(origin2.String())
 
 	err := wc1.InitJSRuntime()
 	if err != nil {
@@ -1440,7 +1440,7 @@ func TestPostMessageNonMatchingTargetOrigin(t *testing.T) {
 
 	// Test: postMessage with non-matching targetOrigin does not deliver
 	var receivedMsg3 interface{}
-	runtime2.Set("onMessageHandler3", func(call goja.FunctionCall) goja.Value {
+	_ = runtime2.Set("onMessageHandler3", func(call goja.FunctionCall) goja.Value {
 		receivedMsg3 = call.Arguments[0].Export()
 		return goja.Undefined()
 	})
@@ -1473,7 +1473,7 @@ func TestPostMessageInvalidTargetOrigin(t *testing.T) {
 	origin1, _ := url.Parse("https://example.com:443")
 
 	wc1 := NewWindowContext(settings, buildInfo, prof)
-	wc1.SetOrigin(origin1.String())
+	_ = wc1.SetOrigin(origin1.String())
 
 	err := wc1.InitJSRuntime()
 	if err != nil {
@@ -1503,10 +1503,10 @@ func TestPostMessageSameOrigin(t *testing.T) {
 	origin1, _ := url.Parse("https://example.com:443")
 
 	wc1 := NewWindowContext(settings, buildInfo, prof)
-	wc1.SetOrigin(origin1.String())
+	_ = wc1.SetOrigin(origin1.String())
 
 	wc2 := NewWindowContext(settings, buildInfo, prof)
-	wc2.SetOrigin(origin1.String()) // Same origin
+	_ = wc2.SetOrigin(origin1.String()) // Same origin
 
 	err := wc1.InitJSRuntime()
 	if err != nil {
@@ -1522,7 +1522,7 @@ func TestPostMessageSameOrigin(t *testing.T) {
 
 	// Test: same-origin targetOrigin delivers to same origin windows
 	var receivedMsg4 interface{}
-	runtime2.Set("onMessageHandler4", func(call goja.FunctionCall) goja.Value {
+	_ = runtime2.Set("onMessageHandler4", func(call goja.FunctionCall) goja.Value {
 		receivedMsg4 = call.Arguments[0].Export()
 		return goja.Undefined()
 	})
@@ -1562,10 +1562,10 @@ func TestPostMessageCrossWindowIsolation(t *testing.T) {
 	origin1, _ := url.Parse("https://example.com:443")
 
 	wc1 := NewWindowContext(settings, buildInfo, prof)
-	wc1.SetOrigin(origin1.String())
+	_ = wc1.SetOrigin(origin1.String())
 
 	wc2 := NewWindowContext(settings, buildInfo, prof)
-	wc2.SetOrigin(origin1.String()) // Same origin
+	_ = wc2.SetOrigin(origin1.String()) // Same origin
 
 	err := wc1.InitJSRuntime()
 	if err != nil {
@@ -1581,11 +1581,11 @@ func TestPostMessageCrossWindowIsolation(t *testing.T) {
 
 	// Test that postMessage with "*" delivers to both windows (including sender)
 	var receivedMsg1, receivedMsg2 interface{}
-	runtime1.Set("handler1", func(call goja.FunctionCall) goja.Value {
+	_ = runtime1.Set("handler1", func(call goja.FunctionCall) goja.Value {
 		receivedMsg1 = call.Arguments[0].Export()
 		return goja.Undefined()
 	})
-	runtime2.Set("handler2", func(call goja.FunctionCall) goja.Value {
+	_ = runtime2.Set("handler2", func(call goja.FunctionCall) goja.Value {
 		receivedMsg2 = call.Arguments[0].Export()
 		return goja.Undefined()
 	})
@@ -1625,10 +1625,10 @@ func TestCORSPreflightFetch(t *testing.T) {
 	origin2, _ := url.Parse("https://api.other.com:443")
 
 	wc1 := NewWindowContext(settings, buildInfo, prof)
-	wc1.SetOrigin(origin1.String())
+	_ = wc1.SetOrigin(origin1.String())
 
 	wc2 := NewWindowContext(settings, buildInfo, prof)
-	wc2.SetOrigin(origin2.String())
+	_ = wc2.SetOrigin(origin2.String())
 
 	err := wc1.InitJSRuntime()
 	if err != nil {
@@ -1678,10 +1678,10 @@ func TestCORSPreflightXHR(t *testing.T) {
 	origin2, _ := url.Parse("https://api.other.com:443")
 
 	wc1 := NewWindowContext(settings, buildInfo, prof)
-	wc1.SetOrigin(origin1.String())
+	_ = wc1.SetOrigin(origin1.String())
 
 	wc2 := NewWindowContext(settings, buildInfo, prof)
-	wc2.SetOrigin(origin2.String())
+	_ = wc2.SetOrigin(origin2.String())
 
 	err := wc1.InitJSRuntime()
 	if err != nil {
@@ -1741,10 +1741,10 @@ func TestSOPBlocksCrossOriginResourceLoads(t *testing.T) {
 	origin2, _ := url.Parse("https://other.com:443")
 
 	wc1 := NewWindowContext(settings, buildInfo, prof)
-	wc1.SetOrigin(origin1.String())
+	_ = wc1.SetOrigin(origin1.String())
 
 	wc2 := NewWindowContext(settings, buildInfo, prof)
-	wc2.SetOrigin(origin2.String())
+	_ = wc2.SetOrigin(origin2.String())
 
 	err := wc1.InitJSRuntime()
 	if err != nil {
@@ -1915,7 +1915,7 @@ func TestCORSHelperFunctions(t *testing.T) {
 
 		// Method not allowed
 		resp = &sauce.Resource{Code: 200, Headers: http.Header{
-			"Access-Control-Allow-Origin": []string{"*"},
+			"Access-Control-Allow-Origin":  []string{"*"},
 			"Access-Control-Allow-Methods": []string{"GET, POST"},
 		}}
 		if isCORSPreflightSuccessful(resp, "https://example.com", "DELETE", nil) {
@@ -1924,7 +1924,7 @@ func TestCORSHelperFunctions(t *testing.T) {
 
 		// Header not allowed
 		resp = &sauce.Resource{Code: 200, Headers: http.Header{
-			"Access-Control-Allow-Origin": []string{"*"},
+			"Access-Control-Allow-Origin":  []string{"*"},
 			"Access-Control-Allow-Headers": []string{"content-type"},
 		}}
 		if isCORSPreflightSuccessful(resp, "https://example.com", "POST", map[string]string{"X-Custom": "value"}) {

@@ -88,12 +88,12 @@ func (mo *MutationObserver) Trigger(target *NodeDOM, mutationType string) {
 
 	records := mo.runtime.NewArray()
 	record := mo.runtime.NewObject()
-	record.Set("type", mutationType)
+	_ = record.Set("type", mutationType)
 	if target != nil {
 		docWrapper := &JSDocumentWrapper{doc: target.Document, runtime: mo.runtime, windowCtx: mo.windowCtx}
-		record.Set("target", docWrapper.wrapNode(target))
+		_ = record.Set("target", docWrapper.wrapNode(target))
 	}
-	records.Set("0", record)
+	_ = records.Set("0", record)
 	_, _ = mo.callback(goja.Undefined(), records)
 }
 
@@ -103,36 +103,36 @@ func applyJSEventOptions(event *goja.Object, runtime *goja.Runtime, options goja
 	}
 	optionsObject := options.ToObject(runtime)
 	if bubbles := optionsObject.Get("bubbles"); bubbles != nil {
-		event.Set("bubbles", bubbles.ToBoolean())
+		_ = event.Set("bubbles", bubbles.ToBoolean())
 	}
 	if cancelable := optionsObject.Get("cancelable"); cancelable != nil {
-		event.Set("cancelable", cancelable.ToBoolean())
+		_ = event.Set("cancelable", cancelable.ToBoolean())
 	}
 }
 
 func installJSEventMethods(event *goja.Object) {
-	event.Set("preventDefault", func(goja.FunctionCall) goja.Value {
+	_ = event.Set("preventDefault", func(goja.FunctionCall) goja.Value {
 		if event.Get("cancelable").ToBoolean() {
-			event.Set("defaultPrevented", true)
+			_ = event.Set("defaultPrevented", true)
 		}
 		return goja.Undefined()
 	})
-	event.Set("stopPropagation", func(goja.FunctionCall) goja.Value {
-		event.Set("cancelBubble", true)
+	_ = event.Set("stopPropagation", func(goja.FunctionCall) goja.Value {
+		_ = event.Set("cancelBubble", true)
 		return goja.Undefined()
 	})
 }
 
 func newJSEvent(runtime *goja.Runtime, call goja.ConstructorCall) *goja.Object {
 	if len(call.Arguments) == 0 {
-		panic(runtime.NewGoError(errors.New("Event requires a type argument")))
+		panic(runtime.NewGoError(errors.New("event requires a type argument")))
 	}
 	event := runtime.NewObject()
-	event.Set("type", call.Argument(0).String())
-	event.Set("bubbles", false)
-	event.Set("cancelable", false)
-	event.Set("defaultPrevented", false)
-	event.Set("cancelBubble", false)
+	_ = event.Set("type", call.Argument(0).String())
+	_ = event.Set("bubbles", false)
+	_ = event.Set("cancelable", false)
+	_ = event.Set("defaultPrevented", false)
+	_ = event.Set("cancelBubble", false)
 	if len(call.Arguments) > 1 {
 		applyJSEventOptions(event, runtime, call.Argument(1))
 	}
@@ -152,7 +152,7 @@ func (wc *WindowContext) InitJSRuntime() error {
 	if wc.ActiveDocument != nil && wc.ActiveDocument.ResponseHeaders != nil {
 		wc.ActiveDocument.ApplyContentSecurityPolicyHeaders(wc.ActiveDocument.ResponseHeaders)
 	}
-	runtime.Set("Event", func(call goja.ConstructorCall) *goja.Object {
+	_ = runtime.Set("Event", func(call goja.ConstructorCall) *goja.Object {
 		return newJSEvent(runtime, call)
 	})
 
@@ -162,10 +162,10 @@ func (wc *WindowContext) InitJSRuntime() error {
 		runtime:   runtime,
 	}
 	consoleObj := runtime.NewObject()
-	consoleObj.Set("log", console.log)
-	consoleObj.Set("error", console.error)
-	consoleObj.Set("warn", console.warn)
-	runtime.Set("console", consoleObj)
+	_ = consoleObj.Set("log", console.log)
+	_ = consoleObj.Set("error", console.error)
+	_ = consoleObj.Set("warn", console.warn)
+	_ = runtime.Set("console", consoleObj)
 
 	// Create document object
 	if wc.ActiveDocument != nil {
@@ -175,18 +175,18 @@ func (wc *WindowContext) InitJSRuntime() error {
 			windowCtx: wc,
 		}
 		docObj := runtime.NewObject()
-		docObj.Set("querySelector", docWrapper.querySelector)
-		docObj.Set("querySelectorAll", docWrapper.querySelectorAll)
-		docObj.Set("getElementById", docWrapper.getElementById)
-		docObj.Set("getElementsByClassName", docWrapper.getElementsByClassName)
-		docObj.Set("getElementsByTagName", docWrapper.getElementsByTagName)
-		docObj.Set("createElement", docWrapper.createElement)
-		docObj.Set("createTextNode", docWrapper.createTextNode)
+		_ = docObj.Set("querySelector", docWrapper.querySelector)
+		_ = docObj.Set("querySelectorAll", docWrapper.querySelectorAll)
+		_ = docObj.Set("getElementById", docWrapper.getElementById)
+		_ = docObj.Set("getElementsByClassName", docWrapper.getElementsByClassName)
+		_ = docObj.Set("getElementsByTagName", docWrapper.getElementsByTagName)
+		_ = docObj.Set("createElement", docWrapper.createElement)
+		_ = docObj.Set("createTextNode", docWrapper.createTextNode)
 		// Expose body and documentElement as properties (getters)
-		docObj.DefineAccessorProperty("body", runtime.ToValue(docWrapper.getBody), goja.Undefined(), 0, 0)
-		docObj.DefineAccessorProperty("documentElement", runtime.ToValue(docWrapper.getDocumentElement), goja.Undefined(), 0, 0)
-		docObj.Set("title", docWrapper.getTitle)
-		runtime.Set("document", docObj)
+		_ = docObj.DefineAccessorProperty("body", runtime.ToValue(docWrapper.getBody), goja.Undefined(), 0, 0)
+		_ = docObj.DefineAccessorProperty("documentElement", runtime.ToValue(docWrapper.getDocumentElement), goja.Undefined(), 0, 0)
+		_ = docObj.Set("title", docWrapper.getTitle)
+		_ = runtime.Set("document", docObj)
 	}
 
 	// Create window object
@@ -195,15 +195,15 @@ func (wc *WindowContext) InitJSRuntime() error {
 		runtime:   runtime,
 	}
 	windowObj := runtime.NewObject()
-	windowObj.Set("document", runtime.Get("document"))
-	windowObj.Set("console", runtime.Get("console"))
-	windowObj.Set("location", windowWrapper.getLocation)
-	windowObj.Set("addEventListener", windowWrapper.addEventListener)
-	windowObj.Set("removeEventListener", windowWrapper.removeEventListener)
-	windowObj.Set("requestAnimationFrame", windowWrapper.requestAnimationFrame)
-	windowObj.Set("cancelAnimationFrame", windowWrapper.cancelAnimationFrame)
-	windowObj.Set("Event", runtime.Get("Event"))
-	windowObj.Set("MutationObserver", func(call goja.ConstructorCall) *goja.Object {
+	_ = windowObj.Set("document", runtime.Get("document"))
+	_ = windowObj.Set("console", runtime.Get("console"))
+	_ = windowObj.Set("location", windowWrapper.getLocation)
+	_ = windowObj.Set("addEventListener", windowWrapper.addEventListener)
+	_ = windowObj.Set("removeEventListener", windowWrapper.removeEventListener)
+	_ = windowObj.Set("requestAnimationFrame", windowWrapper.requestAnimationFrame)
+	_ = windowObj.Set("cancelAnimationFrame", windowWrapper.cancelAnimationFrame)
+	_ = windowObj.Set("Event", runtime.Get("Event"))
+	_ = windowObj.Set("MutationObserver", func(call goja.ConstructorCall) *goja.Object {
 		if len(call.Arguments) < 1 {
 			panic(runtime.NewGoError(errors.New("MutationObserver requires a callback argument")))
 		}
@@ -214,7 +214,7 @@ func (wc *WindowContext) InitJSRuntime() error {
 		observer := &MutationObserver{runtime: runtime, windowCtx: wc, callback: cb, observed: make(map[*NodeDOM]struct{})}
 		wc.RegisterMutationObserver(observer)
 		obj := runtime.NewObject()
-		obj.Set("observe", func(call goja.FunctionCall) goja.Value {
+		_ = obj.Set("observe", func(call goja.FunctionCall) goja.Value {
 			if len(call.Arguments) < 1 {
 				return goja.Undefined()
 			}
@@ -229,41 +229,41 @@ func (wc *WindowContext) InitJSRuntime() error {
 			observer.observe(wrapper.node, nil)
 			return goja.Undefined()
 		})
-		obj.Set("disconnect", func(call goja.FunctionCall) goja.Value {
+		_ = obj.Set("disconnect", func(call goja.FunctionCall) goja.Value {
 			observer.disconnect()
 			wc.UnregisterMutationObserver(observer)
 			return goja.Undefined()
 		})
-		obj.Set("takeRecords", func(call goja.FunctionCall) goja.Value {
+		_ = obj.Set("takeRecords", func(call goja.FunctionCall) goja.Value {
 			return runtime.NewArray()
 		})
 		return obj
 	})
-	windowObj.Set("postMessage", windowWrapper.postMessage)
-	windowObj.Set("fetch", windowWrapper.fetch)
-	windowObj.Set("XMLHttpRequest", windowWrapper.XMLHttpRequest)
+	_ = windowObj.Set("postMessage", windowWrapper.postMessage)
+	_ = windowObj.Set("fetch", windowWrapper.fetch)
+	_ = windowObj.Set("XMLHttpRequest", windowWrapper.XMLHttpRequest)
 
 	// Create localStorage and sessionStorage objects (singletons per origin/window)
 	localStorageObj := windowWrapper.getStorage("localStorage")
 	sessionStorageObj := windowWrapper.getStorage("sessionStorage")
 
 	// Set as properties on window object
-	windowObj.Set("localStorage", localStorageObj)
-	windowObj.Set("sessionStorage", sessionStorageObj)
+	_ = windowObj.Set("localStorage", localStorageObj)
+	_ = windowObj.Set("sessionStorage", sessionStorageObj)
 
 	// Also set as globals (window.localStorage === localStorage)
-	runtime.Set("window", windowObj)
-	runtime.Set("self", windowObj) // window.self === window
-	runtime.Set("requestAnimationFrame", windowWrapper.requestAnimationFrame)
-	runtime.Set("cancelAnimationFrame", windowWrapper.cancelAnimationFrame)
-	runtime.Set("MutationObserver", windowObj.Get("MutationObserver"))
-	runtime.Set("localStorage", localStorageObj)
-	runtime.Set("sessionStorage", sessionStorageObj)
-	runtime.Set("fetch", windowWrapper.fetch)
-	runtime.Set("XMLHttpRequest", windowWrapper.XMLHttpRequest)
+	_ = runtime.Set("window", windowObj)
+	_ = runtime.Set("self", windowObj) // window.self === window
+	_ = runtime.Set("requestAnimationFrame", windowWrapper.requestAnimationFrame)
+	_ = runtime.Set("cancelAnimationFrame", windowWrapper.cancelAnimationFrame)
+	_ = runtime.Set("MutationObserver", windowObj.Get("MutationObserver"))
+	_ = runtime.Set("localStorage", localStorageObj)
+	_ = runtime.Set("sessionStorage", sessionStorageObj)
+	_ = runtime.Set("fetch", windowWrapper.fetch)
+	_ = runtime.Set("XMLHttpRequest", windowWrapper.XMLHttpRequest)
 
 	// Block dangerous APIs unless CSP allows
-	runtime.Set("eval", func(call goja.FunctionCall) goja.Value {
+	_ = runtime.Set("eval", func(call goja.FunctionCall) goja.Value {
 		// Check CSP for 'unsafe-eval' from the active document
 		if wc.ActiveDocument != nil && wc.ActiveDocument.CSP != nil {
 			if !wc.ActiveDocument.CSP.AllowEval() {
@@ -273,7 +273,7 @@ func (wc *WindowContext) InitJSRuntime() error {
 		// CSP allows eval, or no CSP is set. We still don't implement it for security.
 		return goja.Undefined()
 	})
-	runtime.Set("Function", func(call goja.FunctionCall) goja.Value {
+	_ = runtime.Set("Function", func(call goja.FunctionCall) goja.Value {
 		// Check CSP for 'unsafe-eval' from the active document
 		if wc.ActiveDocument != nil && wc.ActiveDocument.CSP != nil {
 			if !wc.ActiveDocument.CSP.AllowEval() {
@@ -360,7 +360,7 @@ func (d *JSDocumentWrapper) querySelectorAll(call goja.FunctionCall) goja.Value 
 	}
 	arr := d.runtime.NewArray()
 	for i, node := range results {
-		arr.Set(strconv.Itoa(i), d.wrapNode(node))
+		_ = arr.Set(strconv.Itoa(i), d.wrapNode(node))
 	}
 	return arr
 }
@@ -407,7 +407,7 @@ func (d *JSDocumentWrapper) getElementsByClassName(call goja.FunctionCall) goja.
 	}
 	arr := d.runtime.NewArray()
 	for i, node := range results {
-		arr.Set(strconv.Itoa(i), d.wrapNode(node))
+		_ = arr.Set(strconv.Itoa(i), d.wrapNode(node))
 	}
 	return arr
 }
@@ -431,7 +431,7 @@ func (d *JSDocumentWrapper) getElementsByTagName(call goja.FunctionCall) goja.Va
 	}
 	arr := d.runtime.NewArray()
 	for i, node := range results {
-		arr.Set(strconv.Itoa(i), d.wrapNode(node))
+		_ = arr.Set(strconv.Itoa(i), d.wrapNode(node))
 	}
 	return arr
 }
@@ -550,8 +550,8 @@ func (w *JSDOMWrapper) dispatchEvent(call goja.FunctionCall) goja.Value {
 
 func (w *JSDOMWrapper) click(goja.FunctionCall) goja.Value {
 	options := w.runtime.NewObject()
-	options.Set("bubbles", true)
-	options.Set("cancelable", true)
+	_ = options.Set("bubbles", true)
+	_ = options.Set("cancelable", true)
 	event := newJSEvent(w.runtime, goja.ConstructorCall{Arguments: []goja.Value{w.runtime.ToValue("click"), options}})
 	w.dispatchDOMEvent(event)
 	return goja.Undefined()
@@ -565,18 +565,18 @@ func (w *JSDOMWrapper) dispatchDOMEvent(event *goja.Object) goja.Value {
 	if !goja.IsString(eventType) || eventType.String() == "" {
 		panic(w.runtime.NewGoError(errors.New("event type must be a non-empty string")))
 	}
-	event.Set("target", w.wrapNode(w.node))
+	_ = event.Set("target", w.wrapNode(w.node))
 	for current := w.node; current != nil && current.WindowCtx == w.windowCtx; current = current.Parent {
 		if w.isIframeEventBoundary(current) {
 			break
 		}
-		event.Set("currentTarget", w.wrapNode(current))
+		_ = event.Set("currentTarget", w.wrapNode(current))
 		w.windowCtx.EmitNodeEvent(current, eventType.String(), event)
 		if !event.Get("bubbles").ToBoolean() || event.Get("cancelBubble").ToBoolean() {
 			break
 		}
 	}
-	event.Set("currentTarget", goja.Null())
+	_ = event.Set("currentTarget", goja.Null())
 	return w.runtime.ToValue(!event.Get("defaultPrevented").ToBoolean())
 }
 
@@ -618,7 +618,7 @@ func (w *JSDOMWrapper) querySelectorAll(call goja.FunctionCall) goja.Value {
 	}
 	arr := w.runtime.NewArray()
 	for i, node := range results {
-		arr.Set(strconv.Itoa(i), w.wrapNode(node))
+		_ = arr.Set(strconv.Itoa(i), w.wrapNode(node))
 	}
 	return arr
 }
@@ -805,7 +805,7 @@ func (w *JSDOMWrapper) getChildNodes(call goja.FunctionCall) goja.Value {
 	}
 	arr := w.runtime.NewArray()
 	for i, child := range w.node.Children {
-		arr.Set(strconv.Itoa(i), w.wrapNode(child))
+		_ = arr.Set(strconv.Itoa(i), w.wrapNode(child))
 	}
 	return arr
 }
@@ -1016,33 +1016,33 @@ func (w *JSDOMWrapper) getStyle(call goja.FunctionCall) goja.Value {
 	styleObj := w.runtime.NewObject()
 	style := w.node.Style
 	if style.Color != nil {
-		styleObj.Set("color", fmt.Sprintf("rgba(%d, %d, %d, %f)",
+		_ = styleObj.Set("color", fmt.Sprintf("rgba(%d, %d, %d, %f)",
 			int(style.Color.R*255), int(style.Color.G*255), int(style.Color.B*255), style.Color.A))
 	}
 	if style.BackgroundColor != nil {
-		styleObj.Set("backgroundColor", fmt.Sprintf("rgba(%d, %d, %d, %f)",
+		_ = styleObj.Set("backgroundColor", fmt.Sprintf("rgba(%d, %d, %d, %f)",
 			int(style.BackgroundColor.R*255), int(style.BackgroundColor.G*255), int(style.BackgroundColor.B*255), style.BackgroundColor.A))
 	}
 	if style.FontSize != 0 {
-		styleObj.Set("fontSize", fmt.Sprintf("%fpx", style.FontSize))
+		_ = styleObj.Set("fontSize", fmt.Sprintf("%fpx", style.FontSize))
 	}
 	if style.FontWeight != 0 {
-		styleObj.Set("fontWeight", strconv.Itoa(style.FontWeight))
+		_ = styleObj.Set("fontWeight", strconv.Itoa(style.FontWeight))
 	}
 	if style.FontFamily != "" {
-		styleObj.Set("fontFamily", style.FontFamily)
+		_ = styleObj.Set("fontFamily", style.FontFamily)
 	}
 	if style.Display != "" {
-		styleObj.Set("display", style.Display)
+		_ = styleObj.Set("display", style.Display)
 	}
 	if style.Position != "" {
-		styleObj.Set("position", style.Position)
+		_ = styleObj.Set("position", style.Position)
 	}
 	if style.Width != 0 {
-		styleObj.Set("width", fmt.Sprintf("%fpx", style.Width))
+		_ = styleObj.Set("width", fmt.Sprintf("%fpx", style.Width))
 	}
 	if style.Height != 0 {
-		styleObj.Set("height", fmt.Sprintf("%fpx", style.Height))
+		_ = styleObj.Set("height", fmt.Sprintf("%fpx", style.Height))
 	}
 	return styleObj
 }
@@ -1077,36 +1077,36 @@ func (w *JSDOMWrapper) wrapNode(node *NodeDOM) goja.Value {
 		windowCtx: w.windowCtx,
 	}
 	obj := w.runtime.NewObject()
-	obj.Set("nodeType", node.Type)
-	obj.Set("tagName", strings.ToUpper(node.Element))
+	_ = obj.Set("nodeType", node.Type)
+	_ = obj.Set("tagName", strings.ToUpper(node.Element))
 	// Define textContent with getter/setter
-	obj.DefineAccessorProperty("textContent", w.runtime.ToValue(wrapper.getTextContentProp), w.runtime.ToValue(wrapper.setTextContent), 0, 0)
+	_ = obj.DefineAccessorProperty("textContent", w.runtime.ToValue(wrapper.getTextContentProp), w.runtime.ToValue(wrapper.setTextContent), 0, 0)
 	// Define innerHTML with getter/setter
-	obj.DefineAccessorProperty("innerHTML", w.runtime.ToValue(wrapper.getInnerHTMLProp), w.runtime.ToValue(wrapper.setInnerHTML), 0, 0)
-	obj.Set("id", node.Attr("id"))
-	obj.Set("className", node.Attr("class"))
-	obj.Set("querySelector", wrapper.querySelector)
-	obj.Set("querySelectorAll", wrapper.querySelectorAll)
-	obj.Set("getAttribute", wrapper.getAttribute)
-	obj.Set("setAttribute", wrapper.setAttribute)
-	obj.Set("removeAttribute", wrapper.removeAttribute)
-	obj.Set("addEventListener", wrapper.addEventListener)
-	obj.Set("removeEventListener", wrapper.removeEventListener)
-	obj.Set("dispatchEvent", wrapper.dispatchEvent)
-	obj.Set("click", wrapper.click)
-	obj.Set("appendChild", wrapper.appendChild)
-	obj.Set("removeChild", wrapper.removeChild)
-	obj.Set("insertBefore", wrapper.insertBefore)
-	obj.Set("replaceChild", wrapper.replaceChild)
-	obj.Set("cloneNode", wrapper.cloneNode)
-	obj.Set("parentNode", wrapper.getParentNode)
-	obj.Set("childNodes", wrapper.getChildNodes)
-	obj.Set("firstChild", wrapper.getFirstChild)
-	obj.Set("lastChild", wrapper.getLastChild)
-	obj.Set("nextSibling", wrapper.getNextSibling)
-	obj.Set("previousSibling", wrapper.getPreviousSibling)
-	obj.Set("style", wrapper.getStyle)
-	obj.SetSymbol(nodeWrapperSymbol, wrapper) // Store wrapper reference for retrieval
+	_ = obj.DefineAccessorProperty("innerHTML", w.runtime.ToValue(wrapper.getInnerHTMLProp), w.runtime.ToValue(wrapper.setInnerHTML), 0, 0)
+	_ = obj.Set("id", node.Attr("id"))
+	_ = obj.Set("className", node.Attr("class"))
+	_ = obj.Set("querySelector", wrapper.querySelector)
+	_ = obj.Set("querySelectorAll", wrapper.querySelectorAll)
+	_ = obj.Set("getAttribute", wrapper.getAttribute)
+	_ = obj.Set("setAttribute", wrapper.setAttribute)
+	_ = obj.Set("removeAttribute", wrapper.removeAttribute)
+	_ = obj.Set("addEventListener", wrapper.addEventListener)
+	_ = obj.Set("removeEventListener", wrapper.removeEventListener)
+	_ = obj.Set("dispatchEvent", wrapper.dispatchEvent)
+	_ = obj.Set("click", wrapper.click)
+	_ = obj.Set("appendChild", wrapper.appendChild)
+	_ = obj.Set("removeChild", wrapper.removeChild)
+	_ = obj.Set("insertBefore", wrapper.insertBefore)
+	_ = obj.Set("replaceChild", wrapper.replaceChild)
+	_ = obj.Set("cloneNode", wrapper.cloneNode)
+	_ = obj.Set("parentNode", wrapper.getParentNode)
+	_ = obj.Set("childNodes", wrapper.getChildNodes)
+	_ = obj.Set("firstChild", wrapper.getFirstChild)
+	_ = obj.Set("lastChild", wrapper.getLastChild)
+	_ = obj.Set("nextSibling", wrapper.getNextSibling)
+	_ = obj.Set("previousSibling", wrapper.getPreviousSibling)
+	_ = obj.Set("style", wrapper.getStyle)
+	_ = obj.SetSymbol(nodeWrapperSymbol, wrapper) // Store wrapper reference for retrieval
 	w.windowCtx.nodeWrappers[node] = obj
 	return obj
 }
@@ -1180,27 +1180,27 @@ func (w *JSWindowWrapper) getLocation(call goja.FunctionCall) goja.Value {
 	locObj := w.runtime.NewObject()
 	origin := w.windowCtx.GetOrigin()
 	if origin != nil {
-		locObj.Set("href", origin.String())
-		locObj.Set("origin", origin.Scheme+"://"+origin.Host)
-		locObj.Set("protocol", origin.Scheme+":")
-		locObj.Set("host", origin.Host)
-		locObj.Set("hostname", origin.Hostname())
-		locObj.Set("port", origin.Port())
-		locObj.Set("pathname", "/")
-		locObj.Set("search", "")
-		locObj.Set("hash", "")
+		_ = locObj.Set("href", origin.String())
+		_ = locObj.Set("origin", origin.Scheme+"://"+origin.Host)
+		_ = locObj.Set("protocol", origin.Scheme+":")
+		_ = locObj.Set("host", origin.Host)
+		_ = locObj.Set("hostname", origin.Hostname())
+		_ = locObj.Set("port", origin.Port())
+		_ = locObj.Set("pathname", "/")
+		_ = locObj.Set("search", "")
+		_ = locObj.Set("hash", "")
 	} else {
-		locObj.Set("href", "about:blank")
-		locObj.Set("origin", "null")
-		locObj.Set("protocol", "")
-		locObj.Set("host", "")
-		locObj.Set("hostname", "")
-		locObj.Set("port", "")
-		locObj.Set("pathname", "/")
-		locObj.Set("search", "")
-		locObj.Set("hash", "")
+		_ = locObj.Set("href", "about:blank")
+		_ = locObj.Set("origin", "null")
+		_ = locObj.Set("protocol", "")
+		_ = locObj.Set("host", "")
+		_ = locObj.Set("hostname", "")
+		_ = locObj.Set("port", "")
+		_ = locObj.Set("pathname", "/")
+		_ = locObj.Set("search", "")
+		_ = locObj.Set("hash", "")
 	}
-	locObj.Set("reload", func(call goja.FunctionCall) goja.Value {
+	_ = locObj.Set("reload", func(call goja.FunctionCall) goja.Value {
 		w.windowCtx.EmitEvent("reload", nil)
 		return goja.Undefined()
 	})
@@ -1259,14 +1259,14 @@ func (w *JSWindowWrapper) storageOperations(storageType string) storageOperation
 
 func (w *JSWindowWrapper) buildStorageObject(storage storageOperations) goja.Value {
 	storageObj := w.runtime.NewObject()
-	storageObj.DefineAccessorProperty("length", w.runtime.ToValue(func(goja.FunctionCall) goja.Value {
+	_ = storageObj.DefineAccessorProperty("length", w.runtime.ToValue(func(goja.FunctionCall) goja.Value {
 		return w.runtime.ToValue(storage.length())
 	}), goja.Undefined(), 0, 0)
-	storageObj.Set("key", w.storageKey(storage))
-	storageObj.Set("getItem", w.storageGetItem(storage))
-	storageObj.Set("setItem", w.storageSetItem(storage))
-	storageObj.Set("removeItem", w.storageRemoveItem(storage))
-	storageObj.Set("clear", w.storageClear(storage))
+	_ = storageObj.Set("key", w.storageKey(storage))
+	_ = storageObj.Set("getItem", w.storageGetItem(storage))
+	_ = storageObj.Set("setItem", w.storageSetItem(storage))
+	_ = storageObj.Set("removeItem", w.storageRemoveItem(storage))
+	_ = storageObj.Set("clear", w.storageClear(storage))
 	return storageObj
 }
 
@@ -1350,7 +1350,7 @@ func (w *JSWindowWrapper) addEventListener(call goja.FunctionCall) goja.Value {
 		panic(w.runtime.NewGoError(errors.New("addEventListener listener must be a function")))
 	}
 	w.windowCtx.registerEvent(eventType, functionKey(listenerFunc), func(data interface{}) {
-		listenerFunc(goja.Undefined(), w.runtime.ToValue(data))
+		_, _ = listenerFunc(goja.Undefined(), w.runtime.ToValue(data))
 	})
 	return goja.Undefined()
 }
@@ -1409,9 +1409,9 @@ func (w *JSWindowWrapper) postMessage(call goja.FunctionCall) goja.Value {
 		}
 
 		eventObj := targetRuntime.NewObject()
-		eventObj.Set("data", message)
-		eventObj.Set("origin", windowOrigin)
-		eventObj.Set("source", w.windowCtx.GetJSRuntime().Get("window")) // reference to sender's window
+		_ = eventObj.Set("data", message)
+		_ = eventObj.Set("origin", windowOrigin)
+		_ = eventObj.Set("source", w.windowCtx.GetJSRuntime().Get("window")) // reference to sender's window
 
 		// Emit message event on the target window. jsRuntimeMu is not held
 		// during RunJS/SetJSValue (Goja is internally synchronized), so this
@@ -1457,7 +1457,7 @@ func (w *JSWindowWrapper) fetch(call goja.FunctionCall) goja.Value {
 	var options map[string]interface{}
 
 	if goja.IsUndefined(resourceArg) || goja.IsNull(resourceArg) {
-		reject(w.runtime.NewGoError(errors.New("fetch requires a resource argument")))
+		_ = reject(w.runtime.NewGoError(errors.New("fetch requires a resource argument")))
 		return w.runtime.ToValue(promise)
 	}
 
@@ -1510,7 +1510,7 @@ func (w *JSWindowWrapper) fetch(call goja.FunctionCall) goja.Value {
 	// Parse URL
 	parsedURL, err := url.Parse(requestURL)
 	if err != nil {
-		reject(w.runtime.NewGoError(fmt.Errorf("invalid URL: %w", err)))
+		_ = reject(w.runtime.NewGoError(fmt.Errorf("invalid URL: %w", err)))
 		return w.runtime.ToValue(promise)
 	}
 
@@ -1548,7 +1548,7 @@ func (w *JSWindowWrapper) fetch(call goja.FunctionCall) goja.Value {
 	// Execute request asynchronously
 	scheduleFetchError := func(err error) {
 		w.windowCtx.ScheduleAnimationFrame(func() {
-			reject(w.runtime.NewGoError(err))
+			_ = reject(w.runtime.NewGoError(err))
 		})
 	}
 	go func() {
@@ -1572,17 +1572,17 @@ func (w *JSWindowWrapper) fetch(call goja.FunctionCall) goja.Value {
 		// For cross-origin responses without CORS headers, make the response opaque
 		if isCrossOrigin && !isCORSResponseAllowed(resp, origin) {
 			resp = &sauce.Resource{
-				Code:      0,
-				Body:      "",
-				URL:       resp.URL,
-				Headers:   http.Header{},
+				Code:        0,
+				Body:        "",
+				URL:         resp.URL,
+				Headers:     http.Header{},
 				ContentType: "",
-				Key:       resp.Key,
+				Key:         resp.Key,
 			}
 		}
 
 		w.windowCtx.ScheduleAnimationFrame(func() {
-			resolve(w.createResponseObject(resp, isCrossOrigin))
+			_ = resolve(w.createResponseObject(resp, isCrossOrigin))
 		})
 	}()
 
@@ -1636,13 +1636,13 @@ func (w *JSWindowWrapper) XMLHttpRequest(call goja.ConstructorCall) *goja.Object
 			return
 		}
 		readyState = newState
-		xhrObj.Set("readyState", readyState)
+		_ = xhrObj.Set("readyState", readyState)
 
 		// Call onreadystatechange if set
 		if onreadystatechange != nil {
 			eventObj := w.runtime.NewObject()
-			eventObj.Set("type", "readystatechange")
-			eventObj.Set("target", xhrObj)
+			_ = eventObj.Set("type", "readystatechange")
+			_ = eventObj.Set("target", xhrObj)
 			callListener(onreadystatechange, eventObj)
 		}
 
@@ -1650,8 +1650,8 @@ func (w *JSWindowWrapper) XMLHttpRequest(call goja.ConstructorCall) *goja.Object
 		if listeners, ok := eventListeners["readystatechange"]; ok {
 			for _, listener := range listeners {
 				eventObj := w.runtime.NewObject()
-				eventObj.Set("type", "readystatechange")
-				eventObj.Set("target", xhrObj)
+				_ = eventObj.Set("type", "readystatechange")
+				_ = eventObj.Set("target", xhrObj)
 				callListener(listener, eventObj)
 			}
 		}
@@ -1661,16 +1661,16 @@ func (w *JSWindowWrapper) XMLHttpRequest(call goja.ConstructorCall) *goja.Object
 			if listeners, ok := eventListeners["load"]; ok {
 				for _, listener := range listeners {
 					eventObj := w.runtime.NewObject()
-					eventObj.Set("type", "load")
-					eventObj.Set("target", xhrObj)
+					_ = eventObj.Set("type", "load")
+					_ = eventObj.Set("target", xhrObj)
 					callListener(listener, eventObj)
 				}
 			}
 			if listeners, ok := eventListeners["loadend"]; ok {
 				for _, listener := range listeners {
 					eventObj := w.runtime.NewObject()
-					eventObj.Set("type", "loadend")
-					eventObj.Set("target", xhrObj)
+					_ = eventObj.Set("type", "loadend")
+					_ = eventObj.Set("target", xhrObj)
 					callListener(listener, eventObj)
 				}
 			}
@@ -1678,7 +1678,7 @@ func (w *JSWindowWrapper) XMLHttpRequest(call goja.ConstructorCall) *goja.Object
 	}
 
 	// open(method, url, async, user, password) - async is ignored (always async)
-	xhrObj.Set("open", func(call goja.FunctionCall) goja.Value {
+	_ = xhrObj.Set("open", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) < 2 {
 			panic(w.runtime.NewGoError(errors.New("XMLHttpRequest.open requires method and url")))
 		}
@@ -1692,17 +1692,17 @@ func (w *JSWindowWrapper) XMLHttpRequest(call goja.ConstructorCall) *goja.Object
 		statusText = ""
 		responseText = ""
 		response = nil
-		xhrObj.Set("status", 0)
-		xhrObj.Set("statusText", "")
-		xhrObj.Set("responseText", "")
-		xhrObj.Set("response", nil)
+		_ = xhrObj.Set("status", 0)
+		_ = xhrObj.Set("statusText", "")
+		_ = xhrObj.Set("responseText", "")
+		_ = xhrObj.Set("response", nil)
 
 		updateReadyState(OPENED)
 		return goja.Undefined()
 	})
 
 	// withCredentials property (default: false)
-	xhrObj.DefineAccessorProperty("withCredentials",
+	_ = xhrObj.DefineAccessorProperty("withCredentials",
 		w.runtime.ToValue(func(call goja.FunctionCall) goja.Value {
 			return w.runtime.ToValue(withCredentials)
 		}),
@@ -1715,7 +1715,7 @@ func (w *JSWindowWrapper) XMLHttpRequest(call goja.ConstructorCall) *goja.Object
 
 	// setRequestHeader(header, value)
 	// setRequestHeader(header, value)
-	xhrObj.Set("setRequestHeader", func(call goja.FunctionCall) goja.Value {
+	_ = xhrObj.Set("setRequestHeader", func(call goja.FunctionCall) goja.Value {
 		if readyState != OPENED {
 			panic(w.runtime.NewGoError(errors.New("InvalidStateError: setRequestHeader can only be called when readyState is OPENED")))
 		}
@@ -1728,7 +1728,7 @@ func (w *JSWindowWrapper) XMLHttpRequest(call goja.ConstructorCall) *goja.Object
 		return goja.Undefined()
 	})
 	// send(body)
-	xhrObj.Set("send", func(call goja.FunctionCall) goja.Value {
+	_ = xhrObj.Set("send", func(call goja.FunctionCall) goja.Value {
 		if readyState != OPENED {
 			panic(w.runtime.NewGoError(errors.New("InvalidStateError: send can only be called when readyState is OPENED")))
 		}
@@ -1751,8 +1751,8 @@ func (w *JSWindowWrapper) XMLHttpRequest(call goja.ConstructorCall) *goja.Object
 				if listeners, ok := eventListeners[eventType]; ok {
 					for _, listener := range listeners {
 						eventObj := w.runtime.NewObject()
-						eventObj.Set("type", eventType)
-						eventObj.Set("target", xhrObj)
+						_ = eventObj.Set("type", eventType)
+						_ = eventObj.Set("target", xhrObj)
 						callListener(listener, eventObj)
 					}
 				}
@@ -1820,10 +1820,10 @@ func (w *JSWindowWrapper) XMLHttpRequest(call goja.ConstructorCall) *goja.Object
 				responseText = resp.Body
 				response = resp.Body
 
-				xhrObj.Set("status", status)
-				xhrObj.Set("statusText", statusText)
-				xhrObj.Set("responseText", responseText)
-				xhrObj.Set("response", response)
+				_ = xhrObj.Set("status", status)
+				_ = xhrObj.Set("statusText", statusText)
+				_ = xhrObj.Set("responseText", responseText)
+				_ = xhrObj.Set("response", response)
 
 				updateReadyState(HEADERS_RECEIVED)
 				updateReadyState(LOADING)
@@ -1835,7 +1835,7 @@ func (w *JSWindowWrapper) XMLHttpRequest(call goja.ConstructorCall) *goja.Object
 	})
 
 	// addEventListener(type, listener)
-	xhrObj.Set("addEventListener", func(call goja.FunctionCall) goja.Value {
+	_ = xhrObj.Set("addEventListener", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) < 2 {
 			return goja.Undefined()
 		}
@@ -1848,7 +1848,7 @@ func (w *JSWindowWrapper) XMLHttpRequest(call goja.ConstructorCall) *goja.Object
 	})
 
 	// removeEventListener(type, listener) - simplified
-	xhrObj.Set("removeEventListener", func(call goja.FunctionCall) goja.Value {
+	_ = xhrObj.Set("removeEventListener", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) < 2 {
 			return goja.Undefined()
 		}
@@ -1863,14 +1863,14 @@ func (w *JSWindowWrapper) XMLHttpRequest(call goja.ConstructorCall) *goja.Object
 	})
 
 	// Properties
-	xhrObj.Set("readyState", readyState)
-	xhrObj.Set("status", status)
-	xhrObj.Set("statusText", statusText)
-	xhrObj.Set("responseText", responseText)
-	xhrObj.Set("response", response)
+	_ = xhrObj.Set("readyState", readyState)
+	_ = xhrObj.Set("status", status)
+	_ = xhrObj.Set("statusText", statusText)
+	_ = xhrObj.Set("responseText", responseText)
+	_ = xhrObj.Set("response", response)
 
 	// onreadystatechange property
-	xhrObj.DefineAccessorProperty("onreadystatechange",
+	_ = xhrObj.DefineAccessorProperty("onreadystatechange",
 		w.runtime.ToValue(func(call goja.FunctionCall) goja.Value {
 			if onreadystatechange != nil {
 				return w.runtime.ToValue(onreadystatechange)
@@ -1917,9 +1917,9 @@ func isSimpleRequest(method string, headers map[string]string) bool {
 		// For Content-Type, only specific values are allowed for simple requests
 		if lowerKey == "content-type" {
 			value := strings.ToLower(headers[key])
-			if !(strings.HasPrefix(value, "application/x-www-form-urlencoded") ||
-				strings.HasPrefix(value, "multipart/form-data") ||
-				strings.HasPrefix(value, "text/plain")) {
+			if !strings.HasPrefix(value, "application/x-www-form-urlencoded") &&
+				!strings.HasPrefix(value, "multipart/form-data") &&
+				!strings.HasPrefix(value, "text/plain") {
 				return false
 			}
 		}
@@ -2018,12 +2018,12 @@ func (w *JSWindowWrapper) createResponseObject(resp *sauce.Resource, isCrossOrig
 	responseObj := w.runtime.NewObject()
 
 	// Status
-	responseObj.Set("status", resp.Code)
-	responseObj.Set("statusText", httpStatusText(resp.Code))
-	responseObj.Set("ok", resp.Code >= 200 && resp.Code < 300)
+	_ = responseObj.Set("status", resp.Code)
+	_ = responseObj.Set("statusText", httpStatusText(resp.Code))
+	_ = responseObj.Set("ok", resp.Code >= 200 && resp.Code < 300)
 
 	// URL
-	responseObj.Set("url", resp.URL.String())
+	_ = responseObj.Set("url", resp.URL.String())
 
 	// Headers - create a Headers object
 	headersObj := w.runtime.NewObject()
@@ -2043,34 +2043,34 @@ func (w *JSWindowWrapper) createResponseObject(resp *sauce.Resource, isCrossOrig
 		for key, values := range resp.Headers {
 			if exposed[strings.ToLower(key)] {
 				for _, value := range values {
-					headersObj.Set(key, value)
+					_ = headersObj.Set(key, value)
 				}
 			}
 		}
 	} else {
 		for key, values := range resp.Headers {
 			for _, value := range values {
-				headersObj.Set(key, value)
+				_ = headersObj.Set(key, value)
 			}
 		}
 	}
-	responseObj.Set("headers", headersObj)
+	_ = responseObj.Set("headers", headersObj)
 
 	// Response body methods
-	responseObj.Set("text", func(call goja.FunctionCall) goja.Value {
+	_ = responseObj.Set("text", func(call goja.FunctionCall) goja.Value {
 		promise, resolve, _ := w.runtime.NewPromise()
-		resolve(w.runtime.ToValue(resp.Body))
+		_ = resolve(w.runtime.ToValue(resp.Body))
 		return w.runtime.ToValue(promise)
 	})
 
-	responseObj.Set("json", func(call goja.FunctionCall) goja.Value {
+	_ = responseObj.Set("json", func(call goja.FunctionCall) goja.Value {
 		promise, resolve, reject := w.runtime.NewPromise()
 		var result interface{}
 		if err := json.Unmarshal([]byte(resp.Body), &result); err != nil {
-			reject(w.runtime.NewGoError(err))
+			_ = reject(w.runtime.NewGoError(err))
 			return w.runtime.ToValue(promise)
 		}
-		resolve(w.runtime.ToValue(result))
+		_ = resolve(w.runtime.ToValue(result))
 		return w.runtime.ToValue(promise)
 	})
 

@@ -4,7 +4,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"net/url"
@@ -777,7 +776,6 @@ func GetResource(URL *url.URL, history *History, buildInfo *assets.BuildInfo) *R
 		return &Resource{Body: pages.RenderFileBrowser(URL.Path), URL: URL}
 	case "":
 		URL.Scheme = "http"
-		break
 	}
 
 	return fetchExternalPage(URL)
@@ -874,8 +872,8 @@ func fetchExternalPageWithOptions(client *http.Client, URL *url.URL, method stri
 		return resource
 	}
 
-	defer resp.Body.Close()
-	responseBody, err := ioutil.ReadAll(resp.Body)
+	defer func() { _ = resp.Body.Close() }()
+	responseBody, _ := io.ReadAll(resp.Body)
 
 	resource.ContentType = resp.Header.Get("Content-Type")
 	resource.URL = resp.Request.URL
@@ -979,7 +977,7 @@ func GetImage(URL *url.URL) ([]byte, error) {
 
 		decodedData, err := base64.RawStdEncoding.DecodeString(imgData)
 		if err != nil {
-			return nil, fmt.Errorf("Failed to decode base64 data (%s)", err)
+			return nil, fmt.Errorf("failed to decode base64 data (%s)", err)
 		}
 
 		img = decodedData
@@ -993,11 +991,11 @@ func GetImage(URL *url.URL) ([]byte, error) {
 
 		resp, err := requestClient(client, URL, "").Do(req)
 		if err != nil {
-			return nil, fmt.Errorf("Failed to fetch image (%s)", err)
+			return nil, fmt.Errorf("failed to fetch image (%s)", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
-		img, err = ioutil.ReadAll(resp.Body)
+		img, err = io.ReadAll(resp.Body)
 		if err != nil {
 			return nil, err
 		}

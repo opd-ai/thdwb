@@ -6,15 +6,13 @@ import (
 	"image"
 	"image/draw"
 	"image/jpeg"
-	_ "image/jpeg"
 	"image/png"
-	"io/ioutil"
 	"math"
 	"os"
 	"strings"
 
-	"golang.org/x/image/font/opentype"
 	"golang.org/x/image/font"
+	"golang.org/x/image/font/opentype"
 	"golang.org/x/image/math/fixed"
 )
 
@@ -31,7 +29,7 @@ func LoadImage(path string) (image.Image, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	im, _, err := image.Decode(file)
 	return im, err
 }
@@ -46,7 +44,7 @@ func LoadPNG(path string) (image.Image, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	return png.Decode(file)
 }
 
@@ -55,7 +53,7 @@ func SavePNG(path string, im image.Image) error {
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	return png.Encode(file, im)
 }
 
@@ -64,7 +62,7 @@ func LoadJPG(path string) (image.Image, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	return jpeg.Decode(file)
 }
 
@@ -73,7 +71,7 @@ func SaveJPG(path string, im image.Image, quality int) error {
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	var opt jpeg.Options
 	opt.Quality = quality
@@ -93,18 +91,18 @@ func parseHexColor(x string) (r, g, b, a int) {
 	a = 255
 	if len(x) == 3 {
 		format := "%1x%1x%1x"
-		fmt.Sscanf(x, format, &r, &g, &b)
+		_, _ = fmt.Sscanf(x, format, &r, &g, &b)
 		r |= r << 4
 		g |= g << 4
 		b |= b << 4
 	}
 	if len(x) == 6 {
 		format := "%02x%02x%02x"
-		fmt.Sscanf(x, format, &r, &g, &b)
+		_, _ = fmt.Sscanf(x, format, &r, &g, &b)
 	}
 	if len(x) == 8 {
 		format := "%02x%02x%02x%02x"
-		fmt.Sscanf(x, format, &r, &g, &b, &a)
+		_, _ = fmt.Sscanf(x, format, &r, &g, &b, &a)
 	}
 	return r, g, b, a
 }
@@ -135,7 +133,7 @@ func unfix(x fixed.Int26_6) float64 {
 // You can usually just use the context.LoadFontFace function instead of
 // this package-level function.
 func LoadFontFace(path string, points float64) (font.Face, error) {
-	fontBytes, err := ioutil.ReadFile(path)
+	fontBytes, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}

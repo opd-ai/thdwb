@@ -37,7 +37,7 @@ func RGBAToColor(colorString string) *hotdog.ColorRGBA {
 			if strings.HasSuffix(params[0], "%") {
 				value, _ := strconv.ParseInt(strings.Trim(strings.TrimSpace(params[0]), "%"), 10, 0)
 				red = float64(value / 100)
-			} else if strings.Index(params[0], ".") != -1 {
+			} else if strings.Contains(params[0], ".") {
 				value, _ := strconv.ParseFloat(strings.TrimSpace(params[0]), 64)
 				red = value
 			} else {
@@ -48,7 +48,7 @@ func RGBAToColor(colorString string) *hotdog.ColorRGBA {
 			if strings.HasSuffix(params[1], "%") {
 				value, _ := strconv.ParseInt(strings.Trim(strings.TrimSpace(params[1]), "%"), 10, 0)
 				green = float64(value / 100)
-			} else if strings.Index(params[1], ".") != -1 {
+			} else if strings.Contains(params[1], ".") {
 				value, _ := strconv.ParseFloat(strings.TrimSpace(params[1]), 64)
 				green = value
 			} else {
@@ -59,7 +59,7 @@ func RGBAToColor(colorString string) *hotdog.ColorRGBA {
 			if strings.HasSuffix(params[2], "%") {
 				value, _ := strconv.ParseInt(strings.Trim(strings.TrimSpace(params[2]), "%"), 10, 0)
 				blue = float64(value / 100)
-			} else if strings.Index(params[2], ".") != -1 {
+			} else if strings.Contains(params[2], ".") {
 				value, _ := strconv.ParseFloat(strings.TrimSpace(params[2]), 64)
 				blue = value
 			} else {

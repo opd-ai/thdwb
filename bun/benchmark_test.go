@@ -6,7 +6,6 @@ import (
 	hotdog "github.com/danfragoso/thdwb/hotdog"
 )
 
-
 func BenchmarkGetPageTitle(b *testing.B) {
 	root := &hotdog.NodeDOM{
 		Element: "html",

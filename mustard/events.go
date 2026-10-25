@@ -6,6 +6,12 @@ import (
 
 // keyboardInputFromDriver converts platform-agnostic input to KeyboardInput.
 func keyboardInputFromDriver(key string, action KeyboardAction, control, shift, alt, super bool) KeyboardInput {
+	_ = key
+	_ = action
+	_ = control
+	_ = shift
+	_ = alt
+	_ = super
 	return KeyboardInput{
 		Key:     key,
 		Action:  action,
@@ -59,13 +65,14 @@ func (window *WindowBase) ProcessPointerClick(button MustardKey) {
 	if window.hasActiveOverlay {
 		window.ProcessContextMenuClick()
 	} else {
-		if button == MouseLeft {
+		switch button {
+		case MouseLeft:
 			window.ProcessButtonClick()
 			window.ProcessTreeClick()
 			window.ProcessInputActivation()
 			window.fireClickEvents(MouseLeft)
 			window.firePointerClickEvents(MouseLeft)
-		} else if button == MouseRight {
+		case MouseRight:
 			window.fireClickEvents(MouseRight)
 			window.firePointerClickEvents(MouseRight)
 		}
@@ -99,7 +106,7 @@ func scrollWidgetAt(widget Widget, x, y float64, delta int) bool {
 }
 
 func (window *WindowBase) ProcessReturnKey() {
-	if window.activeInput != nil && window.activeInput.active == true {
+	if window.activeInput != nil && window.activeInput.active {
 		window.activeInput.active = false
 
 		window.activeInput.needsRepaint = true
@@ -109,7 +116,7 @@ func (window *WindowBase) ProcessReturnKey() {
 }
 
 func (window *WindowBase) ProcessArrowKeys(arrowKey string) {
-	if window.activeInput != nil && window.activeInput.active == true {
+	if window.activeInput != nil && window.activeInput.active {
 		if arrowKey == "left" && (window.activeInput.cursorPosition+len(window.activeInput.value)) > 0 {
 			window.activeInput.cursorPosition--
 			window.activeInput.cursorDirection = true
@@ -180,7 +187,7 @@ func (window *WindowBase) ProcessInputs() {
 
 func (window *WindowBase) ProcessInputActivation() {
 	for _, input := range window.registeredInputs {
-		if input.selected == true {
+		if input.selected {
 			window.activeInput = input
 			input.active = true
 			input.needsRepaint = true
@@ -197,7 +204,7 @@ func (window *WindowBase) ProcessInputActivation() {
 
 func (window *WindowBase) ProcessButtonClick() {
 	for _, button := range window.registeredButtons {
-		if button.selected == true {
+		if button.selected {
 			button.onClick()
 			button.needsRepaint = true
 			return
@@ -207,7 +214,7 @@ func (window *WindowBase) ProcessButtonClick() {
 
 func (window *WindowBase) ProcessTreeClick() {
 	for _, tree := range window.registeredTrees {
-		if tree.selected == true {
+		if tree.selected {
 			tree.Click()
 			tree.needsRepaint = true
 			return

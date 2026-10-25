@@ -198,7 +198,7 @@ func writeTOFUFile(path string, data []byte) error {
 		return fmt.Errorf("create TOFU store temporary file: %w", err)
 	}
 	name := temporary.Name()
-	defer os.Remove(name)
+	defer func() { _ = os.Remove(name) }()
 	if err := writeTOFUTemporary(temporary, data); err != nil {
 		return err
 	}
@@ -210,15 +210,15 @@ func writeTOFUFile(path string, data []byte) error {
 
 func writeTOFUTemporary(temporary *os.File, data []byte) error {
 	if err := temporary.Chmod(0o600); err != nil {
-		temporary.Close()
+		_ = temporary.Close()
 		return fmt.Errorf("secure TOFU store temporary file: %w", err)
 	}
 	if _, err := temporary.Write(data); err != nil {
-		temporary.Close()
+		_ = temporary.Close()
 		return fmt.Errorf("write TOFU store: %w", err)
 	}
 	if err := temporary.Sync(); err != nil {
-		temporary.Close()
+		_ = temporary.Close()
 		return fmt.Errorf("sync TOFU store: %w", err)
 	}
 	if err := temporary.Close(); err != nil {

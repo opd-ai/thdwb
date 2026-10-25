@@ -45,7 +45,7 @@ func (w *stubWebView) LoadURL(url string) error {
 	return nil
 }
 
-func (w *stubWebView) LoadHTML(html string, baseURL string) error {
+func (w *stubWebView) LoadHTML(html, baseURL string) error {
 	if w.destroyed {
 		return fmt.Errorf("webview: WebView is destroyed")
 	}

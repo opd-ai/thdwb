@@ -51,8 +51,5 @@ func wordWrap(m measureStringer, s string, width float64) []string {
 			result = append(result, x)
 		}
 	}
-	for i, line := range result {
-		result[i] = line
-	}
 	return result
 }

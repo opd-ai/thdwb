@@ -1,7 +1,7 @@
 package bun
 
 import (
-	"io/ioutil"
+	"os"
 	"runtime/debug"
 	"strings"
 	"testing"
@@ -23,7 +23,7 @@ func (canvas testCanvasContext) GetContext() *gg.Context {
 }
 
 func TestRenderDocument_noBody(t *testing.T) {
-	html, err := ioutil.ReadFile("test-data/no-body.html")
+	html, err := os.ReadFile("test-data/no-body.html")
 	if err != nil {
 		t.Fatalf("got unexpected error: %s", err)
 	}
@@ -47,11 +47,13 @@ func TestRenderDocument_noBody(t *testing.T) {
 		}
 	}()
 
-	RenderDocument(dctx, doc, false)
+	if err := RenderDocument(dctx, doc, false); err != nil {
+		t.Fatalf("RenderDocument failed: %v", err)
+	}
 }
 
 func TestRenderDocument_flexbox(t *testing.T) {
-	html, err := ioutil.ReadFile("test-data/flexbox-test.html")
+	html, err := os.ReadFile("test-data/flexbox-test.html")
 	if err != nil {
 		t.Fatalf("got unexpected error: %s", err)
 	}
@@ -215,7 +217,7 @@ func findElementByClass(root *hotdog.NodeDOM, className string) *hotdog.NodeDOM 
 }
 
 func TestRenderDocument_complexNestedFlexbox(t *testing.T) {
-	html, err := ioutil.ReadFile("test-data/complex-nested-flexbox.html")
+	html, err := os.ReadFile("test-data/complex-nested-flexbox.html")
 	if err != nil {
 		t.Fatalf("got unexpected error: %s", err)
 	}
@@ -240,7 +242,9 @@ func TestRenderDocument_complexNestedFlexbox(t *testing.T) {
 	}()
 
 	// Test with experimental layout (flexbox)
-	RenderDocument(dctx, doc, true)
+	if err := RenderDocument(dctx, doc, true); err != nil {
+		t.Fatalf("RenderDocument failed: %v", err)
+	}
 
 	// Verify that flex nodes were created for the root container
 	body, err := doc.DOM.FindChildByName("body")

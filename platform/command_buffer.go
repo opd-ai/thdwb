@@ -29,8 +29,8 @@ func (c DrawRectangleCommand) Execute(r Renderer) {
 
 // DrawImageCommand draws an image at the given position.
 type DrawImageCommand struct {
-	Img Image
-	X,  Y float64
+	Img  Image
+	X, Y float64
 }
 
 func (c DrawImageCommand) Execute(r Renderer) {

@@ -118,7 +118,6 @@ func (box *box) GetCoords() (float64, float64, float64, float64) {
 	return box.top, box.left, box.width, box.height
 }
 
-
 type Widget interface {
 	Buffer() *image.RGBA
 	SetBuffer(*image.RGBA)

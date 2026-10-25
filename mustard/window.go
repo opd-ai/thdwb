@@ -239,14 +239,13 @@ func (window *WindowBase) RemoveStaticOverlay(overlay *Overlay) {
 
 func CreateOverlay(ref string, buffer *image.RGBA, position image.Point) *Overlay {
 	return &Overlay{
-		ref:    ref,
-		active: true,
-		top:    float64(position.Y),
-		left:   float64(position.X),
-		width:  float64(buffer.Rect.Max.X),
-		height: float64(buffer.Rect.Max.Y),
+		ref:      ref,
+		active:   true,
+		top:      float64(position.Y),
+		left:     float64(position.X),
+		width:    float64(buffer.Rect.Max.X),
+		height:   float64(buffer.Rect.Max.Y),
 		position: position,
 		buffer:   buffer,
 	}
 }
-

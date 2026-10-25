@@ -44,7 +44,7 @@ func (w *mobileWebView) LoadURL(url string) error {
 	return nil
 }
 
-func (w *mobileWebView) LoadHTML(html string, baseURL string) error {
+func (w *mobileWebView) LoadHTML(html, baseURL string) error {
 	if w.destroyed {
 		return fmt.Errorf("webview: WebView is destroyed")
 	}

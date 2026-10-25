@@ -13,7 +13,7 @@ type WebView interface {
 	// LoadURL loads the specified URL into the WebView.
 	LoadURL(url string) error
 	// LoadHTML loads the specified HTML content into the WebView.
-	LoadHTML(html string, baseURL string) error
+	LoadHTML(html, baseURL string) error
 	// SetSize sets the WebView dimensions.
 	SetSize(width, height int)
 	// Size returns the WebView dimensions.

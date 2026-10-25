@@ -24,7 +24,7 @@ func TestAppAddWindowSetsWindow(t *testing.T) {
 		active: true,
 		rootFrame: &Frame{
 			baseWidget: baseWidget{
-				widgetType: frameWidget,
+				widgetType:      frameWidget,
 				backgroundColor: "#fff",
 			},
 		},
@@ -55,9 +55,9 @@ func TestCreateCanvasWidgetCoverage(t *testing.T) {
 func TestCanvasWidgetSetContext(t *testing.T) {
 	canvas := &CanvasWidget{
 		baseWidget: baseWidget{
-			needsRepaint: true,
-			widgets:      []Widget{},
-			widgetType:   canvasWidget,
+			needsRepaint:    true,
+			widgets:         []Widget{},
+			widgetType:      canvasWidget,
 			backgroundColor: "#fff",
 		},
 		context:        gg.NewContext(0, 0),
@@ -113,8 +113,8 @@ func TestPrepEntryLong(t *testing.T) {
 
 func TestDrawContextMenu(t *testing.T) {
 	window := &WindowBase{
-		width:  800,
-		height: 600,
+		width:   800,
+		height:  600,
 		cursorX: 100,
 		cursorY: 100,
 	}
@@ -252,11 +252,11 @@ func TestProcessReturnKey(t *testing.T) {
 	window := &WindowBase{}
 	input := &InputWidget{
 		baseWidget: baseWidget{
-			widgetType: inputWidget,
+			widgetType:      inputWidget,
 			backgroundColor: "#fff",
 		},
-		value:       "test",
-		active:      true,
+		value:          "test",
+		active:         true,
 		returnCallback: func() {},
 	}
 	window.activeInput = input
@@ -270,12 +270,12 @@ func TestProcessArrowKeys(t *testing.T) {
 	window := &WindowBase{}
 	input := &InputWidget{
 		baseWidget: baseWidget{
-			widgetType: inputWidget,
+			widgetType:      inputWidget,
 			backgroundColor: "#fff",
 		},
-		value:           "test",
-		active:          true,
-		cursorPosition:  0,
+		value:          "test",
+		active:         true,
+		cursorPosition: 0,
 	}
 	window.activeInput = input
 	window.ProcessArrowKeys("left")
@@ -308,7 +308,7 @@ func TestProcessInputActivation(t *testing.T) {
 	window := &WindowBase{}
 	input := &InputWidget{
 		baseWidget: baseWidget{
-			widgetType: inputWidget,
+			widgetType:      inputWidget,
 			backgroundColor: "#fff",
 		},
 		selected: true,
@@ -325,10 +325,10 @@ func TestProcessButtonClick(t *testing.T) {
 	called := false
 	button := &ButtonWidget{
 		baseWidget: baseWidget{
-			widgetType: buttonWidget,
+			widgetType:      buttonWidget,
 			backgroundColor: "#fff",
 		},
-		onClick: func() { called = true },
+		onClick:  func() { called = true },
 		selected: true,
 	}
 	window.RegisterButton(button, button.onClick)
@@ -342,7 +342,7 @@ func TestProcessTreeClick(t *testing.T) {
 	window := &WindowBase{}
 	tree := &TreeWidget{
 		baseWidget: baseWidget{
-			widgetType: treeWidget,
+			widgetType:      treeWidget,
 			backgroundColor: "#fff",
 		},
 		selectCallback: func(node *TreeWidgetNode) {},

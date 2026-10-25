@@ -15,7 +15,7 @@ import (
 
 func TestGetResource(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
-		rw.Write([]byte(`OK!`))
+		_, _ = rw.Write([]byte(`OK!`))
 	}))
 
 	defer server.Close()
@@ -40,7 +40,7 @@ func TestGetImage(t *testing.T) {
 		decoded, err := base64.RawStdEncoding.DecodeString(emptyImage)
 		require.NoError(t, err)
 
-		w.Write(decoded)
+		_, _ = w.Write(decoded)
 	}))
 	defer srv.Close()
 

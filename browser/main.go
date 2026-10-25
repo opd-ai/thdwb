@@ -16,7 +16,7 @@ func main() {
 	runtime.LockOSThread()
 
 	settings := &hotdog.Settings{
-		Homepage:  "thdwb://homepage/",
+		Homepage:     "thdwb://homepage/",
 		WindowWidth:  900,
 		WindowHeight: 600,
 		HiDPI:        true,

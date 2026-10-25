@@ -41,10 +41,10 @@ func goroutineID() uint64 {
 // RunJS/SetJSValue on the same goroutine, while still serializing access
 // across goroutines (Goja is not thread-safe).
 type reentrantMutex struct {
-	mu     sync.Mutex
-	cond   *sync.Cond
-	owner  uint64
-	depth  int
+	mu    sync.Mutex
+	cond  *sync.Cond
+	owner uint64
+	depth int
 }
 
 func newReentrantMutex() *reentrantMutex {
@@ -653,9 +653,9 @@ func (wc *WindowContext) dispatchMouseEventAt(target *NodeDOM, eventType string,
 	runtime := wc.jsRuntime
 	wrapper := &JSDOMWrapper{node: target, runtime: runtime, windowCtx: wc}
 	event := newJSEvent(runtime, goja.ConstructorCall{Arguments: []goja.Value{runtime.ToValue(eventType)}})
-	event.Set("button", button)
-	event.Set("clientX", x)
-	event.Set("clientY", y)
+	_ = event.Set("button", button)
+	_ = event.Set("clientX", x)
+	_ = event.Set("clientY", y)
 	wrapper.dispatchDOMEvent(event)
 }
 
@@ -704,11 +704,11 @@ func (wc *WindowContext) dispatchKeyboardEventAt(target *NodeDOM, eventType stri
 	}
 	runtime := wc.jsRuntime
 	options := runtime.NewObject()
-	options.Set("bubbles", true)
-	options.Set("cancelable", true)
+	_ = options.Set("bubbles", true)
+	_ = options.Set("cancelable", true)
 	event := newJSEvent(runtime, goja.ConstructorCall{Arguments: []goja.Value{runtime.ToValue(eventType), options}})
 	for name, value := range properties {
-		event.Set(name, value)
+		_ = event.Set(name, value)
 	}
 	(&JSDOMWrapper{node: target, runtime: runtime, windowCtx: wc}).dispatchDOMEvent(event)
 }
