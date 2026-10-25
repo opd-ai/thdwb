@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"net/url"
 	"reflect"
-	"sort"
 	"sync"
 	"time"
 
@@ -339,51 +338,43 @@ func (wc *WindowContext) scheduleAnimationFrameLocked() {
 func (wc *WindowContext) runAnimationFrame() {
 	wc.jsRuntimeMu.Lock()
 	defer wc.jsRuntimeMu.Unlock()
-	if !wc.beginAnimationFrame() {
-		return
-	}
-	for _, id := range wc.animationFrameIDs() {
-		if !wc.runAnimationFrameCallback(id) {
-			return
-		}
-	}
-}
 
-func (wc *WindowContext) beginAnimationFrame() bool {
 	wc.animationFrameMu.Lock()
-	defer wc.animationFrameMu.Unlock()
 	if !wc.active || wc.jsRuntime == nil {
 		wc.animationFrameTimer = nil
-		return false
+		wc.animationFrameMu.Unlock()
+		return
 	}
 	wc.animationFrameTimer = nil
-	return true
-}
-
-func (wc *WindowContext) animationFrameIDs() []uint64 {
-	wc.animationFrameMu.Lock()
-	defer wc.animationFrameMu.Unlock()
-	ids := make([]uint64, 0, len(wc.animationFrames))
-	for id := range wc.animationFrames {
-		ids = append(ids, id)
-	}
-	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
-	return ids
-}
-
-func (wc *WindowContext) runAnimationFrameCallback(id uint64) bool {
-	wc.animationFrameMu.Lock()
-	if !wc.active {
-		wc.animationFrameMu.Unlock()
-		return false
-	}
-	callback := wc.animationFrames[id]
-	delete(wc.animationFrames, id)
 	wc.animationFrameMu.Unlock()
-	if callback != nil {
-		callback()
+
+	// Run callbacks one at a time, re-checking active after each so that
+	// SetActive(false) during a callback defers remaining callbacks.
+	// jsRuntimeMu is held to prevent concurrent RunJS/SetJSValue access to
+	// the Goja runtime (which would be a data race).
+	for {
+		wc.animationFrameMu.Lock()
+		if !wc.active || len(wc.animationFrames) == 0 {
+			wc.animationFrameMu.Unlock()
+			break
+		}
+		// Get the lowest ID to maintain insertion order.
+		var minID uint64
+		first := true
+		for id := range wc.animationFrames {
+			if first || id < minID {
+				minID = id
+				first = false
+			}
+		}
+		callback := wc.animationFrames[minID]
+		delete(wc.animationFrames, minID)
+		wc.animationFrameMu.Unlock()
+
+		if callback != nil {
+			callback()
+		}
 	}
-	return true
 }
 
 // IsActive reports whether this window is allowed to run scripts and drain layout work.
@@ -567,15 +558,19 @@ func mouseClickDetails(button mustard.MustardKey) (string, int, bool) {
 
 func (wc *WindowContext) dispatchMouseEventAt(target *NodeDOM, eventType string, button int, x, y float64) {
 	wc.jsRuntimeMu.Lock()
-	defer wc.jsRuntimeMu.Unlock()
 	if wc.jsRuntime == nil || !wc.IsActive() {
+		wc.jsRuntimeMu.Unlock()
 		return
 	}
-	wrapper := &JSDOMWrapper{node: target, runtime: wc.jsRuntime, windowCtx: wc}
-	event := newJSEvent(wc.jsRuntime, goja.ConstructorCall{Arguments: []goja.Value{wc.jsRuntime.ToValue(eventType)}})
+	runtime := wc.jsRuntime
+	wrapper := &JSDOMWrapper{node: target, runtime: runtime, windowCtx: wc}
+	event := newJSEvent(runtime, goja.ConstructorCall{Arguments: []goja.Value{runtime.ToValue(eventType)}})
 	event.Set("button", button)
 	event.Set("clientX", x)
 	event.Set("clientY", y)
+	wc.jsRuntimeMu.Unlock()
+	// Release jsRuntimeMu before dispatching; event handlers may call RunJS/SetJSValue
+	// which acquire jsRuntimeMu. Holding it here would deadlock.
 	wrapper.dispatchDOMEvent(event)
 }
 
@@ -618,18 +613,22 @@ func (wc *WindowContext) focusedDOMNode() *NodeDOM {
 
 func (wc *WindowContext) dispatchKeyboardEventAt(target *NodeDOM, eventType string, properties map[string]interface{}) {
 	wc.jsRuntimeMu.Lock()
-	defer wc.jsRuntimeMu.Unlock()
 	if wc.jsRuntime == nil || !wc.IsActive() {
+		wc.jsRuntimeMu.Unlock()
 		return
 	}
-	options := wc.jsRuntime.NewObject()
+	runtime := wc.jsRuntime
+	options := runtime.NewObject()
 	options.Set("bubbles", true)
 	options.Set("cancelable", true)
-	event := newJSEvent(wc.jsRuntime, goja.ConstructorCall{Arguments: []goja.Value{wc.jsRuntime.ToValue(eventType), options}})
+	event := newJSEvent(runtime, goja.ConstructorCall{Arguments: []goja.Value{runtime.ToValue(eventType), options}})
 	for name, value := range properties {
 		event.Set(name, value)
 	}
-	(&JSDOMWrapper{node: target, runtime: wc.jsRuntime, windowCtx: wc}).dispatchDOMEvent(event)
+	wc.jsRuntimeMu.Unlock()
+	// Release jsRuntimeMu before dispatching; event handlers may call RunJS/SetJSValue
+	// which acquire jsRuntimeMu. Holding it here would deadlock.
+	(&JSDOMWrapper{node: target, runtime: runtime, windowCtx: wc}).dispatchDOMEvent(event)
 }
 
 // SetFocusedElement sets the currently focused DOM element.

@@ -1396,7 +1396,7 @@ func (w *JSWindowWrapper) postMessage(call goja.FunctionCall) goja.Value {
 			continue
 		}
 
-		// Create event object in the target window's runtime
+		// Skip inactive windows
 		if !targetWC.IsActive() {
 			continue
 		}

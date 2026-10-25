@@ -357,8 +357,14 @@ func (node *NodeDOM) checkOrigin() error {
 		nodeOrigin := node.Document.URL
 		windowOrigin := node.WindowCtx.Origin
 
-		// Compare scheme, host, and port
-		if nodeOrigin.Scheme != windowOrigin.Scheme || nodeOrigin.Host != windowOrigin.Host {
+		// Compare scheme, host, and port (normalizing default ports)
+		if nodeOrigin.Scheme != windowOrigin.Scheme {
+			return SecurityError("cross-origin access blocked")
+		}
+		if nodeOrigin.Hostname() != windowOrigin.Hostname() {
+			return SecurityError("cross-origin access blocked")
+		}
+		if nodeOrigin.Port() != windowOrigin.Port() {
 			return SecurityError("cross-origin access blocked")
 		}
 	}
