@@ -1,6 +1,9 @@
 package mustard
 
-import "fmt"
+import (
+	"fmt"
+	"time"
+)
 
 // App manages windows and the main event loop.
 type App struct {
@@ -31,6 +34,7 @@ func (app *App) Run(callback func()) {
 				callback()
 			}
 		}
+		time.Sleep(time.Millisecond)
 	}
 }
 

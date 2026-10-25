@@ -750,6 +750,10 @@ func (node *NodeDOM) SetInnerHTML(htmlString string) error {
 		child.Parent = nil
 		child.PrevSibling = nil
 		child.NextSibling = nil
+		// Clean up JS wrapper reference to prevent memory leak
+		if node.WindowCtx != nil && node.WindowCtx.nodeWrappers != nil {
+			delete(node.WindowCtx.nodeWrappers, child)
+		}
 	}
 	node.Children = nil
 	node.FirstChild = nil
@@ -959,6 +963,10 @@ func (node *NodeDOM) ReplaceChild(newChild, oldChild *NodeDOM) (*NodeDOM, error)
 			node.MarkDirty()
 			node.RequestReflow()
 			node.RequestRepaint()
+			// Clean up JS wrapper reference to prevent memory leak
+			if node.WindowCtx != nil && node.WindowCtx.nodeWrappers != nil {
+				delete(node.WindowCtx.nodeWrappers, oldChild)
+			}
 			return oldChild, nil
 		}
 	}

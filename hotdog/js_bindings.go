@@ -1165,6 +1165,10 @@ func (node *NodeDOM) removeChildNode(child *NodeDOM) {
 			child.NextSibling = nil
 			node.MarkDirty()
 			child.MarkDirty()
+			// Clean up JS wrapper reference to prevent memory leak
+			if node.WindowCtx != nil && node.WindowCtx.nodeWrappers != nil {
+				delete(node.WindowCtx.nodeWrappers, child)
+			}
 			break
 		}
 	}
@@ -1453,7 +1457,12 @@ func (w *JSWindowWrapper) fetch(call goja.FunctionCall) goja.Value {
 	var requestURL string
 	var options map[string]interface{}
 
-	if resourceArg.ExportType().Kind() == reflect.String {
+	if goja.IsUndefined(resourceArg) || goja.IsNull(resourceArg) {
+		reject(w.runtime.NewGoError(errors.New("fetch requires a resource argument")))
+		return w.runtime.ToValue(promise)
+	}
+
+	if resourceArg.ExportType() != nil && resourceArg.ExportType().Kind() == reflect.String {
 		requestURL = resourceArg.String()
 	} else {
 		// Request object
@@ -1548,7 +1557,7 @@ func (w *JSWindowWrapper) fetch(call goja.FunctionCall) goja.Value {
 			// Send OPTIONS preflight request (never sends credentials)
 			preflightClient := &http.Client{}
 			preflightResp := sauce.MakeCORSRequestWithClient(preflightClient, parsedURL, origin, "OPTIONS", nil, getPreflightHeaders(method, headers))
-			if !isCORSPreflightSuccessful(preflightResp) {
+			if !isCORSPreflightSuccessful(preflightResp, origin, method, headers) {
 				scheduleFetchError(errors.New("CORS preflight failed"))
 				return
 			}
@@ -1561,8 +1570,20 @@ func (w *JSWindowWrapper) fetch(call goja.FunctionCall) goja.Value {
 			return
 		}
 
+		// For cross-origin responses without CORS headers, make the response opaque
+		if isCrossOrigin && !isCORSResponseAllowed(resp, origin) {
+			resp = &sauce.Resource{
+				Code:      0,
+				Body:      "",
+				URL:       resp.URL,
+				Headers:   http.Header{},
+				ContentType: "",
+				Key:       resp.Key,
+			}
+		}
+
 		w.windowCtx.ScheduleAnimationFrame(func() {
-			resolve(w.createResponseObject(resp))
+			resolve(w.createResponseObject(resp, isCrossOrigin))
 		})
 	}()
 
@@ -1768,7 +1789,7 @@ func (w *JSWindowWrapper) XMLHttpRequest(call goja.ConstructorCall) *goja.Object
 			if needsPreflight {
 				// Send OPTIONS preflight request
 				preflightResp := sauce.MakeCORSRequestWithClient(httpClient, parsedURL, origin, "OPTIONS", nil, getPreflightHeaders(requestMethod, requestHeaders))
-				if !isCORSPreflightSuccessful(preflightResp) {
+				if !isCORSPreflightSuccessful(preflightResp, origin, requestMethod, requestHeaders) {
 					dispatchNetworkEvent("error")
 					return
 				}
@@ -1780,6 +1801,18 @@ func (w *JSWindowWrapper) XMLHttpRequest(call goja.ConstructorCall) *goja.Object
 			if resp.Code == 0 && resp.Body != "" && strings.Contains(resp.Body, "error") {
 				dispatchNetworkEvent("error")
 				return
+			}
+
+			// For cross-origin responses without CORS headers, make the response opaque
+			if isCrossOrigin && !isCORSResponseAllowed(resp, origin) {
+				resp = &sauce.Resource{
+					Code:        0,
+					Body:        "",
+					URL:         resp.URL,
+					Headers:     http.Header{},
+					ContentType: "",
+					Key:         resp.Key,
+				}
 			}
 
 			w.windowCtx.ScheduleAnimationFrame(func() {
@@ -1915,7 +1948,9 @@ func getPreflightHeaders(method string, headers map[string]string) map[string]st
 }
 
 // isCORSPreflightSuccessful checks if the CORS preflight response allows the actual request.
-func isCORSPreflightSuccessful(resp *sauce.Resource) bool {
+// Validates Access-Control-Allow-Origin, Access-Control-Allow-Methods, and
+// Access-Control-Allow-Headers against the requesting origin and method.
+func isCORSPreflightSuccessful(resp *sauce.Resource, origin, method string, headers map[string]string) bool {
 	if resp == nil || resp.Code == 0 {
 		return false
 	}
@@ -1926,28 +1961,61 @@ func isCORSPreflightSuccessful(resp *sauce.Resource) bool {
 		return false
 	}
 
-	// Check if the origin is allowed (* or specific origin)
-	// Note: In practice, we'd compare against the requesting origin
+	// Check if the origin is allowed (* or specific origin match)
+	if allowOrigin != "*" && !strings.EqualFold(allowOrigin, origin) {
+		return false
+	}
 
 	// Check if the requested method is allowed
 	allowMethods := resp.Headers.Get("Access-Control-Allow-Methods")
 	if allowMethods != "" {
-		// Could parse and check if our method is in the list
-		_ = allowMethods
+		methodAllowed := false
+		for _, m := range strings.Split(allowMethods, ",") {
+			if strings.EqualFold(strings.TrimSpace(m), method) {
+				methodAllowed = true
+				break
+			}
+		}
+		if !methodAllowed {
+			return false
+		}
 	}
 
 	// Check if requested headers are allowed
 	allowHeaders := resp.Headers.Get("Access-Control-Allow-Headers")
-	if allowHeaders != "" {
-		// Could parse and check if our headers are in the list
-		_ = allowHeaders
+	if allowHeaders != "" && len(headers) > 0 {
+		allowedHeaders := make(map[string]bool)
+		for _, h := range strings.Split(allowHeaders, ",") {
+			allowedHeaders[strings.ToLower(strings.TrimSpace(h))] = true
+		}
+		for key := range headers {
+			if !allowedHeaders[strings.ToLower(key)] {
+				return false
+			}
+		}
 	}
 
 	return true
 }
 
+// isCORSResponseAllowed checks if a cross-origin response exposes its body to JavaScript.
+// Per CORS, a cross-origin response is accessible only if Access-Control-Allow-Origin
+// matches the requesting origin (or is "*").
+func isCORSResponseAllowed(resp *sauce.Resource, origin string) bool {
+	if resp == nil {
+		return false
+	}
+	allowOrigin := resp.Headers.Get("Access-Control-Allow-Origin")
+	if allowOrigin == "" {
+		return false
+	}
+	return allowOrigin == "*" || strings.EqualFold(allowOrigin, origin)
+}
+
 // createResponseObject creates a JavaScript Response object from a sauce.Resource.
-func (w *JSWindowWrapper) createResponseObject(resp *sauce.Resource) goja.Value {
+// For cross-origin responses, only headers listed in Access-Control-Expose-Headers
+// are exposed to JavaScript per the CORS spec.
+func (w *JSWindowWrapper) createResponseObject(resp *sauce.Resource, isCrossOrigin bool) goja.Value {
 	responseObj := w.runtime.NewObject()
 
 	// Status
@@ -1960,9 +2028,31 @@ func (w *JSWindowWrapper) createResponseObject(resp *sauce.Resource) goja.Value 
 
 	// Headers - create a Headers object
 	headersObj := w.runtime.NewObject()
-	for key, values := range resp.Headers {
-		for _, value := range values {
-			headersObj.Set(key, value)
+	if isCrossOrigin {
+		// Only expose headers listed in Access-Control-Expose-Headers
+		exposedHeaders := resp.Headers.Get("Access-Control-Expose-Headers")
+		exposed := make(map[string]bool)
+		if exposedHeaders != "" {
+			for _, h := range strings.Split(exposedHeaders, ",") {
+				exposed[strings.ToLower(strings.TrimSpace(h))] = true
+			}
+		}
+		// Always expose simple response headers per CORS spec
+		for _, h := range []string{"cache-control", "content-language", "content-type", "expires", "last-modified", "pragma"} {
+			exposed[h] = true
+		}
+		for key, values := range resp.Headers {
+			if exposed[strings.ToLower(key)] {
+				for _, value := range values {
+					headersObj.Set(key, value)
+				}
+			}
+		}
+	} else {
+		for key, values := range resp.Headers {
+			for _, value := range values {
+				headersObj.Set(key, value)
+			}
 		}
 	}
 	responseObj.Set("headers", headersObj)
@@ -1970,22 +2060,18 @@ func (w *JSWindowWrapper) createResponseObject(resp *sauce.Resource) goja.Value 
 	// Response body methods
 	responseObj.Set("text", func(call goja.FunctionCall) goja.Value {
 		promise, resolve, _ := w.runtime.NewPromise()
-		go func() {
-			resolve(w.runtime.ToValue(resp.Body))
-		}()
+		resolve(w.runtime.ToValue(resp.Body))
 		return w.runtime.ToValue(promise)
 	})
 
 	responseObj.Set("json", func(call goja.FunctionCall) goja.Value {
 		promise, resolve, reject := w.runtime.NewPromise()
-		go func() {
-			var result interface{}
-			if err := json.Unmarshal([]byte(resp.Body), &result); err != nil {
-				reject(w.runtime.NewGoError(err))
-				return
-			}
-			resolve(w.runtime.ToValue(result))
-		}()
+		var result interface{}
+		if err := json.Unmarshal([]byte(resp.Body), &result); err != nil {
+			reject(w.runtime.NewGoError(err))
+			return w.runtime.ToValue(promise)
+		}
+		resolve(w.runtime.ToValue(result))
 		return w.runtime.ToValue(promise)
 	})
 

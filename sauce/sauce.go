@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -854,7 +853,8 @@ func fetchExternalPageWithOptions(client *http.Client, URL *url.URL, method stri
 	resource := &Resource{Key: url, URL: URL}
 	req, err := http.NewRequest(method, url, body)
 	if err != nil {
-		log.Fatalln(err)
+		resource.Body = loadErrorPage(err.Error())
+		return resource
 	}
 
 	req.Header.Set("User-Agent", "THDWB (The HotDog Web Browser);")

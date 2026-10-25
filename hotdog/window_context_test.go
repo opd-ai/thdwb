@@ -1891,20 +1891,44 @@ func TestCORSHelperFunctions(t *testing.T) {
 	t.Run("isCORSPreflightSuccessful validates CORS headers", func(t *testing.T) {
 		// Missing Allow-Origin
 		resp := &sauce.Resource{Code: 200, Headers: http.Header{}}
-		if isCORSPreflightSuccessful(resp) {
+		if isCORSPreflightSuccessful(resp, "https://example.com", "GET", nil) {
 			t.Error("Should fail without Access-Control-Allow-Origin")
 		}
 
 		// With Allow-Origin
 		resp = &sauce.Resource{Code: 200, Headers: http.Header{"Access-Control-Allow-Origin": []string{"*"}}}
-		if !isCORSPreflightSuccessful(resp) {
+		if !isCORSPreflightSuccessful(resp, "https://example.com", "GET", nil) {
 			t.Error("Should succeed with Access-Control-Allow-Origin: *")
 		}
 
 		// With specific origin
 		resp = &sauce.Resource{Code: 200, Headers: http.Header{"Access-Control-Allow-Origin": []string{"https://example.com"}}}
-		if !isCORSPreflightSuccessful(resp) {
+		if !isCORSPreflightSuccessful(resp, "https://example.com", "GET", nil) {
 			t.Error("Should succeed with specific Access-Control-Allow-Origin")
+		}
+
+		// Origin mismatch
+		resp = &sauce.Resource{Code: 200, Headers: http.Header{"Access-Control-Allow-Origin": []string{"https://other.com"}}}
+		if isCORSPreflightSuccessful(resp, "https://example.com", "GET", nil) {
+			t.Error("Should fail with origin mismatch")
+		}
+
+		// Method not allowed
+		resp = &sauce.Resource{Code: 200, Headers: http.Header{
+			"Access-Control-Allow-Origin": []string{"*"},
+			"Access-Control-Allow-Methods": []string{"GET, POST"},
+		}}
+		if isCORSPreflightSuccessful(resp, "https://example.com", "DELETE", nil) {
+			t.Error("Should fail when method not allowed")
+		}
+
+		// Header not allowed
+		resp = &sauce.Resource{Code: 200, Headers: http.Header{
+			"Access-Control-Allow-Origin": []string{"*"},
+			"Access-Control-Allow-Headers": []string{"content-type"},
+		}}
+		if isCORSPreflightSuccessful(resp, "https://example.com", "POST", map[string]string{"X-Custom": "value"}) {
+			t.Error("Should fail when header not allowed")
 		}
 	})
 }
