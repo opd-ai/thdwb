@@ -11,7 +11,7 @@
 - Network layer (**sauce**) — HTTP, cookies, cache, certificates
 - JavaScript runtime (**hotdog**) — Goja VM, DOM bindings, Fetch API
 
-External dependencies: only OpenGL and GLFW. Go dependencies kept minimal.
+External dependencies: primarily Ebitengine, extant third party Go libraries preferred for all critical components.
 
 > **Main goal**: Learn how web browsers work by building one. Not stable, not spec-compliant, not production-ready — but a great learning tool!
 

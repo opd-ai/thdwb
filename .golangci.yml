@@ -1,0 +1,31 @@
+version: "2"
+
+linters:
+  enable:
+    - errcheck
+    - staticcheck
+  disable:
+    - unused  # unused struct fields are part of the type's API surface
+
+issues:
+  exclude-rules:
+    - linters:
+        - staticcheck
+      text: "SA1019:.*io/ioutil"
+    - linters:
+        - staticcheck
+      text: "S1002: should omit comparison to bool constant"
+    - linters:
+        - staticcheck
+      text: "QF1003: could use tagged switch"
+    - linters:
+        - staticcheck
+      text: "SA4006: this value of .* is never used"
+    - linters:
+        - staticcheck
+      text: "ST1015: default case should be first or last"
+
+run:
+  tests: true
+  exclude:
+    - assets/open_sans.go
