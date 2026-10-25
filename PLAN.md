@@ -214,4 +214,4 @@ Decouple from all CGo dependencies by moving the browser render stack onto Ebite
 - [x] GPU command buffer abstraction translates cleanly to native GPU APIs
 - [x] CPU software renderer provides a fallback for headless or GPU-restricted environments
 - [x] Build tags support CGo and pure Go rendering selection, defaulting to pure Go
-- [ ] Cross-platform validation passes on Windows, macOS, Linux, Android, and iOS
+- [x] Cross-platform validation passes on Windows, macOS, Linux, Android, and iOS
