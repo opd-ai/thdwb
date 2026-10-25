@@ -28,11 +28,7 @@ func (d *ebitenDriver) NewWindow(title string, width, height int, hiDPI bool) (W
 }
 
 func (d *ebitenDriver) NewRenderer(w Window) (Renderer, error) {
-	ew, ok := w.(*ebitenWindow)
-	if !ok {
-		return nil, &errInvalidWindow{}
-	}
-	return &ebitenRenderer{window: ew}, nil
+	return &ebitenRenderer{window: w}, nil
 }
 
 func (d *ebitenDriver) NewApp(name string) AppDriver {
@@ -73,7 +69,7 @@ func (w *ebitenWindow) SetCursor(cursor Cursor) { w.cursor = cursor }
 
 // ebitenRenderer implements Renderer using Ebitengine.
 type ebitenRenderer struct {
-	window *ebitenWindow
+	window Window
 	screen *ebiten.Image
 }
 
@@ -131,7 +127,9 @@ func (a *ebitenApp) Run(callback func()) {
 		w, _ := a.NewWindow(a.name, 640, 480, false)
 		a.AddWindow(w)
 	}
-	ebiten.SetWindowSize(a.windows[0].(*ebitenWindow).width, a.windows[0].(*ebitenWindow).height)
+	w := a.windows[0]
+	ws, hs := w.Size()
+	ebiten.SetWindowSize(ws, hs)
 	ebiten.SetWindowTitle(a.name)
 	ebiten.RunGame(&ebitenGame{app: a})
 }
