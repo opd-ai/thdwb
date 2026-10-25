@@ -11,6 +11,7 @@ func CreateScrollBarWidget(orientation ScrollBarOrientation) *ScrollBarWidget {
 	return &ScrollBarWidget{
 		baseWidget: baseWidget{
 			needsRepaint: true,
+			visible:      true,
 			widgets:      widgets,
 
 			widgetType: scrollbarWidget,

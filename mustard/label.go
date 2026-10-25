@@ -15,6 +15,7 @@ func CreateLabelWidget(content string) *LabelWidget {
 	return &LabelWidget{
 		baseWidget: baseWidget{
 			needsRepaint: true,
+			visible:      true,
 			widgets:      widgets,
 
 			widgetType: labelWidget,

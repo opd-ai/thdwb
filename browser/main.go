@@ -3,6 +3,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"runtime"
 
@@ -12,22 +13,38 @@ import (
 	profiler "github.com/danfragoso/thdwb/profiler"
 )
 
+// Build metadata injected at build time via -ldflags (see Makefile).
+var (
+	gitRevision = "dev"
+	gitBranch   = "dev"
+	hostInfo    = runtime.GOOS + "/" + runtime.GOARCH
+	buildTime   = "unknown"
+)
+
 func main() {
 	runtime.LockOSThread()
 
-	settings := &hotdog.Settings{
-		Homepage:     "thdwb://homepage/",
-		WindowWidth:  900,
-		WindowHeight: 600,
-		HiDPI:        true,
+	settingsPath := flag.String("settings", "", "path to a settings JSON file")
+	flag.Parse()
+
+	var settings *hotdog.Settings
+	if *settingsPath != "" {
+		settings = hotdog.LoadSettings(*settingsPath)
+	} else {
+		settings = &hotdog.Settings{
+			Homepage:     "thdwb://homepage/",
+			WindowWidth:  900,
+			WindowHeight: 600,
+			HiDPI:        true,
+		}
 	}
 
 	profilerInstance := profiler.CreateProfiler()
 	buildInfo := &assets.BuildInfo{
-		GitRevision: "thdwb",
-		GitBranch:   "main",
-		HostInfo:    "thdwb",
-		BuildTime:   "now",
+		GitRevision: gitRevision,
+		GitBranch:   gitBranch,
+		HostInfo:    hostInfo,
+		BuildTime:   buildTime,
 	}
 
 	// Create a new window context

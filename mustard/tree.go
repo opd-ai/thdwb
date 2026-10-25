@@ -18,6 +18,7 @@ func CreateTreeWidget() *TreeWidget {
 	return &TreeWidget{
 		baseWidget: baseWidget{
 			needsRepaint: true,
+			visible:      true,
 			widgets:      widgets,
 
 			widgetType: treeWidget,

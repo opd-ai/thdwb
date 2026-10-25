@@ -25,6 +25,9 @@ func CreateNewApp(driver Driver, name string) *App {
 func (app *App) Run(callback func()) {
 	if app.driver != nil {
 		appDriver := app.driver.NewApp(app.name)
+		for _, window := range app.windows {
+			appDriver.AddWindow(window)
+		}
 		appDriver.Run(callback)
 		return
 	}

@@ -18,6 +18,7 @@ func CreateImageWidget(path []byte) *ImageWidget {
 	return &ImageWidget{
 		baseWidget: baseWidget{
 			needsRepaint: true,
+			visible:      true,
 			widgets:      widgets,
 
 			widgetType: imageWidget,

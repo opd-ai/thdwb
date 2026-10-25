@@ -15,6 +15,7 @@ func CreateInputWidget() *InputWidget {
 	return &InputWidget{
 		baseWidget: baseWidget{
 			needsRepaint: true,
+			visible:      true,
 			widgets:      widgets,
 
 			widgetType: inputWidget,

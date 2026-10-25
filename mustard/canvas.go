@@ -11,6 +11,7 @@ func CreateCanvasWidget(renderer func(*CanvasWidget)) *CanvasWidget {
 	return &CanvasWidget{
 		baseWidget: baseWidget{
 			needsRepaint: true,
+			visible:      true,
 			widgets:      widgets,
 
 			widgetType: canvasWidget,

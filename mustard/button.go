@@ -16,6 +16,7 @@ func CreateButtonWidget(label string, asset []byte) *ButtonWidget {
 	return &ButtonWidget{
 		baseWidget: baseWidget{
 			needsRepaint: true,
+			visible:      true,
 			widgets:      widgets,
 
 			widgetType: buttonWidget,

@@ -15,6 +15,7 @@ func CreateTextWidget(content string) *TextWidget {
 	return &TextWidget{
 		baseWidget: baseWidget{
 			needsRepaint: true,
+			visible:      true,
 			widgets:      widgets,
 
 			widgetType: textWidget,
