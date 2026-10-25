@@ -20,12 +20,8 @@ clean:
 	@rm -rf bin
 
 test:
-	@echo -e "Testing Sauce...\n"
-	@go test -v sauce/* | sed ''/PASS/s//$$(printf "\033[32mPASS\033[0m")/'' | sed ''/FAIL/s//$$(printf "\033[31mFAIL\033[0m")/'' | sed ''/FAIL/s//$$(printf "\033[31mFAIL\033[0m")/'' | GREP_COLOR="01;33" egrep --color=always '\s*[a-zA-Z0-9\-_.]+[:][0-9]+[:]|^'
-	@echo -e "\n"
-
-	@echo -e "Testing Mayo...\n"
-	@go test -v mayo/* | sed ''/PASS/s//$$(printf "\033[32mPASS\033[0m")/'' | sed ''/FAIL/s//$$(printf "\033[31mFAIL\033[0m")/'' | sed ''/FAIL/s//$$(printf "\033[31mFAIL\033[0m")/'' | GREP_COLOR="01;33" egrep --color=always '\s*[a-zA-Z0-9\-_.]+[:][0-9]+[:]|^'
+	@echo -e "Testing all modules...\n"
+	@go test -v ./sauce/... ./mayo/... ./bun/... ./gg/... ./hotdog/... ./mustard/... ./profiler/... ./ketchup/... ./platform/... ./webview/... ./assets/... ./pages/... | sed ''/PASS/s//$$(printf "\033[32mPASS\033[0m")/'' | sed ''/FAIL/s//$$(printf "\033[31mFAIL\033[0m")/'' | sed ''/FAIL/s//$$(printf "\033[31mFAIL\033[0m")/'' | GREP_COLOR="01;33" egrep --color=always '\s*[a-zA-Z0-9\-_.]+[:][0-9]+[:]|^'
 	@echo -e "\n"
 
 build_assets:

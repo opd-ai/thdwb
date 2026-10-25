@@ -8,6 +8,9 @@ import (
 )
 
 func CreateNewWindow(driver Driver, title string, width, height int, hiDPI bool) (Window, error) {
+	if driver == nil {
+		driver = NewDriver()
+	}
 	return driver.NewWindow(title, width, height, hiDPI)
 }
 

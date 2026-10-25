@@ -16,6 +16,9 @@ type App struct {
 
 // CreateNewApp creates a new application using the given driver.
 func CreateNewApp(driver Driver, name string) *App {
+	if driver == nil {
+		driver = NewDriver()
+	}
 	return &App{name: name, driver: driver}
 }
 

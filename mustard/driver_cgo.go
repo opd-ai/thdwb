@@ -19,6 +19,11 @@ type cgoDriver struct{}
 
 var _ Driver = (*cgoDriver)(nil)
 
+// NewDriver returns a new cgoDriver (GLFW/OpenGL backend).
+func NewDriver() Driver {
+	return &cgoDriver{}
+}
+
 func (d *cgoDriver) NewWindow(title string, width, height int, hiDPI bool) (Window, error) {
 	setGLFWHints()
 	glfw.Init()

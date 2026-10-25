@@ -31,16 +31,16 @@ func main() {
 	windowContext := hotdog.NewWindowContext(settings, buildInfo, profilerInstance)
 	defer windowContext.Destroy()
 
-	app := mustard.CreateNewApp(nil, "THDWB Tabbed Browser")
+	app := mustard.CreateNewApp(mustard.NewDriver(), "THDWB Tabbed Browser")
 
 	// Create multiple windows (tabs)
-	window1, err := mustard.CreateNewWindow(nil, "Tab 1", settings.WindowWidth, settings.WindowHeight, settings.HiDPI)
+	window1, err := mustard.CreateNewWindow(mustard.NewDriver(), "Tab 1", settings.WindowWidth, settings.WindowHeight, settings.HiDPI)
 	if err != nil {
 		fmt.Printf("Failed to create window 1: %v\n", err)
 		return
 	}
 
-	window2, err := mustard.CreateNewWindow(nil, "Tab 2", settings.WindowWidth, settings.WindowHeight, settings.HiDPI)
+	window2, err := mustard.CreateNewWindow(mustard.NewDriver(), "Tab 2", settings.WindowWidth, settings.WindowHeight, settings.HiDPI)
 	if err != nil {
 		fmt.Printf("Failed to create window 2: %v\n", err)
 		return

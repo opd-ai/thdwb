@@ -15,6 +15,11 @@ type ebitenDriver struct{}
 
 var _ Driver = (*ebitenDriver)(nil)
 
+// NewDriver returns a new ebitenDriver (pure Go Ebitengine backend).
+func NewDriver() Driver {
+	return &ebitenDriver{}
+}
+
 func (d *ebitenDriver) NewWindow(title string, width, height int, hiDPI bool) (Window, error) {
 	return &ebitenWindow{
 		title:   title,

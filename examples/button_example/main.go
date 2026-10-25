@@ -31,8 +31,8 @@ func main() {
 	windowContext := hotdog.NewWindowContext(settings, buildInfo, profilerInstance)
 	defer windowContext.Destroy()
 
-	app := mustard.CreateNewApp(nil, "THDWB Button Example")
-	window, err := mustard.CreateNewWindow(nil, "Button Example", settings.WindowWidth, settings.WindowHeight, settings.HiDPI)
+	app := mustard.CreateNewApp(mustard.NewDriver(), "THDWB Button Example")
+	window, err := mustard.CreateNewWindow(mustard.NewDriver(), "Button Example", settings.WindowWidth, settings.WindowHeight, settings.HiDPI)
 	if err != nil {
 		fmt.Printf("Failed to create window: %v\n", err)
 		return
