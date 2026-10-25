@@ -211,7 +211,7 @@ Decouple from all CGo dependencies by moving the browser render stack onto Ebite
 - [x] Image codecs replaced with pure Go implementations without CGo dependencies
 - [x] Platform abstraction layer (`platform.Renderer`, `platform.Window`, `platform.Input`) implemented
 - [ ] Embeddable native WebView layer added for in-app browsing and sandboxed execution
-- [ ] GPU command buffer abstraction translates cleanly to native GPU APIs
+- [x] GPU command buffer abstraction translates cleanly to native GPU APIs
 - [x] CPU software renderer provides a fallback for headless or GPU-restricted environments
 - [x] Build tags support CGo and pure Go rendering selection, defaulting to pure Go
 - [ ] Cross-platform validation passes on Windows, macOS, Linux, Android, and iOS
