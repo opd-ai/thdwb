@@ -226,11 +226,12 @@ func (node *NodeDOM) toHTML() string {
 // escapeHTML escapes special HTML characters for safe output.
 // Replaces &, <, > with HTML entities.
 func escapeHTML(s string) string {
-	s = strings.ReplaceAll(s, "&", "&")
-	s = strings.ReplaceAll(s, "<", "<")
-	s = strings.ReplaceAll(s, ">", ">")
+	// Escape ampersand first so the entities we emit are not double-escaped.
+	s = strings.ReplaceAll(s, "&", "&amp;")
+	s = strings.ReplaceAll(s, "<", "&lt;")
+	s = strings.ReplaceAll(s, ">", "&gt;")
 	s = strings.ReplaceAll(s, "\"", "&quot;")
-	s = strings.ReplaceAll(s, "'", "'")
+	s = strings.ReplaceAll(s, "'", "&#39;")
 	return s
 }
 

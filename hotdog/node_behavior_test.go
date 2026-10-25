@@ -36,7 +36,8 @@ func TestNodeHTMLSerialization(t *testing.T) {
 		node *NodeDOM
 		want string
 	}{
-		{&NodeDOM{Type: NodeTypeText, Content: "<&>"}, "<&>"},
+		// Text content is HTML-escaped (& first, then < > " ').
+		{&NodeDOM{Type: NodeTypeText, Content: "<&>"}, "&lt;&amp;&gt;"},
 		{&NodeDOM{Type: NodeTypeComment, Content: "note"}, "<!--note-->"},
 		{&NodeDOM{Type: NodeTypeDoctype, Content: "html"}, "<!DOCTYPE html>"},
 		{&NodeDOM{Type: NodeTypeRaw, Content: "<raw>"}, "<raw>"},
