@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	"github.com/goki/freetype/raster"
-	"github.com/goki/freetype/truetype"
 	"golang.org/x/image/draw"
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/basicfont"
@@ -697,8 +696,8 @@ func (dc *Context) DrawImageAnchored(im image.Image, x, y int, ax, ay float64) {
 
 // Text Functions
 
-func (dc *Context) SetFont(font *truetype.Font, points float64) {
-	dc.fontFace = truetype.NewFace(font, &truetype.Options{Size: points})
+func (dc *Context) SetFont(face font.Face, points float64) {
+	dc.fontFace = face
 	dc.fontHeight = points * 72 / 96
 }
 

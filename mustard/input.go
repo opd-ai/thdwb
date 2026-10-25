@@ -1,13 +1,16 @@
 package mustard
 
 import (
+	assets "github.com/danfragoso/thdwb/assets"
 	gg "github.com/danfragoso/thdwb/gg"
-	"github.com/goki/freetype/truetype"
+	"golang.org/x/image/font"
 )
 
 // CreateInputWidget - Creates and returns a new Input Widget
 func CreateInputWidget() *InputWidget {
 	var widgets []Widget
+
+	face, _ := loadFontFace(assets.OpenSans(400), 20)
 
 	return &InputWidget{
 		baseWidget: baseWidget{
@@ -17,6 +20,8 @@ func CreateInputWidget() *InputWidget {
 			widgetType: inputWidget,
 
 			backgroundColor: "#fff",
+
+			font: face,
 		},
 
 		fontSize:  20,
@@ -114,7 +119,7 @@ func (input *InputWidget) draw() {
 
 	context.SetHexColor("#2f2f2f")
 
-	context.SetFont(input.font.(*truetype.Font), input.fontSize)
+	context.SetFont(input.font.(font.Face), input.fontSize)
 	w, h := context.MeasureString(input.value)
 
 	cursorP := width - totalPadding*2

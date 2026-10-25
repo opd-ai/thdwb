@@ -2,7 +2,23 @@ package mustard
 
 import (
 	"image"
+
+	"golang.org/x/image/font"
+	"golang.org/x/image/font/opentype"
 )
+
+// loadFontFace parses a TrueType font and returns a font.Face at the given size.
+func loadFontFace(fontBytes []byte, size float64) (font.Face, error) {
+	f, err := opentype.Parse(fontBytes)
+	if err != nil {
+		return nil, err
+	}
+	return opentype.NewFace(f, &opentype.FaceOptions{
+		Size:    size,
+		DPI:     72,
+		Hinting: font.HintingNone,
+	})
+}
 
 type WindowBase struct {
 	title  string

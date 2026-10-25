@@ -203,15 +203,15 @@ Decouple from all CGo dependencies by moving the browser render stack onto Ebite
 * **Ensure Cross-Platform Testing:** Validate pure Go renderer on Windows, macOS, Linux, Android, and iOS; test headless rendering and virtualized GPU scenarios.
 
 ### Phase 8 Completion Checklist
-- [ ] All CGo dependencies audited and replacement plan documented
-- [ ] GLFW replaced with Ebitengine-based cross-platform windowing and input stack
+- [x] All CGo dependencies audited and replacement plan documented
+- [x] GLFW replaced with Ebitengine-based cross-platform windowing and input stack
 - [ ] Android and iOS are supported as first-class targets with touch and lifecycle handling
 - [ ] GPU rendering functional via Direct3D 12, Metal, or Vulkan on native platforms
-- [ ] Font rendering works with pure Go TrueType/OpenType rasterization
-- [ ] Image codecs replaced with pure Go implementations without CGo dependencies
-- [ ] Platform abstraction layer (`platform.Renderer`, `platform.Window`, `platform.Input`) implemented
+- [x] Font rendering works with pure Go TrueType/OpenType rasterization
+- [x] Image codecs replaced with pure Go implementations without CGo dependencies
+- [x] Platform abstraction layer (`platform.Renderer`, `platform.Window`, `platform.Input`) implemented
 - [ ] Embeddable native WebView layer added for in-app browsing and sandboxed execution
 - [ ] GPU command buffer abstraction translates cleanly to native GPU APIs
-- [ ] CPU software renderer provides a fallback for headless or GPU-restricted environments
-- [ ] Build tags support CGo and pure Go rendering selection, defaulting to pure Go
+- [x] CPU software renderer provides a fallback for headless or GPU-restricted environments
+- [x] Build tags support CGo and pure Go rendering selection, defaulting to pure Go
 - [ ] Cross-platform validation passes on Windows, macOS, Linux, Android, and iOS

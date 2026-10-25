@@ -3,12 +3,14 @@ package mustard
 import (
 	assets "github.com/danfragoso/thdwb/assets"
 	gg "github.com/danfragoso/thdwb/gg"
-	"github.com/goki/freetype/truetype"
+	"golang.org/x/image/font"
 )
 
 // CreateTreeWidget - Creates and returns a new Tree Widget
 func CreateTreeWidget() *TreeWidget {
 	var widgets []Widget
+
+	face, _ := loadFontFace(assets.OpenSans(400), 20)
 
 	openIcon, _ := gg.LoadAsset(assets.DownChevron())
 	closeIcon, _ := gg.LoadAsset(assets.RightChevron())
@@ -21,6 +23,8 @@ func CreateTreeWidget() *TreeWidget {
 			widgetType: treeWidget,
 
 			backgroundColor: "#fff",
+
+			font: face,
 		},
 
 		openIcon:  openIcon,
@@ -219,7 +223,7 @@ func drawNode(context *gg.Context, node *TreeWidgetNode, tree *TreeWidget, level
 	}
 
 	context.SetHexColor(tree.fontColor)
-	context.SetFont(tree.font.(*truetype.Font), tree.fontSize)
+	context.SetFont(tree.font.(font.Face), tree.fontSize)
 	context.DrawString(node.Key, float64(left)+20+tree.fontSize/4, float64(top)+tree.fontSize*2/2)
 	context.Fill()
 

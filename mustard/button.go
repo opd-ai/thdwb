@@ -1,14 +1,17 @@
 package mustard
 
 import (
+	assets "github.com/danfragoso/thdwb/assets"
 	gg "github.com/danfragoso/thdwb/gg"
-	"github.com/goki/freetype/truetype"
+	"golang.org/x/image/font"
 )
 
 // CreateButtonWidget - Creates and returns a new Button Widget
 func CreateButtonWidget(label string, asset []byte) *ButtonWidget {
 	var widgets []Widget
 	icon, _ := gg.LoadAsset(asset)
+
+	face, _ := loadFontFace(assets.OpenSans(400), 20)
 
 	return &ButtonWidget{
 		baseWidget: baseWidget{
@@ -18,6 +21,8 @@ func CreateButtonWidget(label string, asset []byte) *ButtonWidget {
 			widgetType: buttonWidget,
 
 			backgroundColor: "#fff",
+
+			font: face,
 		},
 
 		icon:      icon,
@@ -106,7 +111,7 @@ func (button *ButtonWidget) draw() {
 
 	if button.content != "" {
 		context.SetHexColor(button.fontColor)
-		context.SetFont(button.font.(*truetype.Font), button.fontSize)
+		context.SetFont(button.font.(font.Face), button.fontSize)
 		context.DrawString(button.content, float64(left)+button.padding, float64(top)+button.padding+button.fontSize)
 	}
 

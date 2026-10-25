@@ -1,13 +1,16 @@
 package mustard
 
 import (
+	assets "github.com/danfragoso/thdwb/assets"
 	gg "github.com/danfragoso/thdwb/gg"
-	"github.com/goki/freetype/truetype"
+	"golang.org/x/image/font"
 )
 
 // CreateTextWidget - Creates and returns a new Text Widget
 func CreateTextWidget(content string) *TextWidget {
 	var widgets []Widget
+
+	face, _ := loadFontFace(assets.OpenSans(400), 20)
 
 	return &TextWidget{
 		baseWidget: baseWidget{
@@ -17,6 +20,8 @@ func CreateTextWidget(content string) *TextWidget {
 			widgetType: textWidget,
 
 			backgroundColor: "#fff",
+
+			font: face,
 		},
 		content: content,
 
@@ -77,7 +82,7 @@ func (text *TextWidget) draw() {
 	context := text.window.context.(*gg.Context)
 	top, left, width, height := text.computedBox.GetCoords()
 
-	context.SetFont(text.font.(*truetype.Font), text.fontSize)
+	context.SetFont(text.font.(font.Face), text.fontSize)
 	context.DrawRectangle(float64(left), float64(top), float64(width), float64(height))
 	context.SetHexColor(text.backgroundColor)
 	context.Fill()

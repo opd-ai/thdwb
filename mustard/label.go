@@ -1,13 +1,16 @@
 package mustard
 
 import (
+	assets "github.com/danfragoso/thdwb/assets"
 	gg "github.com/danfragoso/thdwb/gg"
-	"github.com/goki/freetype/truetype"
+	"golang.org/x/image/font"
 )
 
 // CreateLabelWidget - Creates and returns a new Label Widget
 func CreateLabelWidget(content string) *LabelWidget {
 	var widgets []Widget
+
+	face, _ := loadFontFace(assets.OpenSans(400), 20)
 
 	return &LabelWidget{
 		baseWidget: baseWidget{
@@ -17,6 +20,8 @@ func CreateLabelWidget(content string) *LabelWidget {
 			widgetType: labelWidget,
 
 			backgroundColor: "#fff",
+
+			font: face,
 		},
 		content: content,
 
@@ -81,7 +86,7 @@ func (label *LabelWidget) draw() {
 	context.Fill()
 
 	context.SetHexColor(label.fontColor)
-	context.SetFont(label.font.(*truetype.Font), label.fontSize)
+	context.SetFont(label.font.(font.Face), label.fontSize)
 	context.DrawString(label.content, float64(left)+label.fontSize/4, float64(top)+label.fontSize*2/2)
 	context.Fill()
 
