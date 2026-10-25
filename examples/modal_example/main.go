@@ -6,29 +6,14 @@ import (
 	"runtime"
 
 	assets "github.com/danfragoso/thdwb/assets"
+	gg "github.com/danfragoso/thdwb/gg"
 	hotdog "github.com/danfragoso/thdwb/hotdog"
 	mustard "github.com/danfragoso/thdwb/mustard"
 	profiler "github.com/danfragoso/thdwb/profiler"
-
-	"github.com/go-gl/gl/v3.2-core/gl"
-	"github.com/go-gl/glfw/v3.3/glfw"
 )
 
 func main() {
 	runtime.LockOSThread()
-
-	if err := glfw.Init(); err != nil {
-		fmt.Printf("Failed to initialize GLFW: %v\n", err)
-		return
-	}
-	defer glfw.Terminate()
-
-	if err := gl.Init(); err != nil {
-		fmt.Printf("Failed to initialize OpenGL: %v\n", err)
-		return
-	}
-
-	mustard.SetGLFWHints()
 
 	settings := &hotdog.Settings{
 		WindowWidth:  800,
@@ -48,14 +33,15 @@ func main() {
 	windowContext := hotdog.NewWindowContext(settings, buildInfo, profilerInstance)
 	defer windowContext.Destroy()
 
-	app := mustard.CreateNewApp("THDWB Modal Example")
-	window := mustard.CreateNewWindow("Modal Example", settings.WindowWidth, settings.WindowHeight, settings.HiDPI)
-	if window == nil {
-		fmt.Println("Failed to create window")
+	app := mustard.CreateNewApp(nil, "THDWB Modal Example")
+	window, err := mustard.CreateNewWindow(nil, "Modal Example", settings.WindowWidth, settings.WindowHeight, settings.HiDPI)
+	if err != nil {
+		fmt.Printf("Failed to create window: %v\n", err)
 		return
 	}
 
-	windowContext.Window = window
+	wb := window.(*mustard.WindowBase)
+	windowContext.Window = wb
 
 	// Create root frame
 	rootFrame := mustard.CreateFrame(mustard.VerticalFrame)
@@ -124,26 +110,26 @@ func main() {
 	modalOverlay.AttachWidget(modalMessage)
 	modalOverlay.AttachWidget(modalButtons)
 
-	// Create overlay from modal frame
-	modalOverlayCtx := modalOverlay.BaseWidget().GetWindow().GetContext()
-	overlay := mustard.CreateStaticOverlay("modal", modalOverlayCtx, image.Point{X: 300, Y: 200})
-	window.AddOverlay(overlay)
+	// Create overlay from modal frame buffer
+	modalCtx := gg.NewContext(400, 200)
+	overlay := mustard.CreateOverlay("modal", modalCtx.Image().(*image.RGBA), image.Point{X: 200, Y: 200})
+	wb.AddStaticOverlay(overlay)
 
 	// Button handlers
-	window.RegisterButton(openModalButton, func() {
+	wb.RegisterButton(openModalButton, func() {
 		modalOverlay.SetVisible(true)
 		modalOverlay.RequestRepaint()
-		window.RequestReflow()
+		wb.RequestReflow()
 	})
 
-	window.RegisterButton(confirmButton, func() {
+	wb.RegisterButton(confirmButton, func() {
 		modalOverlay.SetVisible(false)
 		statusLabel.SetContent("Action confirmed!")
 		statusLabel.SetFontColor("#4CAF50")
 		statusLabel.RequestRepaint()
 	})
 
-	window.RegisterButton(cancelButton, func() {
+	wb.RegisterButton(cancelButton, func() {
 		modalOverlay.SetVisible(false)
 		statusLabel.SetContent("Action cancelled")
 		statusLabel.SetFontColor("#FF9800")
@@ -155,7 +141,7 @@ func main() {
 	rootFrame.AttachWidget(openModalButton)
 	rootFrame.AttachWidget(statusLabel)
 
-	window.SetRootFrame(rootFrame)
+	wb.SetRootFrame(rootFrame)
 	app.AddWindow(window)
 	window.Show()
 

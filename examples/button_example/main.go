@@ -8,26 +8,10 @@ import (
 	hotdog "github.com/danfragoso/thdwb/hotdog"
 	mustard "github.com/danfragoso/thdwb/mustard"
 	profiler "github.com/danfragoso/thdwb/profiler"
-
-	"github.com/go-gl/gl/v3.2-core/gl"
-	"github.com/go-gl/glfw/v3.3/glfw"
 )
 
 func main() {
 	runtime.LockOSThread()
-
-	if err := glfw.Init(); err != nil {
-		fmt.Printf("Failed to initialize GLFW: %v\n", err)
-		return
-	}
-	defer glfw.Terminate()
-
-	if err := gl.Init(); err != nil {
-		fmt.Printf("Failed to initialize OpenGL: %v\n", err)
-		return
-	}
-
-	mustard.SetGLFWHints()
 
 	settings := &hotdog.Settings{
 		WindowWidth:  800,
@@ -47,14 +31,15 @@ func main() {
 	windowContext := hotdog.NewWindowContext(settings, buildInfo, profilerInstance)
 	defer windowContext.Destroy()
 
-	app := mustard.CreateNewApp("THDWB Button Example")
-	window := mustard.CreateNewWindow("Button Example", settings.WindowWidth, settings.WindowHeight, settings.HiDPI)
-	if window == nil {
-		fmt.Println("Failed to create window")
+	app := mustard.CreateNewApp(nil, "THDWB Button Example")
+	window, err := mustard.CreateNewWindow(nil, "Button Example", settings.WindowWidth, settings.WindowHeight, settings.HiDPI)
+	if err != nil {
+		fmt.Printf("Failed to create window: %v\n", err)
 		return
 	}
 
-	windowContext.Window = window
+	wb := window.(*mustard.WindowBase)
+	windowContext.Window = wb
 
 	// Create root frame
 	rootFrame := mustard.CreateFrame(mustard.VerticalFrame)
@@ -69,7 +54,7 @@ func main() {
 
 	// Add click handler
 	clickCount := 0
-	window.RegisterButton(button, func() {
+	wb.RegisterButton(button, func() {
 		clickCount++
 		button.SetContent(fmt.Sprintf("Clicked %d times!", clickCount))
 		button.RequestRepaint()
@@ -84,7 +69,7 @@ func main() {
 	rootFrame.AttachWidget(button)
 	rootFrame.AttachWidget(statusLabel)
 
-	window.SetRootFrame(rootFrame)
+	wb.SetRootFrame(rootFrame)
 	app.AddWindow(window)
 	window.Show()
 

@@ -23,11 +23,14 @@ type ebitenWindow struct {
 	height  int
 	visible bool
 	closed  bool
+	cursor  Cursor
 
 	// Mobile-specific state
 	orientation  Orientation
 	lifecycle    LifecycleState
 	touchPoints  map[ebiten.TouchID]TouchPoint
+
+	needsReflow bool
 }
 
 // Orientation represents the device orientation.
@@ -166,6 +169,15 @@ func (w *ebitenWindow) PollEvents() {
 
 func (w *ebitenWindow) ShouldClose() bool {
 	return w.closed || inpututil.IsWindowBeingClosed()
+}
+
+func (w *ebitenWindow) GetCursorPosition() (float64, float64) {
+	x, y := ebiten.CursorPosition()
+	return float64(x), float64(y)
+}
+
+func (w *ebitenWindow) SetCursor(cursor Cursor) {
+	w.cursor = cursor
 }
 
 func (r *ebitenRenderer) Clear() {
