@@ -169,7 +169,7 @@ Build comprehensive test coverage, user-facing documentation, and performance op
 * **Add Type Safety Checks:** Implement go vet, staticcheck rules.
 
 ### Phase 7 Completion Checklist
-- [x] 80%+ line coverage for core DOM, layout, event, security modules (mustard improved 26.6%→48.1%, gg 64.3%, hotdog 71.7%, mayo 74.7%, sauce 75.7%, profiler 72.2%, bun 88.6%)
+- [x] 80%+ line coverage for core DOM, layout, event, security modules (mustard improved 26.6%→48.1%, gg 64.3%, hotdog 84.6%, mayo 74.7%, sauce 75.7%, profiler 72.2%, bun 88.6%)
 - [x] All example components render and interact correctly
 - [x] Tabbed browser example functional with multiple windows
 - [x] API docs complete and accurate (docs/07-javascript-runtime.md, docs/08-ui-toolkit.md updated to match actual public API)

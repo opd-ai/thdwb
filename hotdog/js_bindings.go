@@ -1635,6 +1635,15 @@ func (w *JSWindowWrapper) XMLHttpRequest(call goja.ConstructorCall) *goja.Object
 		if !w.windowCtx.IsActive() {
 			return
 		}
+		// The XHR spec requires readyState to only ever increase. send() already
+		// advances to LOADING, so skip any backward transition to avoid a
+		// LOADING -> HEADERS_RECEIVED regression firing a spurious event.
+		if newState < readyState {
+			newState = readyState
+		}
+		if newState == readyState {
+			return
+		}
 		readyState = newState
 		_ = xhrObj.Set("readyState", readyState)
 
