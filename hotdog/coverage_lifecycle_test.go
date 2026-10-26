@@ -292,7 +292,12 @@ func TestFunctionKey(t *testing.T) {
 	}
 	a := func() {}
 	b := func() {}
-	if functionKey(a) == 0 || functionKey(a) != functionKey(a) {
+	if functionKey(a) == 0 {
+		t.Fatal("functionKey(func) == 0")
+	}
+	// A deterministic key must be stable across separate invocations.
+	first, second := functionKey(a), functionKey(a)
+	if first != second {
 		t.Fatal("functionKey unstable for same function")
 	}
 	if functionKey(a) == functionKey(b) {

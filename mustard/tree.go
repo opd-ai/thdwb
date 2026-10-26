@@ -82,20 +82,6 @@ func selectNodeByValue(nodes []*TreeWidgetNode, value string) {
 	}
 }
 
-func selectNode(nodes []*TreeWidgetNode, node *TreeWidgetNode) {
-	_ = nodes
-	_ = node
-	for _, childNode := range nodes {
-		selectNode(childNode.Children, node)
-
-		if childNode == node {
-			node.isSelected = true
-		} else {
-			node.isSelected = false
-		}
-	}
-}
-
 func fireNodeEvents(tree *TreeWidget, node *TreeWidgetNode, x, y, nodeHeight float64) {
 	t, l, _, _ := node.box.GetCoords()
 	if y > t && y < t+nodeHeight {

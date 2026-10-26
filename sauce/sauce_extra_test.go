@@ -111,7 +111,7 @@ func TestFetchExternalPageWithOptionsCachesGET(t *testing.T) {
 	calls := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
-		_, _ = w.Write([]byte(fmt.Sprintf("hit-%d", calls)))
+		_, _ = fmt.Fprintf(w, "hit-%d", calls)
 	}))
 	defer srv.Close()
 
