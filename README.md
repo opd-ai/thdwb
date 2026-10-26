@@ -58,27 +58,30 @@ This repository includes a **textbook-style documentation** explaining browser i
 ### Running
 
 ```sh
-make
+make run
 ```
-Starts the browser and loads an example page.
+Starts the browser (builds first with `make build`).
 
 ### Testing
 
-```sh
-make test
-```
-Runs all unit tests (including Example tests from the textbook).
+The repository is a `go.work` workspace, so tests run per module or across the
+whole workspace:
 
 ```sh
-go test -run Example ./...  # Run only textbook examples
+make test              # Run every module's tests (CGO_ENABLED=0)
+go test work           # Run all tests in the workspace (from the repo root)
+go test -race work     # Same, with the race detector (requires CGO)
+make coverage          # Per-module and combined coverage reports
 ```
+
+To test a single module, `cd` into it (e.g. `cd mustard && go test ./...`).
 
 ### Building
 
 ```sh
 make build
 ```
-Produces a binary in the project root.
+Produces a binary in the project root (`bin/thdwb`).
 
 ---
 
