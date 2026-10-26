@@ -1,217 +1,345 @@
-### REVISED PLAN: Tabbed Browsing Architecture with Per-Window Isolation
+# PLAN.md: Firefox WebExtensions-Compatible Browser
 
-## Core Model: Each Tab = Separate Window Instance
+## Current State Assessment
 
-Instead of modifying the existing single-window architecture, the browser wraps **multiple independent toolkit instances** (one per tab/window). Each window has:
-- Isolated DOM tree and layout cache
-- Isolated Goja JS runtime
-- Isolated event loop and input routing
-- Isolated storage (cookies, localStorage, sessionStorage)
+**Implemented and Working (Phases 0-7):**
+- Core browser engine with modular architecture
+- HTML parser (ketchup), CSS parser (mayo), layout engine (bun)
+- 2D graphics library (gg), UI toolkit (mustard)
+- Network layer (sauce) with HTTP, cookies, TLS
+- JavaScript runtime (hotdog) with Goja VM, DOM bindings, Fetch API
+- Per-window isolation model with SOP, CORS, CSP
+- Cookie jar, localStorage, sessionStorage
+- Comprehensive test suite (all tests passing)
 
-A **browser shell** manages the tabbed UI, tab switching, and resource sharing at the network layer.
+**Bugs Resolved:**
+- Missing bundled assets (icons, pages) — bundler.go now generates icons.go and pages.go
+- Build failures in mustard and sauce modules resolved
 
----
-
-## Phase 0: Refactor for Multiple Window Instances COMPLETE
-
-Enable the toolkit to run as multiple independent, non-interfering instances.
-
----
-
-## Phase 1: Isolate and Refactor the DOM and Tree Structure COMPLETE
-
-Establish a clean, spec-compliant DOM foundation **per window** with robust tree traversal and mutation support.
-
----
-
-## Phase 2: Decouple CSS Parsing from Layout and Integrate Flexbox COMPLETE
-
-Separate style parsing from layout calculation using a mature flexbox solver.
+**Implementation Gaps (Phase 8):**
+- Browser shell (main.go) is minimal — no tabs, address bar, navigation
+- WebView module has stub implementations, not integrated with browser shell
+- No Ebitengine integration for cross-platform rendering
+- Missing platform-specific GPU backends (Direct3D 12, Metal, Vulkan)
+- No Android/iOS targets implemented
+- No build tags for CGo vs pure Go rendering selection
 
 ---
 
-## Phase 3: Implement JavaScript Runtime and DOM Bindings
+## Phase E7: Browser UI and User-Facing Features
 
-Introduce interactive scripting with per-window Goja isolation and security sandboxing.
+Build the browser shell UI, tab management, and extension integration.
 
-* **Initialize Per-Window Goja VM:** Set up pure Go JS runtime **per `WindowContext`** using `dop251/goja`; never share runtimes between windows.
-* **Build DOM Wrapper Functions:** Create Go-to-JS bridge functions for DOM manipulation. **All wrappers enforce origin checks and throw SecurityError on violations.**
-* **Register Global Objects:** Populate `document`, `window`, `console` objects. **Prevent access to DOM nodes from other origins.**
-* **Implement querySelector Methods:** Expose cascadia queries; **selectors respect sandbox boundaries and cannot cross iframe borders.**
-* **Support DOM Properties:** Map element properties (id, className, innerHTML, textContent, style). **Validate all writes against CSP and origin restrictions.**
-* **Implement Event Objects:** Define JS event objects bridging to Go. **Prevent event bubbling across security boundaries.**
-* **Add Console API:** Implement `console.log()`, `console.error()`, `console.warn()`. **Log output attributed to origin and window.**
-* **Implement Storage APIs:** Expose `localStorage` and `sessionStorage` backed by window storage partition. **Storage keyed by origin, not window; session storage cleared on tab close.**
-* **Add Inter-Window Messaging:** Implement `window.postMessage(data, targetOrigin)`. **Validate targetOrigin and prevent unsolicited messages.**
-* **Create Fetch API Bridge:** Implement XMLHttpRequest and Fetch API with enforced CORS preflight, origin header validation, cookie jar isolation, and header filtering.
-* **Prevent Dangerous APIs:** Block `eval()`, `Function()` constructor unless permitted by CSP `script-src 'unsafe-eval'`.
+### Tasks
+1. **Implement Tab Bar UI** — Tab display with container indicators, tab operations
+2. **Build Address Bar** — URL display, autocomplete, security indicator, container indicator
+3. **Implement Browser Controls** — Back, forward, reload, home, bookmark, extension icons
+4. **Build Bookmarks System** — chrome.bookmarks APIs, bookmarks sidebar
+5. **Implement History** — chrome.history APIs, history sidebar, search
+6. **Build Settings/Preferences Page** — General, privacy, security, extensions, containers
+7. **Implement Extension Icon in Toolbar** — Extension icons, popups, badges
+8. **Build New Tab Page** — Shortcuts, search, recently closed, bookmarks, container selector
 
-### Phase 3 Completion Checklist
-- [x] Each window has isolated Goja VM with no memory leaks
-- [x] Cross-window runtime variable access impossible
-- [x] DOM operations from JS mutate Go DOM nodes within same origin
-- [x] Cross-origin DOM access attempts throw SecurityError
-- [x] querySelector respects iframe boundaries
-- [x] Element properties work correctly with CSP checks
-- [x] console output logged with origin attribution
-- [x] Storage partitioned by origin, not window
-- [x] postMessage validates targetOrigin
-- [x] CORS preflight works for cross-origin requests
-- [x] eval() blocked unless permitted by CSP
-- [x] Fetch/XMLHttpRequest uses correct cookie jar partition
-- [x] No cross-window variable access leakage
+### Dependencies
+- Core engine (already implemented)
+- UI toolkit (mustard) enhancements for browser-specific components
+- Ebitengine integration for cross-platform rendering
+
+### Deliverables
+- Full-featured browser shell with tabs, navigation, bookmarks
+- Extension integration in UI
+- Settings and preferences management
+- New tab page
 
 ---
 
-## Phase 4: Implement Event System, Mutation Observation, and Reactive Layout
+## Phase E0: Extension Architecture and Manifest Parsing
 
-Enable interactive UIs with event handling, mutation tracking, and continuous layout recalculation **per window**.
+Establish the foundation for extension execution, discovery, and lifecycle management.
 
-* **Build Event Registry:** Store callback references on DOM nodes per event type. **Events delivered only to nodes within same window context.**
-* **Expose addEventListener API:** Implement `element.addEventListener(type, listener)`. **Listeners isolated per VM.**
-* **Implement removeEventListener:** Allow cleanup of registered event listeners.
-* **Create Dirty Flags:** Add `dirty` boolean flag to each DOM node; set on text, attribute, class, or style changes.
-* **Build Invalidation Queue:** Maintain queue of dirty nodes requiring layout recalculation. **Each window has its own invalidation queue.**
-* **Implement requestAnimationFrame:** Expose frame scheduling for script callbacks. **Callbacks per-window and fire in isolation.**
-* **Create Mutation Observer Interface:** Build simple mutation observer. **Mutations observable only within window.**
-* **Integrate Layout Recalculation Loop:** After JS mutations, walk dirty nodes and trigger layout solver. **Caching per-window.**
-* **Implement Viewport Resize Handling:** Capture viewport changes and mark root node dirty. **Viewport size can differ per window.**
+### Tasks
+1. **Define Extension Struct** — Create data structure for manifest, ID, version, permissions, background script VM state, content script registry, storage partition reference, icons/metadata
+2. **Implement Manifest Parser** — Parse manifest.json (v2 and v3), validate required fields, permissions, icons
+3. **Create Extension Discovery** — Scan extension directories, auto-load on startup
+4. **Build Extension Lifecycle Manager** — Enable/disable, reload, uninstall; manage background script startup/shutdown
+5. **Implement Extension Storage Partition** — Per-extension storage namespace for chrome.storage APIs
+6. **Create Content Script Registry** — Map URL patterns to content scripts
+7. **Build Extension Sandboxing** — Isolate extension Goja VMs from page VMs
 
-### Phase 4 Completion Checklist
-- [x] Event listeners registered and fired correctly
-- [x] removeEventListener successfully removes callbacks
-- [x] Dirty flag system marks nodes correctly on mutation
-- [x] Layout recalculation happens after DOM mutations
-- [x] requestAnimationFrame callbacks execute in correct order and isolation
-- [x] Mutation observer reacts to DOM changes
-- [x] Interactive components respond to events
-- [x] No layout thrashing
-- [x] Viewport resize triggers relayout without artifacts
-- [x] Each window maintains independent event loop and animation frame
-- [x] Event bubbling stops at security boundaries (iframe sandbox)
+### Dependencies
+- Core engine (already implemented)
+- Goja VM per-extension isolation (leverage existing per-window VM model)
+
+### Deliverables
+- Extension struct and manifest parser in `browser/extensions/` package
+- Extension discovery and lifecycle manager
+- Extension sandboxing infrastructure
 
 ---
 
-## Phase 5: Connect Layout Output to Rendering and Input Mapping
+## Phase E5: Content Script Injection, Sandbox, and Security
 
-Bind solved layout coordinates to the visual render pipeline and map hardware input events back to DOM targets **per window**.
+Enforce robust content script sandboxing and secure injection.
 
-* **Query Flexbox Layout Results:** Extract computed x, y, width, height, padding, border from flexbox nodes.
-* **Pass Geometry to Mustard:** Feed layout-computed bounding boxes to rendering layer. **Each window renders to its own viewport.**
-* **Implement Paint Validation:** Detect changed layout/style; mark only affected subtrees for repaint. **Painting independent per window.**
-* **Add Text Rendering Integration:** Wire text node content and computed font properties; respect flexbox dimensions.
-* **Implement Hit Testing:** Build spatial index/tree-walk to find topmost DOM node at (x, y) coordinate. **Hit testing searches only active window's DOM tree.**
-* **Map Input to Events:** Capture mouse clicks, key presses, text input from GLFW/OpenGL backend; resolve to target elements; fire JS event callbacks. **Input routed only to active window.**
-* **Implement Focus Management:** Track and update focused element; fire `focus` and `blur` events. **Focus per-window; one element focused per window context.**
-* **Handle Scroll Events:** Implement scrolling for overflow elements and emit `scroll` events. **Scroll position per-window.**
-* **Build Fullscreen/Modal Support:** Handle `element.focus()` and z-index stacking. **Modals confined to their window.**
-* **Implement Tab Switching Logic:** Pause layout/event loop in inactive windows; resume in active window. Implement efficient viewport swapping.
+### Tasks
+1. **Build Content Script Loader** — Parse manifest content_scripts, URL pattern matching, run_at timing
+2. **Implement Content Script Sandbox** — Isolated Goja VM with restricted global access
+3. **Implement Message Passing with Validation** — Content script ↔ background routing with origin validation
+4. **Build CSP for Content Scripts** — Enforce manifest content_security_policy
+5. **Implement Dynamic Content Script Loading** — chrome.scripting.executeScript with ISOLATED/MAIN world support
 
-### Phase 5 Completion Checklist
-- [x] Layout coordinates flow from flexbox solver to mustard renderer
-- [x] Paint applied only to changed regions
-- [x] Text renders within flexbox-computed boundaries
-- [x] Hit testing identifies target elements correctly
-- [x] Mouse clicks fire to correct elements in correct window
-- [x] Keyboard input routes to focused element in active window
-- [x] Focus ring renders and updates correctly per window
-- [x] Scrollable content works without artifacts
-- [x] No excessive paint/layout cycles per window
-- [x] Inactive windows do not execute JS or recalculate layout
-- [x] Tab switching is smooth with no layout stalls
-- [x] Each window can have different viewport dimensions
+### Dependencies
+- Phase E0 complete
+- URL pattern matching library
+- CSP parser
+
+### Deliverables
+- Content script loader with URL pattern matching
+- Secure sandboxed execution environment
+- Validated message routing
+- CSP enforcement
+- Dynamic script injection
 
 ---
 
-## Phase 6: Network, Cookie, and Storage Security
+## Phase E1: Core WebExtensions APIs
 
-Implement secure network handling, cookie isolation, and storage partitioning per origin.
+Implement the foundational APIs that most extensions rely on: messaging, storage, tabs.
 
-* **Implement Secure Cookie Jar:** Build `http.CookieJar` keyed by origin (scheme + domain + port). Enforce:
-  - **Secure flag:** Cookies with `Secure` flag only sent over HTTPS.
-  - **HttpOnly flag:** Cookies marked `HttpOnly` not accessible from JavaScript.
-  - **SameSite enforcement:** Support `SameSite=Strict`, `SameSite=Lax`, `SameSite=None`.
-  - **Domain and Path matching:** Ensure cookies sent only to matching request origins.
-* **Build HTTPS Enforcement:** Require HTTPS for all resource loads by default. Implement HSTS support (read/store HSTS headers, enforce future HTTPS on matching domains).
-* **Implement Certificate Validation:** Validate TLS certificates against OS trusted CA store; reject self-signed/expired unless explicitly pinned.
-* **Create Origin-Keyed Storage Partitions:**
-  - **localStorage:** Persistent per-origin key-value store, accessible only to scripts from that origin.
-  - **sessionStorage:** Per-window, per-origin key-value store, cleared when window is closed.
-* **Implement Content Security Policy (CSP):** Parse CSP headers on page load; validate inline scripts, style injection, external resource loads against `script-src`, `style-src`, `img-src` directives. Block violations and log to console.
-* **Build CORS Validator:** Implement checks for `Access-Control-Allow-*` headers and preflight handling for cross-origin requests.
-* **Implement Same-Origin Policy:** At page load and resource requests (images, stylesheets, scripts, XHR/Fetch), verify request origin matches window's loaded origin. Block mismatches unless CORS headers permit.
+### Tasks
+1. **Build Message Passing System** — chrome.runtime.sendMessage/onMessage, chrome.tabs.sendMessage/onMessage
+2. **Implement Storage APIs** — chrome.storage.local/sync/managed with get/set/remove/clear
+3. **Implement Tabs API** — query, get, update, create, remove, events
+4. **Implement Windows API (basic)** — getCurrent, getAll, create, remove
+5. **Build Runtime API** — getURL, getManifest, getPlatformInfo, id, events
 
-### Phase 6 Completion Checklist
-- [x] Cookies enforce Secure, HttpOnly, SameSite, and domain/path matching
-- [x] HTTPS required; HSTS headers cached and enforced
-- [x] Certificate validation blocks self-signed unless exempted and expired certs always
-- [x] Easy self-signed HTTPS workflow for adding and removing TOFU self-signed certs
-- [x] localStorage persists per-origin across windows
-- [x] sessionStorage is per-window and cleared on tab close
-- [x] CSP violations block inline scripts and log to console
-- [x] CORS preflight requests work for cross-origin XHR/Fetch
-- [x] SOP blocks cross-origin resource loads by default
-- [x] No cross-window cookie leaks in test suite
+### Dependencies
+- Phase E0 complete
+- Tab manager infrastructure (must be built as part of browser shell)
+
+### Deliverables
+- Message routing system with extension ID validation
+- Storage APIs backed by per-extension JSON files
+- Tabs API integrated with browser shell tab manager
+- Runtime API with proper event dispatching
 
 ---
 
-## Phase 7: Testing, Documentation, and Optimization
+## Phase E2: Container Tabs API and Container Management
 
-Build comprehensive test coverage, user-facing documentation, and performance optimization.
+Implement Firefox's container API for first-class container/origin isolation.
 
-* **Create Unit Test Suite:** Exhaustive tests for DOM manipulation, CSS parsing, layout calculation, event dispatch, JS integration, security boundaries.
-* **Build Integration Tests:** Multi-phase workflows (HTML parse → CSS resolve → layout → render → event handling).
-* **Create Example Applications:** Reference UI components (buttons, forms, modals, navigation, dashboards) and tabbed browser example.
-* **Write API Documentation:** Document all public types, methods, functions with examples.
-* **Build Rendering Benchmarks:** Profile paint, layout, event handling; identify and optimize hotspots.
-* **Implement Instrumentation:** Add optional debug logging, performance counters, flame graph integration.
-* **Create Migration Guide:** Document transition from existing thdwb code to new toolkit API.
-* **Add Type Safety Checks:** Implement go vet, staticcheck rules.
+### Tasks
+1. **Define Container Model** — Named groupings with unique cookie jar, localStorage, sessionStorage
+2. **Build Container Storage Isolation** — chrome.contextualIdentities APIs
+3. **Extend Tabs API for Containers** — cookieStoreId parameter, tab container metadata
+4. **Implement Container-Aware Storage** — Partition by container ID + origin
+5. **Build Container Cookie Management** — chrome.cookies APIs with container filtering
+6. **Create Container UI Indicators** — Tab color/icon badges, address bar indicator
 
-### Phase 7 Completion Checklist
-- [x] 80%+ line coverage for core DOM, layout, event, security modules (mustard improved 26.6%→48.1%, gg 64.3%, hotdog 84.6%, mayo 74.7%, sauce 75.7%, profiler 72.2%, bun 88.6%)
-- [x] All example components render and interact correctly
-- [x] Tabbed browser example functional with multiple windows
-- [x] API docs complete and accurate (docs/07-javascript-runtime.md, docs/08-ui-toolkit.md updated to match actual public API)
-- [x] Benchmark suite established with baseline metrics (mustard, hotdog, bun benchmarks added)
-- [x] Debug instrumentation functional and non-intrusive (profiler, DebugFlag, NodeDOM.Print/JSON, sauce.Log)
-- [x] Migration guide covers all breaking API changes (docs/MIGRATION.md)
-- [x] No static analysis warnings in main codebase
-- [x] Example gallery builds and runs successfully
-- [x] Security tests verify SOP, CORS, CSP, cookie isolation
+### Dependencies
+- Phase E1 complete
+- Enhanced cookie jar supporting partitioning by container ID
+- Tab manager supporting container association
+
+### Deliverables
+- Container model and storage isolation
+- chrome.contextualIdentities API
+- Container-aware tabs and cookies APIs
+- UI indicators for container tabs
 
 ---
 
-## Phase 8: Cross-Platform Hardware-Accelerated Rendering Path with Ebitengine, Android/iOS, and WebView
+## Phase E3: Extended WebExtensions APIs
 
-Decouple from all CGo dependencies by moving the browser render stack onto Ebitengine, while maintaining or improving hardware acceleration and broadening the target surface to Android and iOS as first-class platforms. Add a native WebView integration path for embedded browsing and hybrid app workflows without reintroducing CGo-based render dependencies.
+Add advanced APIs for content manipulation and UI customization.
 
-* **Audit Current CGo Dependencies:** Document all CGo bindings in mustard (GLFW, OpenGL, FreeType, image libraries).
-* **Replace GLFW:** Migrate window creation/input to Ebitengine's cross-platform runtime and input model, eliminating GLFW and native CGo window glue while preserving desktop behavior.
-* **Add Android and iOS as First-Class Targets:** Port the renderer and input stack to Android and iOS via Ebitengine, with touch events, lifecycle handling, orientation changes, and mobile-safe viewport management.
-* **Implement Direct GPU Access:** Use platform-native GPU APIs:
-  - **Windows:** Direct3D 12 via `golang.org/x/sys/windows`.
-  - **macOS:** Metal via syscall bindings.
-  - **Linux:** Vulkan via `vulkan-go` or pure Go bindings.
-* **Port Font Rendering:** Replace FreeType with pure Go font rasterizer using `golang.org/x/image/font` and `golang.org/x/image/vector` for TrueType/OpenType glyph rendering.
-* **Replace Image Codecs:** Swap CGo image libraries for pure Go implementations (`image/png`, `image/jpeg`, `golang.org/x/image/webp`, `kolesa-team/go-avif`).
-* **Build Platform Abstraction Layer:** Create thin interface layer (`platform.Renderer`, `platform.Window`, `platform.Input`) with native implementations per OS.
-* **Implement WebView:** Add an embeddable native WebView layer in ./webview for Android/iOS and desktop fallback surfaces, enabling in-app browsing with sandboxed execution and shared browser policy enforcement.
-* **Implement GPU Command Buffer Abstraction:** Define platform-agnostic command buffer format; translate into native GPU APIs at runtime.
-* **Add Software Fallback Renderer:** Implement pure Go CPU-based renderer using `golang.org/x/image/draw` as fallback for headless/GPU-restricted environments.
-* **Create Build Tags:** Use conditional compilation (`// +build cgo,nocgo`) allowing users to choose CGo or pure Go rendering at compile time; default to pure Go.
-* **Ensure Cross-Platform Testing:** Validate pure Go renderer on Windows, macOS, Linux, Android, and iOS; test headless rendering and virtualized GPU scenarios.
+### Tasks
+1. **Implement Scripting API** — executeScript, insertCSS, removeCSS, dynamic registration
+2. **Implement Context Menus API** — create, update, remove, removeAll, onClicked
+3. **Implement Permissions Request & Grants** — request, contains, getAll, events
+4. **Implement Alarms API** — create, get, getAll, clear, onAlarm
+5. **Implement i18n API** — getMessage, getAcceptLanguages
 
-### Phase 8 Completion Checklist
-- [x] All CGo dependencies audited and replacement plan documented
-- [x] GLFW replaced with Ebitengine-based cross-platform windowing and input stack
-- [x] Android and iOS are supported as first-class targets with touch and lifecycle handling
-- [x] GPU rendering functional via Direct3D 12, Metal, or Vulkan on native platforms
-- [x] Font rendering works with pure Go TrueType/OpenType rasterization
-- [x] Image codecs replaced with pure Go implementations without CGo dependencies
-- [x] Platform abstraction layer (`platform.Renderer`, `platform.Window`, `platform.Input`) implemented
-- [x] Embeddable native WebView layer added for in-app browsing and sandboxed execution
-- [x] GPU command buffer abstraction translates cleanly to native GPU APIs
-- [x] CPU software renderer provides a fallback for headless or GPU-restricted environments
-- [x] Build tags support CGo and pure Go rendering selection, defaulting to pure Go
-- [x] Cross-platform validation passes on Windows, macOS, Linux, Android, and iOS
+### Dependencies
+- Phase E1 complete
+- Content script injection infrastructure (Phase E5)
+- UI integration for context menus and permissions dialogs
+
+### Deliverables
+- Scripting API with isolated Goja VM execution
+- Context menus integrated with browser UI
+- Permission management system
+- Alarm scheduling
+- i18n localization support
+
+---
+
+## Phase E4: Advanced APIs
+
+Implement powerful APIs for network interception, file handling, and user notifications.
+
+### Tasks
+1. **Implement WebRequest API (read-only)** — onBeforeRequest, onBeforeSendHeaders, onHeadersReceived, onCompleted, onErrorOccurred
+2. **Implement Notifications API** — create, clear, getAll, events
+3. **Implement Downloads API** — download, cancel, pause/resume, search, erase, events
+4. **Implement Cookies API (extended)** — container filtering, getAllCookieStores
+
+### Dependencies
+- Phase E1 complete
+- Network layer instrumentation (sauce module)
+- OS notification integration
+
+### Deliverables
+- WebRequest event observers with complete request metadata
+- Desktop notification integration
+- Download management with OS file system integration
+- Extended cookies API
+
+---
+
+## Phase E6: Extension Distribution, Installation, and Updates
+
+Build user-facing installation flow and automatic update mechanisms.
+
+### Tasks
+1. **Create Extension Package Format** — .xpi (ZIP) support, package validation, checksum verification
+2. **Build Installation UI** — Extension metadata display, permission confirmation
+3. **Implement Extension Permissions Prompt** — Human-readable permission descriptions
+4. **Build Extension Updates Mechanism** — Update URL checking, download, verify, migrate
+5. **Create Extension Uninstall Flow** — Cleanup storage and files
+6. **Build Extension Info/Settings Page** — Metadata, storage usage, enable/disable
+
+### Dependencies
+- Phase E0 complete
+- ZIP archive handling library
+- Browser shell UI infrastructure
+
+### Deliverables
+- Extension package validation and installation
+- Permission prompt UI
+- Automatic update mechanism
+- Extension management UI
+
+---
+
+## Phase E8: Performance, Testing, and Stability
+
+Ensure the browser is robust, performant, and thoroughly tested.
+
+### Tasks
+1. **Build Automated Test Suite** — Unit tests, integration tests, E2E tests, container isolation tests
+2. **Implement Memory Profiling** — Memory monitoring per tab/window, leak detection
+3. **Add Performance Metrics** — Page load time, paint metrics, extension startup time
+4. **Build Debugging Tools** — Extension inspector, background/content script console, network tab
+5. **Implement Crash Recovery** — Extension crash handling, tab/container restoration
+6. **Add Error Logging and Reporting** — JS errors, permission denials, CSP violations
+7. **Optimize Rendering** — Batch DOM mutations, dirty flags, layer caching
+8. **Optimize Network** — Connection pooling, DNS caching, TLS session reuse
+
+### Dependencies
+- All previous phases
+- Profiling and benchmarking libraries
+- Debugging tool infrastructure
+
+### Deliverables
+- Comprehensive test suite
+- Memory and performance profiling tools
+- Debugging and developer tools
+- Optimized rendering and network stack
+
+---
+
+## Phase E9: Release Preparation and Rollout
+
+Prepare for public release and establish distribution channels.
+
+### Tasks
+1. **Create Release Notes and Documentation** — API documentation, guides, troubleshooting
+2. **Build Extension Gallery/Marketplace (Optional MVP)** — Curated extension listing
+3. **Implement Telemetry (Optional)** — Opt-in, privacy-respecting telemetry
+4. **Create Installer** — Single executable installer for Windows, macOS, Linux
+5. **Build Auto-Update Infrastructure** — Version checking, staged rollout
+6. **Create Communication Channels** — Website, GitHub, community forum
+7. **Establish Support Process** — Bug tracker, FAQ, email support
+8. **Prepare Security Advisory Process** — Responsible disclosure, security advisories
+
+### Dependencies
+- All previous phases
+- CI/CD pipeline
+- Website and documentation hosting
+
+### Deliverables
+- Complete documentation and release notes
+- Installer packages for all platforms
+- Auto-update mechanism
+- Community support infrastructure
+
+---
+
+## Execution Order and Milestones
+
+**Milestone 1: Browser Shell (E7)**
+- Browser UI with tabs, address bar, navigation, bookmarks
+- New tab page, settings, extension toolbar icons
+- Deliverable: Functional browser shell with UI, ready for extension integration
+
+**Milestone 2: Foundation (E0 + E5)**
+- Extension architecture, manifest parsing, sandboxing
+- Content script injection and security model
+- Deliverable: Extensions can be loaded, parsed, and injected securely
+
+**Milestone 3: Core APIs (E1)**
+- Messaging, storage, tabs, windows, runtime APIs
+- Deliverable: Extensions can communicate, store data, and manage tabs
+
+**Milestone 4: Containers (E2)**
+- Container tabs API and storage isolation
+- Deliverable: Firefox's container feature fully implemented
+
+**Milestone 5: Extended APIs (E3 + E4)**
+- Scripting, menus, permissions, alarms, i18n
+- WebRequest, downloads, notifications
+- Deliverable: Full WebExtensions API surface
+
+**Milestone 6: Distribution (E6)**
+- Extension installation, updates, uninstallation
+- Deliverable: Users can install and manage extensions
+
+**Milestone 7: Quality (E8)**
+- Testing, performance, debugging tools
+- Deliverable: Stable, performant browser ready for release
+
+**Milestone 8: Release (E9)**
+- Documentation, installers, community infrastructure
+- Deliverable: Public release
+
+---
+
+## Technical Risks and Mitigations
+
+**Risk: Ebitengine Integration Complexity**
+- Mitigation: Start with simple window/input integration, progressively add GPU features
+
+**Risk: Extension Compatibility**
+- Mitigation: Test against popular Firefox extensions early and often
+
+**Risk: Performance**
+- Mitigation: Profile continuously, optimize rendering and network stack
+
+**Risk: Security Model**
+- Mitigation: Leverage existing SOP/CORS/CSP infrastructure, thorough security testing
+
+---
+
+## Success Criteria
+
+The browser is considered complete when:
+1. All major WebExtensions APIs work
+2. Container tabs API fully functional with no cross-container leaks
+3. Content script sandboxing secure
+4. Security hardened (CSP, SOP, certificate validation)
+5. Performance acceptable
+6. Stability proven in automated testing
+7. Top 100 Firefox extensions work without modification
+8. Documentation complete
