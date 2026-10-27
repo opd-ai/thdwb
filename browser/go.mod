@@ -36,7 +36,9 @@ replace (
 	github.com/danfragoso/thdwb/assets => ../assets
 	github.com/danfragoso/thdwb/hotdog => ../hotdog
 	github.com/danfragoso/thdwb/mustard => ../mustard
+	github.com/danfragoso/thdwb/pages => ../pages
 	github.com/danfragoso/thdwb/profiler => ../profiler
+	github.com/danfragoso/thdwb/sauce => ../sauce
 )
 
 replace github.com/danfragoso/thdwb/ketchup => ../ketchup

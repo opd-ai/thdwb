@@ -182,6 +182,7 @@ const (
 	treeWidget
 	scrollbarWidget
 	textWidget
+	tabbarWidget
 )
 
 type widgetPosition int

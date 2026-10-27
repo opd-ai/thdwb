@@ -782,7 +782,7 @@ func GetResource(URL *url.URL, history *History, buildInfo *assets.BuildInfo) *R
 }
 
 // fetchInternalPage handles thdwb:// internal URLs.
-// Supported hosts: homepage, history, about.
+// Supported hosts: homepage, history, newtab, about.
 // Returns a Resource with generated HTML content.
 func fetchInternalPage(URL *url.URL, history *History, buildInfo *assets.BuildInfo) *Resource {
 	switch URL.Host {
@@ -795,6 +795,11 @@ func fetchInternalPage(URL *url.URL, history *History, buildInfo *assets.BuildIn
 	case "history":
 		return &Resource{
 			Body: buildHistoryPage(history),
+			URL:  URL,
+		}
+	case "newtab":
+		return &Resource{
+			Body: pages.RenderNewTabPage(newTabDataFromHistory(history)),
 			URL:  URL,
 		}
 	case "about":
@@ -1025,4 +1030,38 @@ func buildHistoryPage(history *History) string {
 	</html>
 	`
 	return d
+}
+
+// maxNewTabRecent is the maximum number of recently visited pages shown on
+// the new tab page.
+const maxNewTabRecent = 10
+
+// newTabDataFromHistory builds the new tab page data from the browser's
+// navigation history, most recently visited page first. A nil history yields
+// a zero-value data set (the renderer fills in defaults).
+func newTabDataFromHistory(history *History) *pages.NewTabData {
+	data := &pages.NewTabData{}
+	if history == nil {
+		return data
+	}
+
+	visited := history.AllPages()
+	if len(visited) > maxNewTabRecent {
+		visited = visited[len(visited)-maxNewTabRecent:]
+	}
+	for i := len(visited) - 1; i >= 0; i-- {
+		u := visited[i]
+		if u == nil {
+			continue
+		}
+		name := u.Host
+		if name == "" {
+			name = u.String()
+		}
+		data.RecentlyVisited = append(data.RecentlyVisited, pages.NewTabShortcut{
+			Name: name,
+			URL:  u.String(),
+		})
+	}
+	return data
 }
