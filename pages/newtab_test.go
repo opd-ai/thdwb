@@ -86,3 +86,50 @@ func TestRenderNewTabPageEscapesHTML(t *testing.T) {
 		t.Error("escaped shortcut name not found in rendered page")
 	}
 }
+
+func TestSafeURLKeepsInternalSchemes(t *testing.T) {
+	// Internal thdwb:// links are safe and must survive rendering (without
+	// the template.URL wrapper html/template would replace them with the
+	// inert "#ZgotmplZ" placeholder).
+	for _, want := range []string{
+		"thdwb://container/work/",
+		"thdwb://newtab/",
+		"https://example.com/x",
+		"http://example.com/x",
+	} {
+		if got := safeURL(want); string(got) != want {
+			t.Errorf("safeURL(%q) = %q, want %q", want, string(got), want)
+		}
+	}
+}
+
+func TestSafeURLDropsExecutableSchemes(t *testing.T) {
+	for _, bad := range []string{
+		"javascript:alert(1)",
+		"JAVASCRIPT:alert(1)",
+		"data:text/html,<script>alert(1)</script>",
+		"vbscript:msgbox",
+		"file:///etc/passwd",
+		" javascript:alert(1)",
+	} {
+		if got := safeURL(bad); got != "" {
+			t.Errorf("safeURL(%q) = %q, want empty", bad, string(got))
+		}
+	}
+}
+
+func TestRenderNewTabPageDropsExecutableShortcutURLs(t *testing.T) {
+	data := &NewTabData{
+		Shortcuts: []NewTabShortcut{
+			{Name: "Evil", URL: "javascript:alert(1)"},
+		},
+	}
+
+	body := RenderNewTabPage(data)
+	if strings.Contains(body, "javascript:") {
+		t.Fatal("executable scheme must not appear in rendered page")
+	}
+	if !strings.Contains(body, `href=""`) {
+		t.Error("unsafe shortcut should render as a dead link")
+	}
+}

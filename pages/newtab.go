@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"html/template"
 	"strings"
+	"unicode"
 )
 
 // NewTabShortcut is a named link shown on the new tab page. It is used for
@@ -61,7 +62,14 @@ func RenderNewTabPage(data *NewTabData) string {
 	if err != nil {
 		return err.Error()
 	}
-	if err := t.ExecuteTemplate(buf, "newtab", data); err != nil {
+	if err := t.ExecuteTemplate(buf, "newtab", newTabTemplateData{
+		SearchAction:    safeURL(data.SearchAction),
+		SearchHint:      data.SearchHint,
+		Shortcuts:       toTemplateShortcuts(data.Shortcuts),
+		Bookmarks:       toTemplateShortcuts(data.Bookmarks),
+		RecentlyVisited: toTemplateShortcuts(data.RecentlyVisited),
+		Containers:      toTemplateShortcuts(data.Containers),
+	}); err != nil {
 		return err.Error()
 	}
 
@@ -77,6 +85,66 @@ func defaultNewTabShortcuts() []NewTabShortcut {
 		{Name: "MDN Web Docs", URL: "https://developer.mozilla.org/"},
 		{Name: "GitHub", URL: "https://github.com/"},
 	}
+}
+
+// templateShortcut is a shortcut mapped into the template's URL attribute
+// context. Names stay plain strings (HTML-escaped by html/template); URLs are
+// marked safe after passing safeURL so internal thdwb:// schemes render
+// unescaped while executable schemes are dropped.
+type templateShortcut struct {
+	Name string
+	URL  template.URL
+}
+
+// newTabTemplateData is the shape the template receives.
+type newTabTemplateData struct {
+	SearchAction    template.URL
+	SearchHint      string
+	Shortcuts       []templateShortcut
+	Bookmarks       []templateShortcut
+	RecentlyVisited []templateShortcut
+	Containers      []templateShortcut
+}
+
+func toTemplateShortcuts(shortcuts []NewTabShortcut) []templateShortcut {
+	out := make([]templateShortcut, 0, len(shortcuts))
+	for _, s := range shortcuts {
+		out = append(out, templateShortcut{Name: s.Name, URL: safeURL(s.URL)})
+	}
+	return out
+}
+
+// unsafeURLSchemes are executable or local schemes that must never appear in
+// a link or form action generated from data supplied by the browser's own
+// state (bookmarks, history, container entries, settings). A page rendered
+// through the new tab page with one of these targets could execute script on
+// navigation.
+var unsafeURLSchemes = []string{"javascript:", "data:", "vbscript:", "file://"}
+
+// safeURL validates a link target for use in a generated page and marks it
+// safe for html/template URL contexts. Without the template.URL wrapper,
+// html/template rejects unknown schemes (such as thdwb://) in URL attribute
+// contexts and renders them as the inert "#ZgotmplZ" placeholder, which would
+// break every internal link on the new tab page. Unsafe targets return an
+// empty URL, rendering a dead link instead of an executable one.
+func safeURL(rawURL string) template.URL {
+	// Control and space characters are ignored by browsers when parsing URL
+	// attributes (they are stripped before scheme resolution), so the scheme
+	// check must run against a copy with them removed: otherwise
+	// " javascript:alert(1)" would slip past the prefix check and render as
+	// an executable link.
+	candidate := strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) || unicode.IsSpace(r) {
+			return -1
+		}
+		return r
+	}, strings.ToLower(rawURL))
+	for _, scheme := range unsafeURLSchemes {
+		if strings.HasPrefix(candidate, scheme) {
+			return ""
+		}
+	}
+	return template.URL(rawURL)
 }
 
 // newTabTemplate returns the new tab page HTML template. The markup is
