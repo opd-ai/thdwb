@@ -30,17 +30,17 @@
 
 Build the browser shell UI, tab management, and extension integration.
 
-**Status:** In progress (started 2026-10-26)
+**Status:** Complete (2026-10-26)
 
 ### Tasks
-- [ ] 1. **Implement Tab Bar UI** — Tab display with container indicators, tab operations
-- [ ] 2. **Build Address Bar** — URL display, autocomplete, security indicator, container indicator
-- [ ] 3. **Implement Browser Controls** — Back, forward, reload, home, bookmark, extension icons
-- [ ] 4. **Build Bookmarks System** — chrome.bookmarks APIs, bookmarks sidebar
-- [ ] 5. **Implement History** — chrome.history APIs, history sidebar, search
-- [ ] 6. **Build Settings/Preferences Page** — General, privacy, security, extensions, containers
-- [ ] 7. **Implement Extension Icon in Toolbar** — Extension icons, popups, badges
-- [ ] 8. **Build New Tab Page** — Shortcuts, search, recently closed, bookmarks, container selector
+- [x] 1. **Implement Tab Bar UI** — Tab display with container indicators, tab operations
+- [x] 2. **Build Address Bar** — URL display, autocomplete, security indicator, container indicator
+- [x] 3. **Implement Browser Controls** — Back, forward, reload, home, bookmark, extension icons
+- [x] 4. **Build Bookmarks System** — chrome.bookmarks APIs, bookmarks sidebar
+- [x] 5. **Implement History** — chrome.history APIs, history sidebar, search
+- [x] 6. **Build Settings/Preferences Page** — General, privacy, security, extensions, containers
+- [x] 7. **Implement Extension Icon in Toolbar** — Extension icons, popups, badges
+- [x] 8. **Build New Tab Page** — Shortcuts, search, recently closed, bookmarks, container selector
 
 ### Dependencies
 - Core engine (already implemented)
