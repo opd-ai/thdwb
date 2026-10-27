@@ -1,22 +1,3 @@
-go 1.25.0
+go 1.26.0
 
-use (
-	.
-	./assets
-	./bun
-	./browser
-	./examples/button_example
-	./examples/form_example
-	./examples/modal_example
-	./examples/tabbed_browser
-	./gg
-	./hotdog
-	./ketchup
-	./mayo
-	./mustard
-	./pages
-	./platform
-	./profiler
-	./sauce
-	./webview
-)
+use .
