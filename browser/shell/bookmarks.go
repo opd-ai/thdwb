@@ -56,7 +56,7 @@ func (bm *BookmarkManager) AddBookmark(title, url string) *Bookmark {
 	bm.nextID++
 	bm.bookmarks = append(bm.bookmarks, bookmark)
 
-	bm.addBookmarkToFolder(0, bookmark.ID)
+	bm.addBookmarkToFolderLocked(0, bookmark.ID)
 	return bookmark
 }
 
@@ -68,7 +68,7 @@ func (bm *BookmarkManager) RemoveBookmark(id int) {
 	for i, bookmark := range bm.bookmarks {
 		if bookmark.ID == id {
 			bm.bookmarks = append(bm.bookmarks[:i], bm.bookmarks[i+1:]...)
-			bm.removeBookmarkFromFolder(bookmark.FolderID, id)
+			bm.removeBookmarkFromFolderLocked(bookmark.FolderID, id)
 			return
 		}
 	}
@@ -112,7 +112,10 @@ func (bm *BookmarkManager) GetAllBookmarks() []*Bookmark {
 func (bm *BookmarkManager) AddFolder(title string) *BookmarkFolder {
 	bm.mu.Lock()
 	defer bm.mu.Unlock()
+	return bm.addBookmarkFolderLocked(title)
+}
 
+func (bm *BookmarkManager) addBookmarkFolderLocked(title string) *BookmarkFolder {
 	folder := &BookmarkFolder{
 		ID:         bm.nextID,
 		Title:      title,
@@ -144,16 +147,30 @@ func (bm *BookmarkManager) GetAllFolders() []*BookmarkFolder {
 	return append([]*BookmarkFolder(nil), bm.folders...)
 }
 
-func (bm *BookmarkManager) addBookmarkToFolder(folderID, bookmarkID int) {
-	folder := bm.GetFolder(folderID)
+func (bm *BookmarkManager) addBookmarkToFolderLocked(folderID, bookmarkID int) {
+	// Caller must hold bm.mu.
+	var folder *BookmarkFolder
+	for _, f := range bm.folders {
+		if f.ID == folderID {
+			folder = f
+			break
+		}
+	}
 	if folder == nil {
-		folder = bm.AddFolder("Bookmarks")
+		folder = bm.addBookmarkFolderLocked("Bookmarks")
 	}
 	folder.Items = append(folder.Items, bookmarkID)
 }
 
-func (bm *BookmarkManager) removeBookmarkFromFolder(folderID, bookmarkID int) {
-	folder := bm.GetFolder(folderID)
+func (bm *BookmarkManager) removeBookmarkFromFolderLocked(folderID, bookmarkID int) {
+	// Caller must hold bm.mu.
+	var folder *BookmarkFolder
+	for _, f := range bm.folders {
+		if f.ID == folderID {
+			folder = f
+			break
+		}
+	}
 	if folder == nil {
 		return
 	}
@@ -170,7 +187,16 @@ func (bm *BookmarkManager) SaveBookmarks(path string) error {
 	bm.mu.Lock()
 	defer bm.mu.Unlock()
 
-	data, err := json.MarshalIndent(bm, "", "  ")
+	type serializable struct {
+		Bookmarks []*Bookmark       `json:"bookmarks"`
+		Folders   []*BookmarkFolder `json:"folders"`
+		NextID    int               `json:"next_id"`
+	}
+	data, err := json.MarshalIndent(serializable{
+		Bookmarks: bm.bookmarks,
+		Folders:   bm.folders,
+		NextID:    bm.nextID,
+	}, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -182,9 +208,21 @@ func (bm *BookmarkManager) LoadBookmarks(path string) error {
 	bm.mu.Lock()
 	defer bm.mu.Unlock()
 
+	type serializable struct {
+		Bookmarks []*Bookmark       `json:"bookmarks"`
+		Folders   []*BookmarkFolder `json:"folders"`
+		NextID    int               `json:"next_id"`
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return err
 	}
-	return json.Unmarshal(data, bm)
+	var s serializable
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	bm.bookmarks = s.Bookmarks
+	bm.folders = s.Folders
+	bm.nextID = s.NextID
+	return nil
 }

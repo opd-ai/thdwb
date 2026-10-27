@@ -49,9 +49,13 @@ func BuildTabBar(window *mustard.WindowBase, manager *TabManager) *TabBarUI {
 // Existing tab buttons are unregistered from the window before being detached
 // so that stale hit targets cannot fire old callbacks.
 func (b *TabBarUI) Rebuild() {
+	// Detach every current child (tab buttons and the new-tab button) before
+	// rebuilding so nothing accumulates across rebuilds.
+	for _, w := range b.Frame.Widgets() {
+		b.Frame.DetachWidget(w)
+	}
 	for _, btn := range b.buttons {
 		b.window.UnregisterButton(btn)
-		b.Frame.DetachWidget(btn)
 	}
 	b.buttons = make(map[int]*mustard.ButtonWidget)
 

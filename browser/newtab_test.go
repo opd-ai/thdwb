@@ -21,7 +21,7 @@ func TestNewTabPageParses(t *testing.T) {
 
 	h1 := firstByTag(doc.DOM, "h1")
 	if h1 == nil || elementText(h1) != "New Tab" {
-		t.Errorf("h1 = %q, want \"New Tab\"", h1)
+		t.Errorf("h1 text = %q, want \"New Tab\"", elementText(h1))
 	}
 
 	if form := firstByTag(doc.DOM, "form"); form == nil {

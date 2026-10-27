@@ -153,12 +153,13 @@ func TestTabManagerRestoreClosed(t *testing.T) {
 func TestTabManagerRecentlyClosedBounded(t *testing.T) {
 	m := NewTabManager()
 	m.maxClosed = 3
+	var ids []int
 	for i := 0; i < 5; i++ {
-		tabs := m.Tabs()
-		if len(tabs) == 0 {
-			break
-		}
-		m.Close(tabs[0].ID)
+		tb := m.Add("t", "u", "", "", "")
+		ids = append(ids, tb.ID)
+	}
+	for _, id := range ids {
+		m.Close(id)
 	}
 	if got := len(m.RecentlyClosed()); got != 3 {
 		t.Fatalf("RecentlyClosed len = %d, want bounded to 3", got)

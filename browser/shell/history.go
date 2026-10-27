@@ -80,14 +80,15 @@ func (hm *HistoryManager) GetAllEntries() []*HistoryEntry {
 	return append([]*HistoryEntry(nil), hm.entries...)
 }
 
-// SearchEntries searches history by title or URL.
+// SearchEntries searches history by title or URL (case-insensitive substring).
 func (hm *HistoryManager) SearchEntries(query string) []*HistoryEntry {
 	hm.mu.Lock()
 	defer hm.mu.Unlock()
 
+	q := foldCase(query)
 	var result []*HistoryEntry
 	for _, entry := range hm.entries {
-		if contains(entry.Title, query) || contains(entry.URL, query) {
+		if containsFold(entry.Title, q) || containsFold(entry.URL, q) {
 			result = append(result, entry)
 		}
 	}
@@ -113,7 +114,14 @@ func (hm *HistoryManager) SaveHistory(path string) error {
 	hm.mu.Lock()
 	defer hm.mu.Unlock()
 
-	data, err := json.MarshalIndent(hm, "", "  ")
+	type serializable struct {
+		Entries []*HistoryEntry `json:"entries"`
+		NextID  int             `json:"next_id"`
+	}
+	data, err := json.MarshalIndent(serializable{
+		Entries: hm.entries,
+		NextID:  hm.nextID,
+	}, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -125,11 +133,51 @@ func (hm *HistoryManager) LoadHistory(path string) error {
 	hm.mu.Lock()
 	defer hm.mu.Unlock()
 
+	type serializable struct {
+		Entries []*HistoryEntry `json:"entries"`
+		NextID  int             `json:"next_id"`
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return err
 	}
-	return json.Unmarshal(data, hm)
+	var s serializable
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	hm.entries = s.Entries
+	hm.nextID = s.NextID
+	return nil
+}
+
+// foldCase lowercases ASCII for case-insensitive comparison.
+func foldCase(s string) string {
+	var b []byte
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c >= 'A' && c <= 'Z' {
+			c += 32
+		}
+		b = append(b, c)
+	}
+	return string(b)
+}
+
+// containsFold reports whether substr is contained in s, case-insensitively.
+func containsFold(s, substr string) bool {
+	if len(substr) == 0 {
+		return true
+	}
+	if len(s) < len(substr) {
+		return false
+	}
+	sf := foldCase(s)
+	for i := 0; i <= len(sf)-len(substr); i++ {
+		if sf[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
 }
 
 func contains(s, substr string) bool {

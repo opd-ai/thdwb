@@ -178,9 +178,6 @@ func (m *TabManager) MoveTab(from, to int) {
 	}
 	t := m.tabs[from]
 	m.tabs = append(m.tabs[:from], m.tabs[from+1:]...)
-	if to > from {
-		to--
-	}
 	m.tabs = append(m.tabs[:to], append([]*Tab{t}, m.tabs[to:]...)...)
 	m.notify()
 }
