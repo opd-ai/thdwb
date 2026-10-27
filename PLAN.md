@@ -135,15 +135,15 @@ Implement the foundational APIs that most extensions rely on: messaging, storage
 
 ## Phase E2: Container Tabs API and Container Management
 
-Implement Firefox's container API for first-class container/origin isolation.
+**Status:** Complete (2026-10-27)
 
 ### Tasks
-1. **Define Container Model** — Named groupings with unique cookie jar, localStorage, sessionStorage
-2. **Build Container Storage Isolation** — chrome.contextualIdentities APIs
-3. **Extend Tabs API for Containers** — cookieStoreId parameter, tab container metadata
-4. **Implement Container-Aware Storage** — Partition by container ID + origin
-5. **Build Container Cookie Management** — chrome.cookies APIs with container filtering
-6. **Create Container UI Indicators** — Tab color/icon badges, address bar indicator
+- [x] 1. **Define Container Model** — Named groupings with unique cookie jar, localStorage, sessionStorage
+- [x] 2. **Build Container Storage Isolation** — chrome.contextualIdentities APIs
+- [x] 3. **Extend Tabs API for Containers** — cookieStoreId parameter, tab container metadata
+- [x] 4. **Implement Container-Aware Storage** — Partition by container ID + origin
+- [x] 5. **Build Container Cookie Management** — chrome.cookies APIs with container filtering
+- [x] 6. **Create Container UI Indicators** — Tab color/icon badges, address bar indicator
 
 ### Dependencies
 - Phase E1 complete
