@@ -68,7 +68,8 @@ type TabManager struct {
 	maxClosed   int
 	navs        map[int]*tabNav // per-tab back/forward history
 
-	listeners []func()
+	listeners   []func()
+	onNavigated func(tab *Tab)
 }
 
 // tabNav holds the back/forward history for a single tab. The current URL is
@@ -92,6 +93,16 @@ func (m *TabManager) OnChanged(fn func()) {
 		return
 	}
 	m.listeners = append(m.listeners, fn)
+}
+
+// OnNavigated registers a callback invoked when a tab performs a new
+// navigation via Navigate. Unlike OnChanged, it does not fire for back/forward
+// traversal or tab activation, making it suitable for recording history.
+func (m *TabManager) OnNavigated(fn func(tab *Tab)) {
+	if fn == nil {
+		return
+	}
+	m.onNavigated = fn
 }
 
 // Add creates a new tab, makes it active, and returns it. The container
@@ -132,6 +143,7 @@ func (m *TabManager) Close(tabID int) *Tab {
 		}
 	}
 	m.tabs = append(m.tabs[:idx], m.tabs[idx+1:]...)
+	delete(m.navs, tabID)
 
 	m.closedStack = append(m.closedStack, t)
 	if len(m.closedStack) > m.maxClosed {
@@ -232,6 +244,91 @@ func (m *TabManager) SetURL(tabID int, u string) {
 		t.URL = u
 		m.notify()
 	}
+}
+
+// Navigate records a user-initiated navigation of the tab to u: the current
+// URL is pushed onto the back stack, the forward stack is cleared, and the
+// tab's URL is updated. Navigating to the same URL is a no-op.
+func (m *TabManager) Navigate(tabID int, u string) {
+	t := m.GetTab(tabID)
+	if t == nil || u == "" || t.URL == u {
+		return
+	}
+	nav := m.navFor(tabID)
+	if t.URL != "" {
+		nav.back = append(nav.back, t.URL)
+	}
+	nav.forward = nil
+	t.URL = u
+	if m.onNavigated != nil {
+		m.onNavigated(t)
+	}
+	m.notify()
+}
+
+// Back navigates the tab back one history entry. It reports whether a
+// navigation occurred.
+func (m *TabManager) Back(tabID int) bool {
+	t := m.GetTab(tabID)
+	if t == nil {
+		return false
+	}
+	nav := m.navFor(tabID)
+	if len(nav.back) == 0 {
+		return false
+	}
+	prev := nav.back[len(nav.back)-1]
+	nav.back = nav.back[:len(nav.back)-1]
+	nav.forward = append(nav.forward, t.URL)
+	t.URL = prev
+	m.notify()
+	return true
+}
+
+// Forward navigates the tab forward one history entry. It reports whether a
+// navigation occurred.
+func (m *TabManager) Forward(tabID int) bool {
+	t := m.GetTab(tabID)
+	if t == nil {
+		return false
+	}
+	nav := m.navFor(tabID)
+	if len(nav.forward) == 0 {
+		return false
+	}
+	next := nav.forward[len(nav.forward)-1]
+	nav.forward = nav.forward[:len(nav.forward)-1]
+	nav.back = append(nav.back, t.URL)
+	t.URL = next
+	m.notify()
+	return true
+}
+
+// CanGoBack reports whether the tab has back-history.
+func (m *TabManager) CanGoBack(tabID int) bool {
+	return m.GetTab(tabID) != nil && len(m.navFor(tabID).back) > 0
+}
+
+// CanGoForward reports whether the tab has forward-history.
+func (m *TabManager) CanGoForward(tabID int) bool {
+	return m.GetTab(tabID) != nil && len(m.navFor(tabID).forward) > 0
+}
+
+// CurrentURL returns the tab's current URL, or empty if the tab is unknown.
+func (m *TabManager) CurrentURL(tabID int) string {
+	if t := m.GetTab(tabID); t != nil {
+		return t.URL
+	}
+	return ""
+}
+
+func (m *TabManager) navFor(tabID int) *tabNav {
+	nav, ok := m.navs[tabID]
+	if !ok {
+		nav = &tabNav{}
+		m.navs[tabID] = nav
+	}
+	return nav
 }
 
 // RecentlyClosed returns a snapshot of the recently-closed stack, oldest

@@ -2,6 +2,7 @@ package shell
 
 import (
 	"fmt"
+	"strings"
 
 	assets "github.com/danfragoso/thdwb/assets"
 	hotdog "github.com/danfragoso/thdwb/hotdog"
@@ -9,10 +10,11 @@ import (
 )
 
 // BrowserShell is the top-level browser UI. It owns the mustard window and
-// all browser state managers (tabs, bookmarks, history, settings, extensions)
-// and builds the user-facing UI (tab bar, address bar, navigation controls,
-// extension toolbar).
+// app and all browser state managers (tabs, bookmarks, history, settings,
+// extensions) and builds the user-facing UI (tab bar, address bar, navigation
+// controls, extension toolbar).
 type BrowserShell struct {
+	app        *mustard.App
 	windowBase *mustard.WindowBase
 	settings   *hotdog.Settings
 	buildInfo  *assets.BuildInfo
@@ -58,8 +60,10 @@ func NewBrowserShell(settings *hotdog.Settings, buildInfo *assets.BuildInfo) *Br
 	}
 }
 
-// Init creates the mustard window and builds the full UI.
+// Init creates the mustard app and window and builds the full UI.
 func (bs *BrowserShell) Init() error {
+	bs.app = mustard.CreateNewApp(nil, "thdwb")
+
 	window, err := mustard.CreateNewWindow(nil, "thdwb", bs.settings.WindowWidth, bs.settings.WindowHeight, bs.settings.HiDPI)
 	if err != nil {
 		return fmt.Errorf("create window: %w", err)
@@ -67,6 +71,10 @@ func (bs *BrowserShell) Init() error {
 	bs.windowBase = window.(*mustard.WindowBase)
 
 	bs.buildUI()
+
+	// Register the window with the app so widgets resolve their window and
+	// the event loop knows which window to drive.
+	bs.app.AddWindow(bs.windowBase)
 	return nil
 }
 
@@ -91,6 +99,8 @@ func (bs *BrowserShell) buildUI() {
 	navFrame.AttachWidget(bs.addressBar.Frame)
 
 	bs.navigation = NewNavigationControls(bs.windowBase, bs.tabManager)
+	bs.navigation.SetHomeURL(bs.settings.Homepage)
+	bs.navigation.SetBookmarkCallback(bs.toggleBookmark)
 	navFrame.AttachWidget(bs.navigation.Frame)
 
 	rootFrame.AttachWidget(navFrame)
@@ -117,21 +127,63 @@ func (bs *BrowserShell) buildUI() {
 
 	bs.windowBase.SetRootFrame(rootFrame)
 
+	// Record web (http/https) navigations in the history manager.
+	bs.tabManager.OnNavigated(func(tab *Tab) { bs.recordHistory(tab) })
+
 	// Open a default tab.
 	bs.tabManager.Add("New Tab", bs.settings.Homepage, "", "", "")
 }
 
 // Show makes the window visible.
 func (bs *BrowserShell) Show() {
-	bs.windowBase.Show()
+	if bs.windowBase != nil {
+		bs.windowBase.Show()
+	}
 }
 
-// Run starts the browser event loop. This blocks until the window closes.
+// Run starts the browser event loop, driving the window via the platform
+// backend. It blocks until the window is closed.
 func (bs *BrowserShell) Run() {
-	// The mustard driver's event loop is driven by the platform backend.
-	// For now, Run is a no-op placeholder; the window is shown and the
-	// application lifecycle is managed by the embedder.
-	_ = bs.buildInfo
+	if bs.app == nil {
+		return
+	}
+	bs.app.Run(func() {})
+}
+
+// Close destroys the browser shell's window and app.
+func (bs *BrowserShell) Close() {
+	if bs.app != nil && bs.windowBase != nil {
+		bs.app.DestroyWindow(bs.windowBase)
+	}
+	bs.windowBase = nil
+	bs.app = nil
+}
+
+// toggleBookmark adds a bookmark for the tab's URL if one is not already
+// present, otherwise removes the existing bookmark.
+func (bs *BrowserShell) toggleBookmark(tab *Tab) {
+	if tab == nil || tab.URL == "" {
+		return
+	}
+	for _, b := range bs.bookmarkManager.GetAllBookmarks() {
+		if b.URL == tab.URL {
+			bs.bookmarkManager.RemoveBookmark(b.ID)
+			return
+		}
+	}
+	bs.bookmarkManager.AddBookmark(tab.Title, tab.URL)
+}
+
+// recordHistory records a visited web page (http/https) in the history
+// manager. Internal thdwb:// pages are not recorded.
+func (bs *BrowserShell) recordHistory(tab *Tab) {
+	if tab == nil || tab.URL == "" {
+		return
+	}
+	if !strings.HasPrefix(tab.URL, "http://") && !strings.HasPrefix(tab.URL, "https://") {
+		return
+	}
+	bs.historyManager.AddEntry(tab.Title, tab.URL)
 }
 
 // TabManager returns the shell's tab manager.
@@ -157,4 +209,9 @@ func (bs *BrowserShell) ExtensionManager() *ExtensionManager {
 // Settings returns the shell's settings.
 func (bs *BrowserShell) Settings() *hotdog.Settings {
 	return bs.settings
+}
+
+// Window returns the shell's mustard window base.
+func (bs *BrowserShell) Window() *mustard.WindowBase {
+	return bs.windowBase
 }

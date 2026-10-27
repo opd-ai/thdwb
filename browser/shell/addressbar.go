@@ -87,7 +87,7 @@ func (ab *AddressBar) navigate(raw string) {
 	}
 	tab := ab.manager.ActiveTab()
 	if tab != nil {
-		ab.manager.SetURL(tab.ID, u.String())
+		ab.manager.Navigate(tab.ID, u.String())
 		ab.input.SetValue(u.String())
 		ab.updateSecurity(u)
 		ab.updateContainer(tab)

@@ -5,9 +5,9 @@ import (
 )
 
 // NavigationControls holds the browser's core navigation buttons: back,
-// forward, reload, home, bookmark, and extension toolbar icons. It is bound
-// to a TabManager so back/forward availability reflects the active tab's
-// navigation state.
+// forward, reload, home, bookmark, and menu. It is bound to a TabManager so
+// button availability reflects the active tab's navigation state, and it
+// drives real back/forward/reload/home navigation through the manager.
 type NavigationControls struct {
 	Frame   *mustard.Frame
 	window  *mustard.WindowBase
@@ -19,6 +19,9 @@ type NavigationControls struct {
 	homeBtn     *mustard.ButtonWidget
 	bookmarkBtn *mustard.ButtonWidget
 	menuBtn     *mustard.ButtonWidget
+
+	homeURL      string
+	bookmarkFunc func(tab *Tab)
 }
 
 // NewNavigationControls constructs a horizontal navigation bar bound to
@@ -28,6 +31,7 @@ func NewNavigationControls(window *mustard.WindowBase, manager *TabManager) *Nav
 	nc := &NavigationControls{
 		window:  window,
 		manager: manager,
+		homeURL: "thdwb://newtab/",
 	}
 
 	nc.Frame = mustard.CreateFrame(mustard.HorizontalFrame)
@@ -83,15 +87,26 @@ func NewNavigationControls(window *mustard.WindowBase, manager *TabManager) *Nav
 	return nc
 }
 
+// SetHomeURL sets the URL the home button navigates to.
+func (nc *NavigationControls) SetHomeURL(u string) {
+	if u != "" {
+		nc.homeURL = u
+	}
+}
+
+// SetBookmarkCallback sets the function invoked when the bookmark button is
+// pressed, passed the active tab. The shell wires this to its BookmarkManager.
+func (nc *NavigationControls) SetBookmarkCallback(fn func(tab *Tab)) {
+	nc.bookmarkFunc = fn
+}
+
 // goBack navigates the active tab back one history entry.
 func (nc *NavigationControls) goBack() {
 	tab := nc.manager.ActiveTab()
 	if tab == nil {
 		return
 	}
-	// Navigation history is managed by the web content layer; the shell
-	// records the intent here. Subclasses/embedders can hook into this.
-	_ = tab
+	nc.manager.Back(tab.ID)
 }
 
 // goForward navigates the active tab forward one history entry.
@@ -100,55 +115,55 @@ func (nc *NavigationControls) goForward() {
 	if tab == nil {
 		return
 	}
-	_ = tab
+	nc.manager.Forward(tab.ID)
 }
 
-// reload reloads the active tab's current URL.
+// reload re-issues the active tab's current URL.
 func (nc *NavigationControls) reload() {
 	tab := nc.manager.ActiveTab()
-	if tab == nil {
+	if tab == nil || tab.URL == "" {
 		return
 	}
-	if tab.URL != "" {
-		nc.manager.SetURL(tab.ID, tab.URL)
-	}
+	nc.manager.SetURL(tab.ID, tab.URL)
 }
 
-// goHome navigates the active tab to the homepage.
+// goHome navigates the active tab to the configured home URL.
 func (nc *NavigationControls) goHome() {
 	tab := nc.manager.ActiveTab()
 	if tab == nil {
 		return
 	}
-	nc.manager.SetURL(tab.ID, "thdwb://newtab/")
+	nc.manager.Navigate(tab.ID, nc.homeURL)
 }
 
-// toggleBookmark bookmarks or unbookmarks the active tab's URL.
+// toggleBookmark bookmarks or unbookmarks the active tab's URL via the
+// configured callback.
 func (nc *NavigationControls) toggleBookmark() {
 	tab := nc.manager.ActiveTab()
-	if tab == nil || tab.URL == "" {
+	if tab == nil || tab.URL == "" || nc.bookmarkFunc == nil {
 		return
 	}
-	_ = tab
+	nc.bookmarkFunc(tab)
 }
 
-// openMenu opens the browser menu (placeholder).
+// openMenu opens the browser menu (placeholder for the settings/history/
+// bookmarks menu).
 func (nc *NavigationControls) openMenu() {
-	// Placeholder for future settings/history/bookmarks menu.
+	// Placeholder for a future menu.
 }
 
 // updateStates refreshes button enabled/disabled styling based on the active
-// tab. Currently all buttons are enabled when a tab is active.
+// tab and its navigation history.
 func (nc *NavigationControls) updateStates() {
 	tab := nc.manager.ActiveTab()
-	enabled := tab != nil
+	active := tab != nil
+	canBack := active && nc.manager.CanGoBack(tab.ID)
+	canForward := active && nc.manager.CanGoForward(tab.ID)
+	hasURL := active && tab.URL != ""
 
-	for _, btn := range []*mustard.ButtonWidget{
-		nc.backBtn, nc.forwardBtn, nc.reloadBtn, nc.homeBtn,
-		nc.bookmarkBtn, nc.menuBtn,
-	} {
+	setEnabled := func(btn *mustard.ButtonWidget, enabled bool) {
 		if btn == nil {
-			continue
+			return
 		}
 		if enabled {
 			btn.SetBackgroundColor("#ffffff")
@@ -158,4 +173,11 @@ func (nc *NavigationControls) updateStates() {
 			btn.SetFontColor("#666666")
 		}
 	}
+
+	setEnabled(nc.backBtn, canBack)
+	setEnabled(nc.forwardBtn, canForward)
+	setEnabled(nc.reloadBtn, hasURL)
+	setEnabled(nc.homeBtn, active)
+	setEnabled(nc.bookmarkBtn, hasURL)
+	setEnabled(nc.menuBtn, true)
 }
