@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	assets "github.com/danfragoso/thdwb/assets"
+	extensions "github.com/danfragoso/thdwb/browser/extensions"
 	hotdog "github.com/danfragoso/thdwb/hotdog"
 	mustard "github.com/danfragoso/thdwb/mustard"
 )
@@ -23,6 +24,8 @@ type BrowserShell struct {
 	bookmarkManager  *BookmarkManager
 	historyManager   *HistoryManager
 	extensionManager *ExtensionManager
+	extManager       *extensions.Manager
+	containerManager *extensions.ContainerManager
 
 	addressBar       *AddressBar
 	navigation       *NavigationControls
@@ -57,6 +60,8 @@ func NewBrowserShell(settings *hotdog.Settings, buildInfo *assets.BuildInfo) *Br
 		bookmarkManager:  NewBookmarkManager(),
 		historyManager:   NewHistoryManager(),
 		extensionManager: NewExtensionManager(),
+		extManager:       extensions.NewManager(""),
+		containerManager: extensions.NewContainerManager(),
 	}
 }
 
@@ -69,6 +74,9 @@ func (bs *BrowserShell) Init() error {
 		return fmt.Errorf("create window: %w", err)
 	}
 	bs.windowBase = window.(*mustard.WindowBase)
+
+	// Wire container operations to the extension manager for chrome.contextualIdentities.
+	bs.extManager.SetContainerOperations(bs)
 
 	bs.buildUI()
 
@@ -204,6 +212,76 @@ func (bs *BrowserShell) HistoryManager() *HistoryManager {
 // ExtensionManager returns the shell's extension manager.
 func (bs *BrowserShell) ExtensionManager() *ExtensionManager {
 	return bs.extensionManager
+}
+
+// ContainerManager returns the shell's container manager.
+func (bs *BrowserShell) ContainerManager() *extensions.ContainerManager {
+	return bs.containerManager
+}
+
+// QueryContainers implements ContainerOperations for chrome.contextualIdentities.
+func (bs *BrowserShell) QueryContainers() []extensions.ContainerInfo {
+	containers := bs.containerManager.List()
+	result := make([]extensions.ContainerInfo, 0, len(containers))
+	for _, c := range containers {
+		result = append(result, extensions.ContainerInfo{
+			ID:    c.ID,
+			Name:  c.Name,
+			Color: c.Color,
+			Icon:  c.Icon,
+		})
+	}
+	return result
+}
+
+// GetContainer implements ContainerOperations for chrome.contextualIdentities.
+func (bs *BrowserShell) GetContainer(id string) (*extensions.ContainerInfo, error) {
+	c := bs.containerManager.Get(id)
+	if c == nil {
+		return nil, fmt.Errorf("container %q not found", id)
+	}
+	return &extensions.ContainerInfo{
+		ID:    c.ID,
+		Name:  c.Name,
+		Color: c.Color,
+		Icon:  c.Icon,
+	}, nil
+}
+
+// CreateContainer implements ContainerOperations for chrome.contextualIdentities.
+func (bs *BrowserShell) CreateContainer(name, color string) (*extensions.ContainerInfo, error) {
+	c, err := bs.containerManager.Create(name, color)
+	if err != nil {
+		return nil, err
+	}
+	return &extensions.ContainerInfo{
+		ID:    c.ID,
+		Name:  c.Name,
+		Color: c.Color,
+		Icon:  c.Icon,
+	}, nil
+}
+
+// UpdateContainer implements ContainerOperations for chrome.contextualIdentities.
+func (bs *BrowserShell) UpdateContainer(id, name, color string) (*extensions.ContainerInfo, error) {
+	c, err := bs.containerManager.Update(id, name, color)
+	if err != nil {
+		return nil, err
+	}
+	return &extensions.ContainerInfo{
+		ID:    c.ID,
+		Name:  c.Name,
+		Color: c.Color,
+		Icon:  c.Icon,
+	}, nil
+}
+
+// RemoveContainer implements ContainerOperations for chrome.contextualIdentities.
+func (bs *BrowserShell) RemoveContainer(id string) error {
+	if !bs.containerManager.Remove(id) {
+		return fmt.Errorf("container %q not found", id)
+	}
+	return nil
 }
 
 // Settings returns the shell's settings.
