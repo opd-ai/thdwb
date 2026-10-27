@@ -66,13 +66,22 @@ type TabManager struct {
 	active      *Tab
 	closedStack []*Tab // most-recently-closed is last
 	maxClosed   int
+	navs        map[int]*tabNav // per-tab back/forward history
 
 	listeners []func()
 }
 
+// tabNav holds the back/forward history for a single tab. The current URL is
+// stored on the Tab itself; these stacks record where the tab has been (back)
+// and where it can still go (forward).
+type tabNav struct {
+	back    []string
+	forward []string
+}
+
 // NewTabManager returns an empty TabManager.
 func NewTabManager() *TabManager {
-	return &TabManager{nextID: 1, maxClosed: 25}
+	return &TabManager{nextID: 1, maxClosed: 25, navs: make(map[int]*tabNav)}
 }
 
 // OnChanged registers a listener invoked after any structural change (add,
