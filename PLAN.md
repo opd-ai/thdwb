@@ -59,14 +59,16 @@ Build the browser shell UI, tab management, and extension integration.
 
 Establish the foundation for extension execution, discovery, and lifecycle management.
 
+**Status:** Complete (2026-10-27)
+
 ### Tasks
-1. **Define Extension Struct** — Create data structure for manifest, ID, version, permissions, background script VM state, content script registry, storage partition reference, icons/metadata
-2. **Implement Manifest Parser** — Parse manifest.json (v2 and v3), validate required fields, permissions, icons
-3. **Create Extension Discovery** — Scan extension directories, auto-load on startup
-4. **Build Extension Lifecycle Manager** — Enable/disable, reload, uninstall; manage background script startup/shutdown
-5. **Implement Extension Storage Partition** — Per-extension storage namespace for chrome.storage APIs
-6. **Create Content Script Registry** — Map URL patterns to content scripts
-7. **Build Extension Sandboxing** — Isolate extension Goja VMs from page VMs
+- [x] 1. **Define Extension Struct** — Create data structure for manifest, ID, version, permissions, background script VM state, content script registry, storage partition reference, icons/metadata
+- [x] 2. **Implement Manifest Parser** — Parse manifest.json (v2 and v3), validate required fields, permissions, icons
+- [x] 3. **Create Extension Discovery** — Scan extension directories, auto-load on startup
+- [x] 4. **Build Extension Lifecycle Manager** — Enable/disable, reload, uninstall; manage background script startup/shutdown
+- [x] 5. **Implement Extension Storage Partition** — Per-extension storage namespace for chrome.storage APIs
+- [x] 6. **Create Content Script Registry** — Map URL patterns to content scripts
+- [x] 7. **Build Extension Sandboxing** — Isolate extension Goja VMs from page VMs
 
 ### Dependencies
 - Core engine (already implemented)
