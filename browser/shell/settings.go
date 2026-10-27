@@ -8,16 +8,16 @@ import (
 
 // BrowserSettings holds browser configuration.
 type BrowserSettings struct {
-	mu              sync.Mutex
-	Homepage        string                 `json:"homepage"`
-	DefaultSearch   string                 `json:"default_search"`
-	ShowBookmarks   bool                   `json:"show_bookmarks"`
-	ShowHistory     bool                   `json:"show_history"`
-	ShowExtensions  bool                   `json:"show_extensions"`
-	Extensions      []string               `json:"extensions"`
-	Containers      []string               `json:"containers"`
-	Privacy         map[string]interface{} `json:"privacy"`
-	Security        map[string]interface{} `json:"security"`
+	mu             sync.Mutex
+	Homepage       string                 `json:"homepage"`
+	DefaultSearch  string                 `json:"default_search"`
+	ShowBookmarks  bool                   `json:"show_bookmarks"`
+	ShowHistory    bool                   `json:"show_history"`
+	ShowExtensions bool                   `json:"show_extensions"`
+	Extensions     []string               `json:"extensions"`
+	Containers     []string               `json:"containers"`
+	Privacy        map[string]interface{} `json:"privacy"`
+	Security       map[string]interface{} `json:"security"`
 }
 
 // NewBrowserSettings creates new browser settings with defaults.

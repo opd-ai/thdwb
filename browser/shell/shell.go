@@ -17,9 +17,9 @@ type BrowserShell struct {
 	settings   *hotdog.Settings
 	buildInfo  *assets.BuildInfo
 
-	tabManager      *TabManager
-	bookmarkManager *BookmarkManager
-	historyManager  *HistoryManager
+	tabManager       *TabManager
+	bookmarkManager  *BookmarkManager
+	historyManager   *HistoryManager
 	extensionManager *ExtensionManager
 
 	addressBar       *AddressBar

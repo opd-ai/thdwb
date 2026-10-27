@@ -11,14 +11,14 @@ import (
 // indicators. It is a pure UI component bound to a TabManager so it always
 // reflects the active tab's URL.
 type AddressBar struct {
-	Frame         *mustard.Frame
-	window        *mustard.WindowBase
-	manager       *TabManager
+	Frame   *mustard.Frame
+	window  *mustard.WindowBase
+	manager *TabManager
 
-	input         *mustard.InputWidget
-	security      *mustard.LabelWidget
-	container     *mustard.LabelWidget
-	goBtn         *mustard.ButtonWidget
+	input     *mustard.InputWidget
+	security  *mustard.LabelWidget
+	container *mustard.LabelWidget
+	goBtn     *mustard.ButtonWidget
 
 	url           string
 	securityState string // "secure", "insecure", "mixed"
@@ -29,11 +29,11 @@ type AddressBar struct {
 // whenever the active tab changes and navigates when the user submits a URL.
 func NewAddressBar(window *mustard.WindowBase, manager *TabManager) *AddressBar {
 	ab := &AddressBar{
-		window:         window,
-		manager:        manager,
-		url:            "",
-		securityState:  "insecure",
-		containerID:    "",
+		window:        window,
+		manager:       manager,
+		url:           "",
+		securityState: "insecure",
+		containerID:   "",
 	}
 
 	ab.Frame = mustard.CreateFrame(mustard.HorizontalFrame)

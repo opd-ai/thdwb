@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"runtime"
 
-	"github.com/danfragoso/thdwb/browser/shell"
 	assets "github.com/danfragoso/thdwb/assets"
+	"github.com/danfragoso/thdwb/browser/shell"
 	hotdog "github.com/danfragoso/thdwb/hotdog"
 )
 

@@ -16,8 +16,8 @@ type Extension struct {
 
 // ExtensionManager manages browser extensions.
 type ExtensionManager struct {
-	mu          sync.Mutex
-	extensions  map[string]*Extension
+	mu         sync.Mutex
+	extensions map[string]*Extension
 }
 
 // NewExtensionManager creates a new extension manager.

@@ -7,11 +7,11 @@ import (
 // ExtensionToolbar displays enabled extension icons in the browser toolbar.
 // Each enabled extension gets a clickable button that can open its popup.
 type ExtensionToolbar struct {
-	Frame     *mustard.Frame
-	window    *mustard.WindowBase
-	manager   *ExtensionManager
-	buttons   map[string]*mustard.ButtonWidget
-	onClick   func(ext *Extension) // callback when an extension icon is clicked
+	Frame   *mustard.Frame
+	window  *mustard.WindowBase
+	manager *ExtensionManager
+	buttons map[string]*mustard.ButtonWidget
+	onClick func(ext *Extension) // callback when an extension icon is clicked
 }
 
 // NewExtensionToolbar constructs a toolbar bound to manager. Enabled

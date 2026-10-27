@@ -13,12 +13,12 @@ type NavigationControls struct {
 	window  *mustard.WindowBase
 	manager *TabManager
 
-	backBtn    *mustard.ButtonWidget
-	forwardBtn *mustard.ButtonWidget
-	reloadBtn  *mustard.ButtonWidget
-	homeBtn    *mustard.ButtonWidget
+	backBtn     *mustard.ButtonWidget
+	forwardBtn  *mustard.ButtonWidget
+	reloadBtn   *mustard.ButtonWidget
+	homeBtn     *mustard.ButtonWidget
 	bookmarkBtn *mustard.ButtonWidget
-	menuBtn    *mustard.ButtonWidget
+	menuBtn     *mustard.ButtonWidget
 }
 
 // NewNavigationControls constructs a horizontal navigation bar bound to

@@ -18,15 +18,15 @@ type Bookmark struct {
 
 // BookmarkFolder represents a folder for organizing bookmarks.
 type BookmarkFolder struct {
-	ID         int       `json:"id"`
-	Title      string    `json:"title"`
-	Items      []int     `json:"items"`
-	Subfolders []int     `json:"subfolders,omitempty"`
+	ID         int    `json:"id"`
+	Title      string `json:"title"`
+	Items      []int  `json:"items"`
+	Subfolders []int  `json:"subfolders,omitempty"`
 }
 
 // BookmarkManager manages bookmarks.
 type BookmarkManager struct {
-	mu       sync.Mutex
+	mu        sync.Mutex
 	bookmarks []*Bookmark
 	folders   []*BookmarkFolder
 	nextID    int
