@@ -85,12 +85,14 @@ Establish the foundation for extension execution, discovery, and lifecycle manag
 
 Enforce robust content script sandboxing and secure injection.
 
+**Status:** Complete (2026-10-27)
+
 ### Tasks
-1. **Build Content Script Loader** — Parse manifest content_scripts, URL pattern matching, run_at timing
-2. **Implement Content Script Sandbox** — Isolated Goja VM with restricted global access
-3. **Implement Message Passing with Validation** — Content script ↔ background routing with origin validation
-4. **Build CSP for Content Scripts** — Enforce manifest content_security_policy
-5. **Implement Dynamic Content Script Loading** — chrome.scripting.executeScript with ISOLATED/MAIN world support
+- [x] 1. **Build Content Script Loader** — Parse manifest content_scripts, URL pattern matching, run_at timing
+- [x] 2. **Implement Content Script Sandbox** — Isolated Goja VM with restricted global access
+- [x] 3. **Implement Message Passing with Validation** — Content script ↔ background routing with origin validation
+- [x] 4. **Build CSP for Content Scripts** — Enforce manifest content_security_policy
+- [x] 5. **Implement Dynamic Content Script Loading** — chrome.scripting.executeScript with ISOLATED/MAIN world support
 
 ### Dependencies
 - Phase E0 complete
