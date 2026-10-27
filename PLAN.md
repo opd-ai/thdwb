@@ -160,14 +160,16 @@ Implement the foundational APIs that most extensions rely on: messaging, storage
 
 ## Phase E3: Extended WebExtensions APIs
 
+**Status:** Complete (2026-10-27)
+
 Add advanced APIs for content manipulation and UI customization.
 
 ### Tasks
-1. **Implement Scripting API** — executeScript, insertCSS, removeCSS, dynamic registration
-2. **Implement Context Menus API** — create, update, remove, removeAll, onClicked
-3. **Implement Permissions Request & Grants** — request, contains, getAll, events
-4. **Implement Alarms API** — create, get, getAll, clear, onAlarm
-5. **Implement i18n API** — getMessage, getAcceptLanguages
+- [x] 1. **Implement Scripting API** — executeScript, insertCSS, removeCSS, dynamic registration
+- [x] 2. **Implement Context Menus API** — create, update, remove, removeAll, onClicked
+- [x] 3. **Implement Permissions Request & Grants** — request, contains, getAll, events
+- [x] 4. **Implement Alarms API** — create, get, getAll, clear, onAlarm
+- [x] 5. **Implement i18n API** — getMessage, getAcceptLanguages
 
 ### Dependencies
 - Phase E1 complete
