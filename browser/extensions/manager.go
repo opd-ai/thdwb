@@ -13,20 +13,25 @@ import (
 // lifecycle, storage, and content script registration into a single
 // interface used by the browser shell.
 type Manager struct {
-	mu            sync.Mutex
-	discovery     *Discovery
-	lifecycle     *LifecycleManager
-	extensions    map[string]*Extension
-	storageDir    string
-	contentReg    *ContentScriptRegistry
-	contentLoader *ContentScriptLoader
-	sandboxes     map[string]*ContentScriptSandbox
-	messageRouter *MessageRouter
-	chromeAPIs    map[string]*ChromeAPI
-	tabOps        TabOperations
-	winOps        WindowOperations
-	containerOps  ContainerOperations
-	cookieOps     CookieOperations
+	mu               sync.Mutex
+	discovery        *Discovery
+	lifecycle        *LifecycleManager
+	extensions       map[string]*Extension
+	storageDir       string
+	contentReg       *ContentScriptRegistry
+	contentLoader    *ContentScriptLoader
+	sandboxes        map[string]*ContentScriptSandbox
+	messageRouter    *MessageRouter
+	chromeAPIs       map[string]*ChromeAPI
+	tabOps           TabOperations
+	winOps           WindowOperations
+	containerOps     ContainerOperations
+	cookieOps        CookieOperations
+	scriptingOps     ScriptingOperations
+	contextMenuOps   ContextMenuOperations
+	permissionOps    PermissionOperations
+	alarmOps         AlarmOperations
+	i18nOps          I18nOperations
 }
 
 // NewManager creates a new extension manager.
@@ -302,6 +307,41 @@ func (m *Manager) SetCookieOperations(ops CookieOperations) {
 	m.cookieOps = ops
 }
 
+// SetScriptingOperations sets the scripting operations provider for chrome.scripting API.
+func (m *Manager) SetScriptingOperations(ops ScriptingOperations) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.scriptingOps = ops
+}
+
+// SetContextMenuOperations sets the context menu operations provider for chrome.contextMenus API.
+func (m *Manager) SetContextMenuOperations(ops ContextMenuOperations) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.contextMenuOps = ops
+}
+
+// SetPermissionOperations sets the permission operations provider for chrome.permissions API.
+func (m *Manager) SetPermissionOperations(ops PermissionOperations) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.permissionOps = ops
+}
+
+// SetAlarmOperations sets the alarm operations provider for chrome.alarms API.
+func (m *Manager) SetAlarmOperations(ops AlarmOperations) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.alarmOps = ops
+}
+
+// SetI18nOperations sets the i18n operations provider for chrome.i18n API.
+func (m *Manager) SetI18nOperations(ops I18nOperations) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.i18nOps = ops
+}
+
 // onExtensionStart initializes the Chrome API bindings and background VM
 // for an extension when it is enabled.
 func (m *Manager) onExtensionStart(ext *Extension) error {
@@ -319,6 +359,11 @@ func (m *Manager) onExtensionStart(ext *Extension) error {
 	api.SetWindowOperations(m.winOps)
 	api.SetContainerOperations(m.containerOps)
 	api.SetCookieOperations(m.cookieOps)
+	api.SetScriptingOperations(m.scriptingOps)
+	api.SetContextMenuOperations(m.contextMenuOps)
+	api.SetPermissionOperations(m.permissionOps)
+	api.SetAlarmOperations(m.alarmOps)
+	api.SetI18nOperations(m.i18nOps)
 
 	m.chromeAPIs[ext.ID] = api
 	m.mu.Unlock()
