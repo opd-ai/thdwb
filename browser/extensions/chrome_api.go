@@ -313,8 +313,10 @@ func (c *ChromeAPI) bindStorage(vm *goja.Runtime, ext *Extension) error {
 
 			if callback != nil {
 				_, _ = callback(vm.ToValue(result))
+				return goja.Undefined()
 			}
-			return goja.Undefined()
+			// No callback: return result synchronously for ease of use.
+			return vm.ToValue(result)
 		})
 
 		_ = areaObj.Set("set", func(call goja.FunctionCall) goja.Value {
