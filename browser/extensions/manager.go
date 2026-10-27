@@ -153,19 +153,18 @@ func (m *Manager) Reload(id string) error {
 func (m *Manager) Uninstall(id string) error {
 	m.mu.Lock()
 	ext := m.extensions[id]
+	delete(m.extensions, id)
+	m.contentLoader.RemoveForExtension(id)
+	if s, ok := m.sandboxes[id]; ok {
+		delete(m.sandboxes, id)
+		_ = s.Close()
+	}
 	m.mu.Unlock()
+
 	if ext == nil {
 		return fmt.Errorf("extension not found: %s", id)
 	}
-	if err := m.lifecycle.Uninstall(ext); err != nil {
-		return err
-	}
-	m.mu.Lock()
-	delete(m.extensions, id)
-	m.contentLoader.RemoveForExtension(id)
-	m.RemoveSandbox(id)
-	m.mu.Unlock()
-	return nil
+	return m.lifecycle.Uninstall(ext)
 }
 
 // IsEnabled reports whether an extension is enabled.
