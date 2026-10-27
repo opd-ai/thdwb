@@ -3,6 +3,7 @@ package sauce
 import (
 	"context"
 	"encoding/base64"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -274,4 +275,55 @@ func assertCookieNames(t *testing.T, cookies []*http.Cookie, want ...string) {
 		names = append(names, cookie.Name)
 	}
 	assert.ElementsMatch(t, want, names)
+}
+
+func TestWebRequestObserverRegistration(t *testing.T) {
+	called := false
+	obs := func(details WebRequestDetails) (WebRequestDetails, error) {
+		called = true
+		assert.Equal(t, "GET", details.Method)
+		return details, nil
+	}
+	id := RegisterWebRequestObserver(obs)
+	require.GreaterOrEqual(t, id, 0)
+
+	// Verify observer is invoked
+	_, err := notifyWebRequestObservers(WebRequestDetails{Method: "GET"})
+	require.NoError(t, err)
+	require.True(t, called)
+
+	// Unregister and verify it's removed
+	UnregisterWebRequestObserver(id)
+	called = false
+	_, err = notifyWebRequestObservers(WebRequestDetails{Method: "GET"})
+	require.NoError(t, err)
+	require.False(t, called)
+}
+
+func TestWebRequestObserverModifyHeaders(t *testing.T) {
+	obs := func(details WebRequestDetails) (WebRequestDetails, error) {
+		if details.Headers == nil {
+			details.Headers = make(map[string]string)
+		}
+		details.Headers["X-Custom"] = "value"
+		return details, nil
+	}
+	id := RegisterWebRequestObserver(obs)
+	defer UnregisterWebRequestObserver(id)
+
+	details, err := notifyWebRequestObservers(WebRequestDetails{Method: "GET"})
+	require.NoError(t, err)
+	require.Equal(t, "value", details.Headers["X-Custom"])
+}
+
+func TestWebRequestObserverBlock(t *testing.T) {
+	obs := func(details WebRequestDetails) (WebRequestDetails, error) {
+		return details, fmt.Errorf("blocked")
+	}
+	id := RegisterWebRequestObserver(obs)
+	defer UnregisterWebRequestObserver(id)
+
+	_, err := notifyWebRequestObservers(WebRequestDetails{Method: "GET"})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "blocked")
 }

@@ -118,6 +118,13 @@ type CookieOperations interface {
 	RemoveCookie(storeID string, cookie Cookie) error
 	GetAllCookies(storeID string) ([]Cookie, error)
 	ClearCookies(storeID string) error
+	GetAllCookieStores() ([]CookieStore, error)
+}
+
+// CookieStore describes a cookie store as exposed to extension APIs.
+type CookieStore struct {
+	ID       string `json:"id"`
+	Incognito bool  `json:"incognito"`
 }
 
 // ScriptingOperations is implemented by the browser shell to provide
@@ -190,6 +197,98 @@ type I18nOperations interface {
 	GetAcceptLanguages(extID string) ([]string, error)
 }
 
+// WebRequestDetails describes an HTTP request/response observed by the
+// WebRequest API.
+type WebRequestDetails struct {
+	RequestID      string            `json:"requestId"`
+	URL            string            `json:"url"`
+	Method         string            `json:"method"`
+	Headers        map[string]string `json:"headers"`
+	StatusCode     int               `json:"statusCode,omitempty"`
+	StatusLine     string            `json:"statusLine,omitempty"`
+	ResponseHeaders map[string]string `json:"responseHeaders,omitempty"`
+	Initiator      string            `json:"initiator,omitempty"`
+	TabID          int               `json:"tabId,omitempty"`
+	Timestamp      float64           `json:"timestamp"`
+	URLPatterns    []string          `json:"urlPatterns,omitempty"`
+}
+
+// WebRequestEvent is a filterable event subscription for WebRequest API.
+type WebRequestEvent struct {
+	URLPatterns []string `json:"urlPatterns,omitempty"`
+	Types       []string `json:"types,omitempty"`
+}
+
+// WebRequestOperations is implemented by the browser shell to provide
+// network request interception operations to extension APIs.
+type WebRequestOperations interface {
+	AddListener(extID string, event string, details WebRequestDetails) error
+	RemoveListener(extID string, event string) error
+}
+
+// Notification describes a desktop notification as exposed to extension APIs.
+type Notification struct {
+	ID        string `json:"id"`
+	Title     string `json:"title"`
+	Message   string `json:"message"`
+	IconURL   string `json:"iconUrl,omitempty"`
+	Context   string `json:"context,omitempty"`
+	Priority  int    `json:"priority,omitempty"`
+	Timestamp float64 `json:"timestamp,omitempty"`
+}
+
+// NotificationOptions describes options for creating a notification.
+type NotificationOptions struct {
+	Title     string `json:"title,omitempty"`
+	Message   string `json:"message,omitempty"`
+	IconURL   string `json:"iconUrl,omitempty"`
+	Context   string `json:"context,omitempty"`
+	Priority  int    `json:"priority,omitempty"`
+	Timestamp float64 `json:"timestamp,omitempty"`
+}
+
+// NotificationOperations is implemented by the browser shell to provide
+// desktop notification operations to extension APIs.
+type NotificationOperations interface {
+	CreateNotification(extID string, id string, options NotificationOptions) (string, error)
+	ClearNotification(extID string, id string) (bool, error)
+	GetAllNotifications(extID string) ([]Notification, error)
+}
+
+// DownloadItem describes a download as exposed to extension APIs.
+type DownloadItem struct {
+	ID           int     `json:"id"`
+	URL          string  `json:"url"`
+	Filename     string  `json:"filename,omitempty"`
+	State        string  `json:"state"` // "in_progress", "complete", "interrupted"
+	TotalBytes   int64   `json:"totalBytes,omitempty"`
+	BytesReceived int64  `json:"bytesReceived,omitempty"`
+	Mime         string  `json:"mime,omitempty"`
+	StartTime    float64 `json:"startTime,omitempty"`
+	EndTime      float64 `json:"endTime,omitempty"`
+	Paused       bool    `json:"paused,omitempty"`
+	Error        string  `json:"error,omitempty"`
+}
+
+// DownloadOptions describes options for starting a download.
+type DownloadOptions struct {
+	URL      string `json:"url"`
+	Filename string `json:"filename,omitempty"`
+	SaveAs   bool   `json:"saveAs,omitempty"`
+}
+
+// DownloadOperations is implemented by the browser shell to provide
+// download management operations to extension APIs.
+type DownloadOperations interface {
+	Download(extID string, options DownloadOptions) (int, error)
+	Cancel(downloadID int) error
+	Pause(downloadID int) error
+	Resume(downloadID int) error
+	Get(downloadID int) (*DownloadItem, error)
+	GetAll() ([]DownloadItem, error)
+	Erase(downloadID int) error
+}
+
 // PlatformInfo describes the browser platform as reported by chrome.runtime.
 type PlatformInfo struct {
 	OS           string `json:"os"`
@@ -216,6 +315,9 @@ type ChromeAPI struct {
 	permissionOps PermissionOperations
 	alarmOps      AlarmOperations
 	i18nOps       I18nOperations
+	webRequestOps WebRequestOperations
+	notificationOps NotificationOperations
+	downloadOps DownloadOperations
 	platform      PlatformInfo
 }
 
@@ -297,6 +399,27 @@ func (c *ChromeAPI) SetI18nOperations(ops I18nOperations) {
 	c.i18nOps = ops
 }
 
+// SetWebRequestOperations sets the web request operations provider (called by the shell).
+func (c *ChromeAPI) SetWebRequestOperations(ops WebRequestOperations) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.webRequestOps = ops
+}
+
+// SetNotificationOperations sets the notification operations provider (called by the shell).
+func (c *ChromeAPI) SetNotificationOperations(ops NotificationOperations) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.notificationOps = ops
+}
+
+// SetDownloadOperations sets the download operations provider (called by the shell).
+func (c *ChromeAPI) SetDownloadOperations(ops DownloadOperations) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.downloadOps = ops
+}
+
 // Bind installs all chrome.* APIs into the extension's background VM.
 func (c *ChromeAPI) Bind() error {
 	c.mu.Lock()
@@ -312,6 +435,9 @@ func (c *ChromeAPI) Bind() error {
 	permissionOps := c.permissionOps
 	alarmOps := c.alarmOps
 	i18nOps := c.i18nOps
+	webRequestOps := c.webRequestOps
+	notificationOps := c.notificationOps
+	downloadOps := c.downloadOps
 	c.mu.Unlock()
 
 	if vm == nil {
@@ -388,6 +514,27 @@ func (c *ChromeAPI) Bind() error {
 	if i18nOps != nil {
 		if err := c.bindI18n(vm, ext, i18nOps); err != nil {
 			return fmt.Errorf("bind chrome.i18n: %w", err)
+		}
+	}
+
+	// Bind chrome.webRequest (requires webRequestOps).
+	if webRequestOps != nil {
+		if err := c.bindWebRequest(vm, ext, webRequestOps); err != nil {
+			return fmt.Errorf("bind chrome.webRequest: %w", err)
+		}
+	}
+
+	// Bind chrome.notifications (requires notificationOps).
+	if notificationOps != nil {
+		if err := c.bindNotifications(vm, ext, notificationOps); err != nil {
+			return fmt.Errorf("bind chrome.notifications: %w", err)
+		}
+	}
+
+	// Bind chrome.downloads (requires downloadOps).
+	if downloadOps != nil {
+		if err := c.bindDownloads(vm, ext, downloadOps); err != nil {
+			return fmt.Errorf("bind chrome.downloads: %w", err)
 		}
 	}
 
@@ -1292,6 +1439,32 @@ func (c *ChromeAPI) bindCookies(vm *goja.Runtime, ext *Extension, cookieOps Cook
 		return goja.Undefined()
 	})
 
+	// chrome.cookies.getAllCookieStores
+	_ = cookiesObj.Set("getAllCookieStores", func(call goja.FunctionCall) goja.Value {
+		var callback goja.Callable
+		if len(call.Arguments) > 0 {
+			callback, _ = goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		}
+		stores, err := cookieOps.GetAllCookieStores()
+		if err != nil {
+			if callback != nil {
+				_, _ = callback(goja.Undefined())
+			}
+			return goja.Undefined()
+		}
+		result := make([]interface{}, 0, len(stores))
+		for _, s := range stores {
+			result = append(result, map[string]interface{}{
+				"id":       s.ID,
+				"incognito": s.Incognito,
+			})
+		}
+		if callback != nil {
+			_, _ = callback(vm.ToValue(result))
+		}
+		return vm.ToValue(result)
+	})
+
 	_ = chromeObj.Set("cookies", cookiesObj)
 	return nil
 }
@@ -1850,5 +2023,505 @@ func (c *ChromeAPI) bindI18n(vm *goja.Runtime, ext *Extension, ops I18nOperation
 	})
 
 	_ = chromeObj.Set("i18n", i18nObj)
+	return nil
+}
+
+// bindWebRequest installs chrome.webRequest into the VM.
+func (c *ChromeAPI) bindWebRequest(vm *goja.Runtime, ext *Extension, ops WebRequestOperations) error {
+	chrome := vm.Get("chrome")
+	var chromeObj *goja.Object
+	if chrome == nil || chrome.ToObject(vm) == nil {
+		chromeObj = vm.NewObject()
+		_ = vm.Set("chrome", chromeObj)
+	} else {
+		chromeObj = chrome.ToObject(vm)
+	}
+
+	webRequestObj := vm.NewObject()
+
+	// chrome.webRequest.onBeforeRequest
+	onBeforeRequest := vm.NewObject()
+	_ = onBeforeRequest.Set("addListener", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 2 {
+			return goja.Undefined()
+		}
+		callback, _ := goja.AssertFunction(call.Argument(0))
+		details := call.Argument(1).ToObject(vm)
+		urlPatterns := []string{}
+		if typesVal := details.Get("urls"); typesVal != nil {
+			arr := typesVal.ToObject(vm)
+			if arr != nil {
+				for _, key := range arr.Keys() {
+					urlPatterns = append(urlPatterns, arr.Get(key).String())
+				}
+			}
+		}
+		wrDetails := WebRequestDetails{URLPatterns: urlPatterns}
+		if err := ops.AddListener(ext.ID, "onBeforeRequest", wrDetails); err != nil {
+			return goja.Undefined()
+		}
+		_ = callback
+		return goja.Undefined()
+	})
+	_ = onBeforeRequest.Set("removeListener", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			return goja.Undefined()
+		}
+		_ = call.Argument(0)
+		if err := ops.RemoveListener(ext.ID, "onBeforeRequest"); err != nil {
+			return goja.Undefined()
+		}
+		return goja.Undefined()
+	})
+	_ = webRequestObj.Set("onBeforeRequest", onBeforeRequest)
+
+	// chrome.webRequest.onBeforeSendHeaders
+	onBeforeSendHeaders := vm.NewObject()
+	_ = onBeforeSendHeaders.Set("addListener", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 2 {
+			return goja.Undefined()
+		}
+		callback, _ := goja.AssertFunction(call.Argument(0))
+		details := call.Argument(1).ToObject(vm)
+		urlPatterns := []string{}
+		if typesVal := details.Get("urls"); typesVal != nil {
+			arr := typesVal.ToObject(vm)
+			if arr != nil {
+				for _, key := range arr.Keys() {
+					urlPatterns = append(urlPatterns, arr.Get(key).String())
+				}
+			}
+		}
+		wrDetails := WebRequestDetails{URLPatterns: urlPatterns}
+		if err := ops.AddListener(ext.ID, "onBeforeSendHeaders", wrDetails); err != nil {
+			return goja.Undefined()
+		}
+		_ = callback
+		return goja.Undefined()
+	})
+	_ = onBeforeSendHeaders.Set("removeListener", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			return goja.Undefined()
+		}
+		_ = call.Argument(0)
+		if err := ops.RemoveListener(ext.ID, "onBeforeSendHeaders"); err != nil {
+			return goja.Undefined()
+		}
+		return goja.Undefined()
+	})
+	_ = webRequestObj.Set("onBeforeSendHeaders", onBeforeSendHeaders)
+
+	// chrome.webRequest.onHeadersReceived
+	onHeadersReceived := vm.NewObject()
+	_ = onHeadersReceived.Set("addListener", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 2 {
+			return goja.Undefined()
+		}
+		callback, _ := goja.AssertFunction(call.Argument(0))
+		details := call.Argument(1).ToObject(vm)
+		urlPatterns := []string{}
+		if typesVal := details.Get("urls"); typesVal != nil {
+			arr := typesVal.ToObject(vm)
+			if arr != nil {
+				for _, key := range arr.Keys() {
+					urlPatterns = append(urlPatterns, arr.Get(key).String())
+				}
+			}
+		}
+		wrDetails := WebRequestDetails{URLPatterns: urlPatterns}
+		if err := ops.AddListener(ext.ID, "onHeadersReceived", wrDetails); err != nil {
+			return goja.Undefined()
+		}
+		_ = callback
+		return goja.Undefined()
+	})
+	_ = onHeadersReceived.Set("removeListener", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			return goja.Undefined()
+		}
+		_ = call.Argument(0)
+		if err := ops.RemoveListener(ext.ID, "onHeadersReceived"); err != nil {
+			return goja.Undefined()
+		}
+		return goja.Undefined()
+	})
+	_ = webRequestObj.Set("onHeadersReceived", onHeadersReceived)
+
+	// chrome.webRequest.onCompleted
+	onCompleted := vm.NewObject()
+	_ = onCompleted.Set("addListener", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 2 {
+			return goja.Undefined()
+		}
+		callback, _ := goja.AssertFunction(call.Argument(0))
+		details := call.Argument(1).ToObject(vm)
+		urlPatterns := []string{}
+		if typesVal := details.Get("urls"); typesVal != nil {
+			arr := typesVal.ToObject(vm)
+			if arr != nil {
+				for _, key := range arr.Keys() {
+					urlPatterns = append(urlPatterns, arr.Get(key).String())
+				}
+			}
+		}
+		wrDetails := WebRequestDetails{URLPatterns: urlPatterns}
+		if err := ops.AddListener(ext.ID, "onCompleted", wrDetails); err != nil {
+			return goja.Undefined()
+		}
+		_ = callback
+		return goja.Undefined()
+	})
+	_ = onCompleted.Set("removeListener", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			return goja.Undefined()
+		}
+		_ = call.Argument(0)
+		if err := ops.RemoveListener(ext.ID, "onCompleted"); err != nil {
+			return goja.Undefined()
+		}
+		return goja.Undefined()
+	})
+	_ = webRequestObj.Set("onCompleted", onCompleted)
+
+	// chrome.webRequest.onErrorOccurred
+	onErrorOccurred := vm.NewObject()
+	_ = onErrorOccurred.Set("addListener", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 2 {
+			return goja.Undefined()
+		}
+		callback, _ := goja.AssertFunction(call.Argument(0))
+		details := call.Argument(1).ToObject(vm)
+		urlPatterns := []string{}
+		if typesVal := details.Get("urls"); typesVal != nil {
+			arr := typesVal.ToObject(vm)
+			if arr != nil {
+				for _, key := range arr.Keys() {
+					urlPatterns = append(urlPatterns, arr.Get(key).String())
+				}
+			}
+		}
+		wrDetails := WebRequestDetails{URLPatterns: urlPatterns}
+		if err := ops.AddListener(ext.ID, "onErrorOccurred", wrDetails); err != nil {
+			return goja.Undefined()
+		}
+		_ = callback
+		return goja.Undefined()
+	})
+	_ = onErrorOccurred.Set("removeListener", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			return goja.Undefined()
+		}
+		_ = call.Argument(0)
+		if err := ops.RemoveListener(ext.ID, "onErrorOccurred"); err != nil {
+			return goja.Undefined()
+		}
+		return goja.Undefined()
+	})
+	_ = webRequestObj.Set("onErrorOccurred", onErrorOccurred)
+
+	_ = chromeObj.Set("webRequest", webRequestObj)
+	return nil
+}
+
+// bindNotifications installs chrome.notifications into the VM.
+func (c *ChromeAPI) bindNotifications(vm *goja.Runtime, ext *Extension, ops NotificationOperations) error {
+	chrome := vm.Get("chrome")
+	var chromeObj *goja.Object
+	if chrome == nil || chrome.ToObject(vm) == nil {
+		chromeObj = vm.NewObject()
+		_ = vm.Set("chrome", chromeObj)
+	} else {
+		chromeObj = chrome.ToObject(vm)
+	}
+
+	notifObj := vm.NewObject()
+
+	// chrome.notifications.create
+	_ = notifObj.Set("create", func(call goja.FunctionCall) goja.Value {
+		var id string
+		if len(call.Arguments) > 0 {
+			id = call.Argument(0).String()
+		}
+		options := NotificationOptions{}
+		if len(call.Arguments) > 1 {
+			opts := call.Argument(1).ToObject(vm)
+			if opts != nil {
+				if v := opts.Get("title"); v != nil {
+					options.Title = v.String()
+				}
+				if v := opts.Get("message"); v != nil {
+					options.Message = v.String()
+				}
+				if v := opts.Get("iconUrl"); v != nil {
+					options.IconURL = v.String()
+				}
+				if v := opts.Get("context"); v != nil {
+					options.Context = v.String()
+				}
+				if v := opts.Get("priority"); v != nil {
+					options.Priority = int(v.ToInteger())
+				}
+				if v := opts.Get("timestamp"); v != nil {
+					options.Timestamp = v.ToFloat()
+				}
+			}
+		}
+		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		newID, err := ops.CreateNotification(ext.ID, id, options)
+		if err != nil {
+			if callback != nil {
+				_, _ = callback(goja.Undefined())
+			}
+			return goja.Undefined()
+		}
+		if callback != nil {
+			_, _ = callback(vm.ToValue(newID))
+		}
+		return vm.ToValue(newID)
+	})
+
+	// chrome.notifications.clear
+	_ = notifObj.Set("clear", func(call goja.FunctionCall) goja.Value {
+		id := ""
+		if len(call.Arguments) > 0 {
+			id = call.Argument(0).String()
+		}
+		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		wasCleared, err := ops.ClearNotification(ext.ID, id)
+		if err != nil {
+			if callback != nil {
+				_, _ = callback(goja.Undefined())
+			}
+			return goja.Undefined()
+		}
+		if callback != nil {
+			_, _ = callback(vm.ToValue(wasCleared))
+		}
+		return vm.ToValue(wasCleared)
+	})
+
+	// chrome.notifications.getAll
+	_ = notifObj.Set("getAll", func(call goja.FunctionCall) goja.Value {
+		var callback goja.Callable
+		if len(call.Arguments) > 0 {
+			callback, _ = goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		}
+		notifications, err := ops.GetAllNotifications(ext.ID)
+		if err != nil {
+			if callback != nil {
+				_, _ = callback(goja.Undefined())
+			}
+			return goja.Undefined()
+		}
+		result := make([]interface{}, 0, len(notifications))
+		for _, n := range notifications {
+			result = append(result, map[string]interface{}{
+				"id":        n.ID,
+				"title":     n.Title,
+				"message":   n.Message,
+				"iconUrl":   n.IconURL,
+				"context":   n.Context,
+				"priority":  n.Priority,
+				"timestamp": n.Timestamp,
+			})
+		}
+		if callback != nil {
+			_, _ = callback(vm.ToValue(result))
+		}
+		return vm.ToValue(result)
+	})
+
+	_ = chromeObj.Set("notifications", notifObj)
+	return nil
+}
+
+// bindDownloads installs chrome.downloads into the VM.
+func (c *ChromeAPI) bindDownloads(vm *goja.Runtime, ext *Extension, ops DownloadOperations) error {
+	chrome := vm.Get("chrome")
+	var chromeObj *goja.Object
+	if chrome == nil || chrome.ToObject(vm) == nil {
+		chromeObj = vm.NewObject()
+		_ = vm.Set("chrome", chromeObj)
+	} else {
+		chromeObj = chrome.ToObject(vm)
+	}
+
+	dlObj := vm.NewObject()
+
+	// chrome.downloads.download
+	_ = dlObj.Set("download", func(call goja.FunctionCall) goja.Value {
+		options := DownloadOptions{}
+		if len(call.Arguments) > 0 {
+			opts := call.Argument(0).ToObject(vm)
+			if opts != nil {
+				if v := opts.Get("url"); v != nil {
+					options.URL = v.String()
+				}
+				if v := opts.Get("filename"); v != nil {
+					options.Filename = v.String()
+				}
+				if v := opts.Get("saveAs"); v != nil {
+					options.SaveAs = v.ToBoolean()
+				}
+			}
+		}
+		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		id, err := ops.Download(ext.ID, options)
+		if err != nil {
+			if callback != nil {
+				_, _ = callback(goja.Undefined())
+			}
+			return goja.Undefined()
+		}
+		if callback != nil {
+			_, _ = callback(vm.ToValue(id))
+		}
+		return vm.ToValue(id)
+	})
+
+	// chrome.downloads.cancel
+	_ = dlObj.Set("cancel", func(call goja.FunctionCall) goja.Value {
+		id := 0
+		if len(call.Arguments) > 0 {
+			id = int(call.Argument(0).ToInteger())
+		}
+		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		if err := ops.Cancel(id); err != nil {
+			if callback != nil {
+				_, _ = callback(goja.Undefined())
+			}
+			return goja.Undefined()
+		}
+		if callback != nil {
+			_, _ = callback(vm.ToValue(true))
+		}
+		return vm.ToValue(true)
+	})
+
+	// chrome.downloads.pause
+	_ = dlObj.Set("pause", func(call goja.FunctionCall) goja.Value {
+		id := 0
+		if len(call.Arguments) > 0 {
+			id = int(call.Argument(0).ToInteger())
+		}
+		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		if err := ops.Pause(id); err != nil {
+			if callback != nil {
+				_, _ = callback(goja.Undefined())
+			}
+			return goja.Undefined()
+		}
+		if callback != nil {
+			_, _ = callback(vm.ToValue(true))
+		}
+		return vm.ToValue(true)
+	})
+
+	// chrome.downloads.resume
+	_ = dlObj.Set("resume", func(call goja.FunctionCall) goja.Value {
+		id := 0
+		if len(call.Arguments) > 0 {
+			id = int(call.Argument(0).ToInteger())
+		}
+		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		if err := ops.Resume(id); err != nil {
+			if callback != nil {
+				_, _ = callback(goja.Undefined())
+			}
+			return goja.Undefined()
+		}
+		if callback != nil {
+			_, _ = callback(vm.ToValue(true))
+		}
+		return vm.ToValue(true)
+	})
+
+	// chrome.downloads.get
+	_ = dlObj.Set("get", func(call goja.FunctionCall) goja.Value {
+		id := 0
+		if len(call.Arguments) > 0 {
+			id = int(call.Argument(0).ToInteger())
+		}
+		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		item, err := ops.Get(id)
+		if err != nil || item == nil {
+			if callback != nil {
+				_, _ = callback(goja.Undefined())
+			}
+			return goja.Undefined()
+		}
+		if callback != nil {
+			_, _ = callback(vm.ToValue(map[string]interface{}{
+				"id":           item.ID,
+				"url":          item.URL,
+				"filename":     item.Filename,
+				"state":        item.State,
+				"totalBytes":   item.TotalBytes,
+				"bytesReceived": item.BytesReceived,
+				"mime":         item.Mime,
+				"startTime":    item.StartTime,
+				"endTime":      item.EndTime,
+				"paused":       item.Paused,
+				"error":        item.Error,
+			}))
+		}
+		return goja.Undefined()
+	})
+
+	// chrome.downloads.getAll
+	_ = dlObj.Set("getAll", func(call goja.FunctionCall) goja.Value {
+		var callback goja.Callable
+		if len(call.Arguments) > 0 {
+			callback, _ = goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		}
+		items, err := ops.GetAll()
+		if err != nil {
+			if callback != nil {
+				_, _ = callback(goja.Undefined())
+			}
+			return goja.Undefined()
+		}
+		result := make([]interface{}, 0, len(items))
+		for _, item := range items {
+			result = append(result, map[string]interface{}{
+				"id":           item.ID,
+				"url":          item.URL,
+				"filename":     item.Filename,
+				"state":        item.State,
+				"totalBytes":   item.TotalBytes,
+				"bytesReceived": item.BytesReceived,
+				"mime":         item.Mime,
+				"startTime":    item.StartTime,
+				"endTime":      item.EndTime,
+				"paused":       item.Paused,
+				"error":        item.Error,
+			})
+		}
+		if callback != nil {
+			_, _ = callback(vm.ToValue(result))
+		}
+		return vm.ToValue(result)
+	})
+
+	// chrome.downloads.erase
+	_ = dlObj.Set("erase", func(call goja.FunctionCall) goja.Value {
+		id := 0
+		if len(call.Arguments) > 0 {
+			id = int(call.Argument(0).ToInteger())
+		}
+		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		if err := ops.Erase(id); err != nil {
+			if callback != nil {
+				_, _ = callback(goja.Undefined())
+			}
+			return goja.Undefined()
+		}
+		if callback != nil {
+			_, _ = callback(goja.Undefined())
+		}
+		return goja.Undefined()
+	})
+
+	_ = chromeObj.Set("downloads", dlObj)
 	return nil
 }

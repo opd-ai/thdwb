@@ -480,6 +480,26 @@ func (transport *originCookieTransport) RoundTrip(request *http.Request) (*http.
 	}
 	upgradeHTTPURL(request.URL, store)
 	transport.addRequestCookies(request)
+
+	// Notify WebRequest observers before the request is sent (onBeforeRequest).
+	details := WebRequestDetails{
+		RequestID:  request.URL.String(),
+		URL:        request.URL.String(),
+		Method:     request.Method,
+		Headers:    headerMap(request.Header),
+		Initiator:  "",
+		TabID:      -1,
+		Timestamp:  float64(time.Now().UnixMilli()),
+	}
+	modified, err := notifyWebRequestObservers(details)
+	if err != nil {
+		return nil, err
+	}
+	// Apply any header modifications from observers.
+	for k, v := range modified.Headers {
+		request.Header.Set(k, v)
+	}
+
 	base := transport.base
 	if strings.EqualFold(request.URL.Scheme, "https") {
 		var err error
@@ -494,8 +514,35 @@ func (transport *originCookieTransport) RoundTrip(request *http.Request) (*http.
 	if err != nil {
 		return nil, err
 	}
+
+	// Notify WebRequest observers after response received (onCompleted/onHeadersReceived).
+	respDetails := WebRequestDetails{
+		RequestID:     request.URL.String(),
+		URL:           request.URL.String(),
+		Method:        request.Method,
+		StatusCode:    response.StatusCode,
+		StatusLine:    response.Status,
+		ResponseHeaders: headerMap(response.Header),
+		Initiator:     "",
+		TabID:         -1,
+		Timestamp:     float64(time.Now().UnixMilli()),
+	}
+	_, _ = notifyWebRequestObservers(respDetails)
+
 	transport.processResponse(request, response, store)
 	return response, nil
+}
+
+// headerMap converts an http.Header to a map[string]string, taking the first
+// value for each header name.
+func headerMap(h http.Header) map[string]string {
+	m := make(map[string]string, len(h))
+	for k, v := range h {
+		if len(v) > 0 {
+			m[k] = v[0]
+		}
+	}
+	return m
 }
 
 // addRequestCookies adds cookies from the jar to the request.
@@ -677,6 +724,61 @@ func loadErrorPage(err string) string {
 			<h1>` + err + `</h1>
 		</body>
 	</html>`
+}
+
+// WebRequestDetails describes an HTTP request/response observed by the
+// WebRequest API. It mirrors the chrome.webRequest request details object.
+type WebRequestDetails struct {
+	RequestID    string            `json:"requestId"`
+	URL          string            `json:"url"`
+	Method       string            `json:"method"`
+	Headers      map[string]string `json:"headers"`
+	StatusCode   int               `json:"statusCode,omitempty"`
+	StatusLine   string            `json:"statusLine,omitempty"`
+	ResponseHeaders map[string]string `json:"responseHeaders,omitempty"`
+	Initiator    string            `json:"initiator,omitempty"`
+	TabID        int               `json:"tabId,omitempty"`
+	Timestamp    float64           `json:"timestamp"` // epoch milliseconds
+}
+
+// WebRequestObserver is a callback invoked for each observed network event.
+// Returning a non-nil modified request from onBeforeRequest allows redirecting
+// or blocking the request (return nil body to block).
+type WebRequestObserver func(details WebRequestDetails) (WebRequestDetails, error)
+
+// webRequestObservers holds the registered WebRequest API observers.
+var webRequestObservers []WebRequestObserver
+
+// RegisterWebRequestObserver registers a callback for WebRequest API events.
+// Returns an ID that can be used with UnregisterWebRequestObserver.
+func RegisterWebRequestObserver(obs WebRequestObserver) int {
+	webRequestObservers = append(webRequestObservers, obs)
+	return len(webRequestObservers) - 1
+}
+
+// UnregisterWebRequestObserver removes a previously registered observer by ID.
+func UnregisterWebRequestObserver(id int) {
+	if id < 0 || id >= len(webRequestObservers) {
+		return
+	}
+	webRequestObservers[id] = nil
+}
+
+// notifyWebRequestObservers invokes all registered observers with the given details.
+// If any observer returns a modified details, the last non-nil modification wins.
+// Returns the (possibly modified) details and an error if the request should be blocked.
+func notifyWebRequestObservers(details WebRequestDetails) (WebRequestDetails, error) {
+	for _, obs := range webRequestObservers {
+		if obs == nil {
+			continue
+		}
+		modified, err := obs(details)
+		if err != nil {
+			return details, err
+		}
+		details = modified
+	}
+	return details, nil
 }
 
 // Shared HTTP client with origin-partitioned cookie jar.

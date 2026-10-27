@@ -187,13 +187,15 @@ Add advanced APIs for content manipulation and UI customization.
 
 ## Phase E4: Advanced APIs
 
+**Status:** Complete (2026-10-27)
+
 Implement powerful APIs for network interception, file handling, and user notifications.
 
 ### Tasks
-1. **Implement WebRequest API (read-only)** — onBeforeRequest, onBeforeSendHeaders, onHeadersReceived, onCompleted, onErrorOccurred
-2. **Implement Notifications API** — create, clear, getAll, events
-3. **Implement Downloads API** — download, cancel, pause/resume, search, erase, events
-4. **Implement Cookies API (extended)** — container filtering, getAllCookieStores
+- [x] 1. **Implement WebRequest API (read-only)** — onBeforeRequest, onBeforeSendHeaders, onHeadersReceived, onCompleted, onErrorOccurred
+- [x] 2. **Implement Notifications API** — create, clear, getAll, events
+- [x] 3. **Implement Downloads API** — download, cancel, pause/resume, search, erase, events
+- [x] 4. **Implement Cookies API (extended)** — container filtering, getAllCookieStores
 
 ### Dependencies
 - Phase E1 complete

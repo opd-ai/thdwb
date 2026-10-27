@@ -4,6 +4,7 @@ import (
 	"os"
 	"runtime"
 	"testing"
+	"time"
 
 	goja "github.com/dop251/goja"
 	"github.com/stretchr/testify/require"
@@ -202,11 +203,13 @@ func (m *mockContainerOps) RemoveContainer(id string) error {
 
 // mockCookieOps implements CookieOperations for testing.
 type mockCookieOps struct {
-	cookies map[string][]Cookie // key: storeID
-	getErr  error
-	setErr  error
-	remErr  error
-	clearErr error
+	cookies   map[string][]Cookie // key: storeID
+	stores    []CookieStore
+	getErr    error
+	setErr    error
+	remErr    error
+	clearErr  error
+	storesErr error
 }
 
 func (m *mockCookieOps) GetCookies(storeID string, url string) ([]Cookie, error) {
@@ -251,6 +254,13 @@ func (m *mockCookieOps) ClearCookies(storeID string) error {
 	}
 	delete(m.cookies, storeID)
 	return nil
+}
+
+func (m *mockCookieOps) GetAllCookieStores() ([]CookieStore, error) {
+	if m.storesErr != nil {
+		return nil, m.storesErr
+	}
+	return m.stores, nil
 }
 
 // runJS executes JS source in the VM and returns the last expression value.
@@ -822,4 +832,410 @@ func TestChromeAPICookiesClear(t *testing.T) {
 
 	require.NoError(t, cookieOps.ClearCookies("c1"))
 	require.Len(t, cookieOps.cookies["c1"], 0)
+}
+
+// mockWebRequestOps implements WebRequestOperations for testing.
+type mockWebRequestOps struct {
+	addErr    error
+	removeErr error
+	addCalls  int
+	removeCalls int
+	listeners map[string]bool
+}
+
+func (m *mockWebRequestOps) AddListener(extID string, event string, details WebRequestDetails) error {
+	m.addCalls++
+	if m.listeners == nil {
+		m.listeners = make(map[string]bool)
+	}
+	if m.addErr != nil {
+		return m.addErr
+	}
+	m.listeners[event] = true
+	return nil
+}
+
+func (m *mockWebRequestOps) RemoveListener(extID string, event string) error {
+	m.removeCalls++
+	if m.removeErr != nil {
+		return m.removeErr
+	}
+	delete(m.listeners, event)
+	return nil
+}
+
+// mockNotificationOps implements NotificationOperations for testing.
+type mockNotificationOps struct {
+	notifications map[string]Notification
+	createErr     error
+	clearErr      error
+	getAllErr     error
+	createCalls   int
+	clearCalls    int
+	getAllCalls   int
+}
+
+func (m *mockNotificationOps) CreateNotification(extID string, id string, options NotificationOptions) (string, error) {
+	m.createCalls++
+	if m.createErr != nil {
+		return "", m.createErr
+	}
+	if m.notifications == nil {
+		m.notifications = make(map[string]Notification)
+	}
+	n := Notification{
+		ID:        id,
+		Title:     options.Title,
+		Message:   options.Message,
+		IconURL:   options.IconURL,
+		Context:   options.Context,
+		Priority:  options.Priority,
+		Timestamp: options.Timestamp,
+	}
+	m.notifications[id] = n
+	return id, nil
+}
+
+func (m *mockNotificationOps) ClearNotification(extID string, id string) (bool, error) {
+	m.clearCalls++
+	if m.clearErr != nil {
+		return false, m.clearErr
+	}
+	if _, ok := m.notifications[id]; ok {
+		delete(m.notifications, id)
+		return true, nil
+	}
+	return false, nil
+}
+
+func (m *mockNotificationOps) GetAllNotifications(extID string) ([]Notification, error) {
+	m.getAllCalls++
+	if m.getAllErr != nil {
+		return nil, m.getAllErr
+	}
+	result := make([]Notification, 0, len(m.notifications))
+	for _, n := range m.notifications {
+		result = append(result, n)
+	}
+	return result, nil
+}
+
+// mockDownloadOps implements DownloadOperations for testing.
+type mockDownloadOps struct {
+	downloads    map[int]DownloadItem
+	nextID       int
+	downloadErr  error
+	cancelErr    error
+	pauseErr     error
+	resumeErr    error
+	getErr       error
+	getAllErr    error
+	eraseErr     error
+	cancelCalls  int
+	pauseCalls   int
+	resumeCalls  int
+	getCalls     int
+	getAllCalls  int
+	eraseCalls   int
+}
+
+func (m *mockDownloadOps) Download(extID string, options DownloadOptions) (int, error) {
+	if m.downloadErr != nil {
+		return 0, m.downloadErr
+	}
+	if m.downloads == nil {
+		m.downloads = make(map[int]DownloadItem)
+	}
+	m.nextID++
+	item := DownloadItem{
+		ID:         m.nextID,
+		URL:        options.URL,
+		Filename:   options.Filename,
+		State:      "in_progress",
+		StartTime:  float64(time.Now().UnixMilli()),
+	}
+	m.downloads[m.nextID] = item
+	return m.nextID, nil
+}
+
+func (m *mockDownloadOps) Cancel(downloadID int) error {
+	m.cancelCalls++
+	if m.cancelErr != nil {
+		return m.cancelErr
+	}
+	if item, ok := m.downloads[downloadID]; ok {
+		item.State = "interrupted"
+		item.Error = "cancelled"
+		m.downloads[downloadID] = item
+	}
+	return nil
+}
+
+func (m *mockDownloadOps) Pause(downloadID int) error {
+	m.pauseCalls++
+	if m.pauseErr != nil {
+		return m.pauseErr
+	}
+	if item, ok := m.downloads[downloadID]; ok {
+		item.Paused = true
+		m.downloads[downloadID] = item
+	}
+	return nil
+}
+
+func (m *mockDownloadOps) Resume(downloadID int) error {
+	m.resumeCalls++
+	if m.resumeErr != nil {
+		return m.resumeErr
+	}
+	if item, ok := m.downloads[downloadID]; ok {
+		item.Paused = false
+		m.downloads[downloadID] = item
+	}
+	return nil
+}
+
+func (m *mockDownloadOps) Get(downloadID int) (*DownloadItem, error) {
+	m.getCalls++
+	if m.getErr != nil {
+		return nil, m.getErr
+	}
+	if item, ok := m.downloads[downloadID]; ok {
+		return &item, nil
+	}
+	return nil, nil
+}
+
+func (m *mockDownloadOps) GetAll() ([]DownloadItem, error) {
+	m.getAllCalls++
+	if m.getAllErr != nil {
+		return nil, m.getAllErr
+	}
+	result := make([]DownloadItem, 0, len(m.downloads))
+	for _, item := range m.downloads {
+		result = append(result, item)
+	}
+	return result, nil
+}
+
+func (m *mockDownloadOps) Erase(downloadID int) error {
+	m.eraseCalls++
+	if m.eraseErr != nil {
+		return m.eraseErr
+	}
+	delete(m.downloads, downloadID)
+	return nil
+}
+
+func TestChromeAPIWebRequestAddListener(t *testing.T) {
+	m := &Manifest{ManifestVersion: ManifestV3, Name: "Test", Version: "1.0"}
+	ext := NewExtension("ext1", "/p", m)
+	webRequestOps := &mockWebRequestOps{}
+	vm := goja.New()
+	api := NewChromeAPI(ext, vm, NewMessageRouter())
+	api.SetWebRequestOperations(webRequestOps)
+
+	require.NoError(t, api.Bind())
+
+	runJS(t, vm, `
+		chrome.webRequest.onBeforeRequest.addListener(
+			function(details) { return {cancel: false}; },
+			{urls: ["<all_urls>"]}
+		);
+	`)
+
+	require.Equal(t, 1, webRequestOps.addCalls)
+	require.True(t, webRequestOps.listeners["onBeforeRequest"])
+}
+
+func TestChromeAPIWebRequestRemoveListener(t *testing.T) {
+	m := &Manifest{ManifestVersion: ManifestV3, Name: "Test", Version: "1.0"}
+	ext := NewExtension("ext1", "/p", m)
+	webRequestOps := &mockWebRequestOps{listeners: map[string]bool{"onBeforeRequest": true}}
+	vm := goja.New()
+	api := NewChromeAPI(ext, vm, NewMessageRouter())
+	api.SetWebRequestOperations(webRequestOps)
+
+	require.NoError(t, api.Bind())
+
+	runJS(t, vm, `
+		chrome.webRequest.onBeforeRequest.removeListener(function() {});
+	`)
+
+	require.Equal(t, 1, webRequestOps.removeCalls)
+	require.False(t, webRequestOps.listeners["onBeforeRequest"])
+}
+
+func TestChromeAPINotificationsCreate(t *testing.T) {
+	m := &Manifest{ManifestVersion: ManifestV3, Name: "Test", Version: "1.0"}
+	ext := NewExtension("ext1", "/p", m)
+	notifOps := &mockNotificationOps{}
+	vm := goja.New()
+	api := NewChromeAPI(ext, vm, NewMessageRouter())
+	api.SetNotificationOperations(notifOps)
+
+	require.NoError(t, api.Bind())
+
+	runJS(t, vm, `
+		var id = chrome.notifications.create("notif-1", {
+			title: "Test",
+			message: "Hello",
+			iconUrl: "icon.png",
+			priority: 1
+		});
+	`)
+
+	require.Equal(t, 1, notifOps.createCalls)
+	require.Equal(t, "notif-1", getGlobal(t, vm, "id").String())
+	require.Equal(t, "Test", notifOps.notifications["notif-1"].Title)
+	require.Equal(t, "Hello", notifOps.notifications["notif-1"].Message)
+	require.Equal(t, 1, notifOps.notifications["notif-1"].Priority)
+}
+
+func TestChromeAPINotificationsClear(t *testing.T) {
+	m := &Manifest{ManifestVersion: ManifestV3, Name: "Test", Version: "1.0"}
+	ext := NewExtension("ext1", "/p", m)
+	notifOps := &mockNotificationOps{
+		notifications: map[string]Notification{
+			"notif-1": {ID: "notif-1", Title: "Test", Message: "Hello"},
+		},
+	}
+	vm := goja.New()
+	api := NewChromeAPI(ext, vm, NewMessageRouter())
+	api.SetNotificationOperations(notifOps)
+
+	require.NoError(t, api.Bind())
+
+	runJS(t, vm, `
+		var cleared = chrome.notifications.clear("notif-1");
+	`)
+
+	require.Equal(t, 1, notifOps.clearCalls)
+	require.True(t, getGlobal(t, vm, "cleared").ToBoolean())
+	_, exists := notifOps.notifications["notif-1"]
+	require.False(t, exists)
+}
+
+func TestChromeAPINotificationsGetAll(t *testing.T) {
+	m := &Manifest{ManifestVersion: ManifestV3, Name: "Test", Version: "1.0"}
+	ext := NewExtension("ext1", "/p", m)
+	notifOps := &mockNotificationOps{
+		notifications: map[string]Notification{
+			"notif-1": {ID: "notif-1", Title: "Test", Message: "Hello"},
+			"notif-2": {ID: "notif-2", Title: "Test2", Message: "World"},
+		},
+	}
+	vm := goja.New()
+	api := NewChromeAPI(ext, vm, NewMessageRouter())
+	api.SetNotificationOperations(notifOps)
+
+	require.NoError(t, api.Bind())
+
+	runJS(t, vm, `
+		var all = chrome.notifications.getAll();
+	`)
+
+	require.Equal(t, 1, notifOps.getAllCalls)
+	all := getGlobal(t, vm, "all").ToObject(vm)
+	require.Equal(t, 2, len(all.Keys()))
+}
+
+func TestChromeAPIDownloadsDownload(t *testing.T) {
+	m := &Manifest{ManifestVersion: ManifestV3, Name: "Test", Version: "1.0"}
+	ext := NewExtension("ext1", "/p", m)
+	dlOps := &mockDownloadOps{}
+	vm := goja.New()
+	api := NewChromeAPI(ext, vm, NewMessageRouter())
+	api.SetDownloadOperations(dlOps)
+
+	require.NoError(t, api.Bind())
+
+	runJS(t, vm, `
+		var id = chrome.downloads.download({
+			url: "https://example.com/file.zip",
+			filename: "file.zip",
+			saveAs: false
+		});
+	`)
+
+	require.Equal(t, 1, dlOps.nextID)
+	require.Equal(t, int64(dlOps.nextID), getGlobal(t, vm, "id").ToInteger())
+	require.Equal(t, "https://example.com/file.zip", dlOps.downloads[1].URL)
+	require.Equal(t, "file.zip", dlOps.downloads[1].Filename)
+	require.Equal(t, "in_progress", dlOps.downloads[1].State)
+}
+
+func TestChromeAPIDownloadsCancel(t *testing.T) {
+	m := &Manifest{ManifestVersion: ManifestV3, Name: "Test", Version: "1.0"}
+	ext := NewExtension("ext1", "/p", m)
+	dlOps := &mockDownloadOps{
+		downloads: map[int]DownloadItem{
+			1: {ID: 1, URL: "https://example.com/file.zip", State: "in_progress"},
+		},
+		nextID: 1,
+	}
+	vm := goja.New()
+	api := NewChromeAPI(ext, vm, NewMessageRouter())
+	api.SetDownloadOperations(dlOps)
+
+	require.NoError(t, api.Bind())
+
+	runJS(t, vm, `
+		chrome.downloads.cancel(1);
+	`)
+
+	require.Equal(t, 1, dlOps.cancelCalls)
+	require.Equal(t, "interrupted", dlOps.downloads[1].State)
+	require.Equal(t, "cancelled", dlOps.downloads[1].Error)
+}
+
+func TestChromeAPIDownloadsGetAll(t *testing.T) {
+	m := &Manifest{ManifestVersion: ManifestV3, Name: "Test", Version: "1.0"}
+	ext := NewExtension("ext1", "/p", m)
+	dlOps := &mockDownloadOps{
+		downloads: map[int]DownloadItem{
+			1: {ID: 1, URL: "https://example.com/file.zip", State: "complete"},
+			2: {ID: 2, URL: "https://example.com/image.png", State: "in_progress"},
+		},
+		nextID: 2,
+	}
+	vm := goja.New()
+	api := NewChromeAPI(ext, vm, NewMessageRouter())
+	api.SetDownloadOperations(dlOps)
+
+	require.NoError(t, api.Bind())
+
+	runJS(t, vm, `
+		var all = chrome.downloads.getAll();
+	`)
+
+	require.Equal(t, 1, dlOps.getAllCalls)
+	all := getGlobal(t, vm, "all").ToObject(vm)
+	require.Equal(t, 2, len(all.Keys()))
+}
+
+func TestChromeAPICookiesGetAllCookieStores(t *testing.T) {
+	m := &Manifest{ManifestVersion: ManifestV3, Name: "Test", Version: "1.0"}
+	ext := NewExtension("ext1", "/p", m)
+	cookieOps := &mockCookieOps{
+		stores: []CookieStore{
+			{ID: "c1", Incognito: false},
+			{ID: "c2", Incognito: true},
+		},
+	}
+	vm := goja.New()
+	api := NewChromeAPI(ext, vm, NewMessageRouter())
+	api.SetCookieOperations(cookieOps)
+
+	require.NoError(t, api.Bind())
+
+	runJS(t, vm, `
+		var stores = chrome.cookies.getAllCookieStores();
+	`)
+
+	stores := getGlobal(t, vm, "stores").ToObject(vm)
+	require.Equal(t, 2, len(stores.Keys()))
+	require.Equal(t, "c1", stores.Get("0").ToObject(vm).Get("id").String())
+	require.Equal(t, "c2", stores.Get("1").ToObject(vm).Get("id").String())
+	require.True(t, stores.Get("1").ToObject(vm).Get("incognito").ToBoolean())
 }
