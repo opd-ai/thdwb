@@ -130,6 +130,129 @@ func (m *mockWinOps) Remove(windowID int) error {
 	return nil
 }
 
+// mockContainerOps implements ContainerOperations for testing.
+type mockContainerOps struct {
+	containers []ContainerInfo
+	getErr     error
+	createErr  error
+	updateErr  error
+	removeErr  error
+}
+
+func (m *mockContainerOps) QueryContainers() []ContainerInfo {
+	return m.containers
+}
+
+func (m *mockContainerOps) GetContainer(id string) (*ContainerInfo, error) {
+	if m.getErr != nil {
+		return nil, m.getErr
+	}
+	for _, c := range m.containers {
+		if c.ID == id {
+			return &c, nil
+		}
+	}
+	return nil, nil
+}
+
+func (m *mockContainerOps) CreateContainer(name, color string) (*ContainerInfo, error) {
+	if m.createErr != nil {
+		return nil, m.createErr
+	}
+	c := ContainerInfo{
+		ID:    "c" + string(rune(len(m.containers)+1)),
+		Name:  name,
+		Color: color,
+	}
+	m.containers = append(m.containers, c)
+	return &c, nil
+}
+
+func (m *mockContainerOps) UpdateContainer(id, name, color string) (*ContainerInfo, error) {
+	if m.updateErr != nil {
+		return nil, m.updateErr
+	}
+	for i, c := range m.containers {
+		if c.ID == id {
+			if name != "" {
+				c.Name = name
+			}
+			if color != "" {
+				c.Color = color
+			}
+			m.containers[i] = c
+			return &c, nil
+		}
+	}
+	return nil, nil
+}
+
+func (m *mockContainerOps) RemoveContainer(id string) error {
+	if m.removeErr != nil {
+		return m.removeErr
+	}
+	for i, c := range m.containers {
+		if c.ID == id {
+			m.containers = append(m.containers[:i], m.containers[i+1:]...)
+			return nil
+		}
+	}
+	return nil
+}
+
+// mockCookieOps implements CookieOperations for testing.
+type mockCookieOps struct {
+	cookies map[string][]Cookie // key: storeID
+	getErr  error
+	setErr  error
+	remErr  error
+	clearErr error
+}
+
+func (m *mockCookieOps) GetCookies(storeID string, url string) ([]Cookie, error) {
+	if m.getErr != nil {
+		return nil, m.getErr
+	}
+	return m.cookies[storeID], nil
+}
+
+func (m *mockCookieOps) SetCookie(storeID string, cookie Cookie) error {
+	if m.setErr != nil {
+		return m.setErr
+	}
+	if m.cookies == nil {
+		m.cookies = make(map[string][]Cookie)
+	}
+	m.cookies[storeID] = append(m.cookies[storeID], cookie)
+	return nil
+}
+
+func (m *mockCookieOps) RemoveCookie(storeID string, cookie Cookie) error {
+	if m.remErr != nil {
+		return m.remErr
+	}
+	cookies := m.cookies[storeID]
+	for i, c := range cookies {
+		if c.Name == cookie.Name {
+			m.cookies[storeID] = append(cookies[:i], cookies[i+1:]...)
+			return nil
+		}
+	}
+	return nil
+}
+
+func (m *mockCookieOps) GetAllCookies(storeID string) ([]Cookie, error) {
+	return m.cookies[storeID], nil
+}
+
+func (m *mockCookieOps) ClearCookies(storeID string) error {
+	if m.clearErr != nil {
+		return m.clearErr
+	}
+	delete(m.cookies, storeID)
+	return nil
+}
+
 // runJS executes JS source in the VM and returns the last expression value.
 func runJS(t *testing.T, vm *goja.Runtime, src string) goja.Value {
 	t.Helper()
@@ -541,4 +664,162 @@ func TestChromeAPIManagerMessageRouting(t *testing.T) {
 
 	require.Len(t, received, 1)
 	require.Equal(t, "world", received[0].(map[string]interface{})["hello"])
+}
+
+func TestChromeAPIContextualIdentitiesQuery(t *testing.T) {
+	containerOps := &mockContainerOps{
+		containers: []ContainerInfo{
+			{ID: "c1", Name: "Work", Color: "#ff0000"},
+			{ID: "c2", Name: "Personal", Color: "#00ff00"},
+		},
+	}
+
+	containers := containerOps.QueryContainers()
+	require.Len(t, containers, 2)
+	require.Equal(t, "c1", containers[0].ID)
+	require.Equal(t, "Work", containers[0].Name)
+	require.Equal(t, "#ff0000", containers[0].Color)
+	require.Equal(t, "c2", containers[1].ID)
+	require.Equal(t, "Personal", containers[1].Name)
+}
+
+func TestChromeAPIContextualIdentitiesGet(t *testing.T) {
+	containerOps := &mockContainerOps{
+		containers: []ContainerInfo{
+			{ID: "c1", Name: "Work", Color: "#ff0000"},
+		},
+	}
+
+	c, err := containerOps.GetContainer("c1")
+	require.NoError(t, err)
+	require.NotNil(t, c)
+	require.Equal(t, "c1", c.ID)
+	require.Equal(t, "Work", c.Name)
+	require.Equal(t, "#ff0000", c.Color)
+
+	c, err = containerOps.GetContainer("nonexistent")
+	require.NoError(t, err)
+	require.Nil(t, c)
+}
+
+func TestChromeAPIContextualIdentitiesCreate(t *testing.T) {
+	containerOps := &mockContainerOps{}
+
+	c, err := containerOps.CreateContainer("Shopping", "#0000ff")
+	require.NoError(t, err)
+	require.NotNil(t, c)
+	require.Equal(t, "Shopping", c.Name)
+	require.Equal(t, "#0000ff", c.Color)
+	require.NotEmpty(t, c.ID)
+
+	require.Len(t, containerOps.containers, 1)
+}
+
+func TestChromeAPIContextualIdentitiesUpdate(t *testing.T) {
+	containerOps := &mockContainerOps{
+		containers: []ContainerInfo{
+			{ID: "c1", Name: "Work", Color: "#ff0000"},
+		},
+	}
+
+	c, err := containerOps.UpdateContainer("c1", "Work2", "")
+	require.NoError(t, err)
+	require.NotNil(t, c)
+	require.Equal(t, "Work2", c.Name)
+	require.Equal(t, "#ff0000", c.Color)
+
+	c, err = containerOps.UpdateContainer("nonexistent", "x", "y")
+	require.NoError(t, err)
+	require.Nil(t, c)
+}
+
+func TestChromeAPIContextualIdentitiesRemove(t *testing.T) {
+	containerOps := &mockContainerOps{
+		containers: []ContainerInfo{
+			{ID: "c1", Name: "Work", Color: "#ff0000"},
+		},
+	}
+
+	require.NoError(t, containerOps.RemoveContainer("c1"))
+	require.Len(t, containerOps.containers, 0)
+
+	require.NoError(t, containerOps.RemoveContainer("nonexistent"))
+}
+
+func TestChromeAPICookiesGet(t *testing.T) {
+	cookieOps := &mockCookieOps{
+		cookies: map[string][]Cookie{
+			"c1": {
+				{Name: "session", Value: "abc123", Domain: "example.com", Path: "/", StoreID: "c1"},
+			},
+		},
+	}
+
+	cookies, err := cookieOps.GetCookies("c1", "https://example.com/")
+	require.NoError(t, err)
+	require.Len(t, cookies, 1)
+	require.Equal(t, "session", cookies[0].Name)
+	require.Equal(t, "abc123", cookies[0].Value)
+}
+
+func TestChromeAPICookiesGetNotFound(t *testing.T) {
+	cookieOps := &mockCookieOps{}
+
+	cookies, err := cookieOps.GetCookies("c1", "https://example.com/")
+	require.NoError(t, err)
+	require.Nil(t, cookies)
+}
+
+func TestChromeAPICookiesSet(t *testing.T) {
+	cookieOps := &mockCookieOps{}
+
+	err := cookieOps.SetCookie("c1", Cookie{
+		Name:  "session",
+		Value: "abc123",
+		StoreID: "c1",
+	})
+	require.NoError(t, err)
+	require.Len(t, cookieOps.cookies["c1"], 1)
+	require.Equal(t, "session", cookieOps.cookies["c1"][0].Name)
+}
+
+func TestChromeAPICookiesRemove(t *testing.T) {
+	cookieOps := &mockCookieOps{
+		cookies: map[string][]Cookie{
+			"c1": {
+				{Name: "session", Value: "abc123", Domain: "example.com", Path: "/", StoreID: "c1"},
+			},
+		},
+	}
+
+	require.NoError(t, cookieOps.RemoveCookie("c1", Cookie{Name: "session", StoreID: "c1"}))
+	require.Len(t, cookieOps.cookies["c1"], 0)
+}
+
+func TestChromeAPICookiesGetAll(t *testing.T) {
+	cookieOps := &mockCookieOps{
+		cookies: map[string][]Cookie{
+			"c1": {
+				{Name: "session", Value: "abc123", Domain: "example.com", Path: "/", StoreID: "c1"},
+				{Name: "theme", Value: "dark", Domain: "example.com", Path: "/", StoreID: "c1"},
+			},
+		},
+	}
+
+	cookies, err := cookieOps.GetAllCookies("c1")
+	require.NoError(t, err)
+	require.Len(t, cookies, 2)
+}
+
+func TestChromeAPICookiesClear(t *testing.T) {
+	cookieOps := &mockCookieOps{
+		cookies: map[string][]Cookie{
+			"c1": {
+				{Name: "session", Value: "abc123", Domain: "example.com", Path: "/", StoreID: "c1"},
+			},
+		},
+	}
+
+	require.NoError(t, cookieOps.ClearCookies("c1"))
+	require.Len(t, cookieOps.cookies["c1"], 0)
 }

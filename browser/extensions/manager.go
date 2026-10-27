@@ -25,6 +25,8 @@ type Manager struct {
 	chromeAPIs    map[string]*ChromeAPI
 	tabOps        TabOperations
 	winOps        WindowOperations
+	containerOps  ContainerOperations
+	cookieOps     CookieOperations
 }
 
 // NewManager creates a new extension manager.
@@ -77,6 +79,13 @@ func (m *Manager) Scan() ([]*Extension, error) {
 			storagePath = filepath.Join(m.storageDir, ext.ID+".json")
 		}
 		ext.Storage = NewStoragePartition(ext.ID, storagePath)
+
+		// Create per-container, per-extension storage partition.
+		containerStoragePath := ""
+		if m.storageDir != "" {
+			containerStoragePath = filepath.Join(m.storageDir, ext.ID+"-containers")
+		}
+		ext.ContainerStorage = NewContainerStoragePartition(ext.ID, containerStoragePath)
 
 		// Register content scripts from manifest.
 		for _, cs := range ext.Manifest.ContentScripts {
@@ -279,6 +288,20 @@ func (m *Manager) SetWindowOperations(ops WindowOperations) {
 	m.winOps = ops
 }
 
+// SetContainerOperations sets the container operations provider for chrome.contextualIdentities API.
+func (m *Manager) SetContainerOperations(ops ContainerOperations) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.containerOps = ops
+}
+
+// SetCookieOperations sets the cookie operations provider for chrome.cookies API.
+func (m *Manager) SetCookieOperations(ops CookieOperations) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.cookieOps = ops
+}
+
 // onExtensionStart initializes the Chrome API bindings and background VM
 // for an extension when it is enabled.
 func (m *Manager) onExtensionStart(ext *Extension) error {
@@ -294,6 +317,8 @@ func (m *Manager) onExtensionStart(ext *Extension) error {
 	api := NewChromeAPI(ext, vm, m.messageRouter)
 	api.SetTabOperations(m.tabOps)
 	api.SetWindowOperations(m.winOps)
+	api.SetContainerOperations(m.containerOps)
+	api.SetCookieOperations(m.cookieOps)
 
 	m.chromeAPIs[ext.ID] = api
 	m.mu.Unlock()

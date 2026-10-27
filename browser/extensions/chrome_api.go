@@ -77,6 +77,49 @@ type WindowCreate struct {
 	Height  int    `json:"height,omitempty"`
 }
 
+// ContainerInfo describes a container as exposed to extension APIs.
+type ContainerInfo struct {
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Color string `json:"color"`
+	Icon  string `json:"icon,omitempty"`
+}
+
+// ContainerOperations is implemented by the browser shell to provide
+// container management operations to extension APIs without creating an
+// import cycle.
+type ContainerOperations interface {
+	QueryContainers() []ContainerInfo
+	GetContainer(id string) (*ContainerInfo, error)
+	CreateContainer(name, color string) (*ContainerInfo, error)
+	UpdateContainer(id, name, color string) (*ContainerInfo, error)
+	RemoveContainer(id string) error
+}
+
+// Cookie describes a browser cookie as exposed to extension APIs.
+type Cookie struct {
+	Name       string `json:"name"`
+	Value      string `json:"value"`
+	Domain     string `json:"domain"`
+	Path       string `json:"path"`
+	Secure     bool   `json:"secure"`
+	HttpOnly   bool   `json:"httpOnly"`
+	SameSite   string `json:"sameSite"` // "no_restriction", "lax", "strict"
+	Session    bool   `json:"session"`
+	Expiration string `json:"expiration,omitempty"` // ISO 8601, omitted for session cookies
+	StoreID    string `json:"storeId,omitempty"`    // container ID
+}
+
+// CookieOperations is implemented by the browser shell to provide cookie
+// operations to extension APIs without creating an import cycle.
+type CookieOperations interface {
+	GetCookies(storeID string, url string) ([]Cookie, error)
+	SetCookie(storeID string, cookie Cookie) error
+	RemoveCookie(storeID string, cookie Cookie) error
+	GetAllCookies(storeID string) ([]Cookie, error)
+	ClearCookies(storeID string) error
+}
+
 // PlatformInfo describes the browser platform as reported by chrome.runtime.
 type PlatformInfo struct {
 	OS           string `json:"os"`
@@ -86,15 +129,18 @@ type PlatformInfo struct {
 }
 
 // ChromeAPI binds WebExtensions APIs (chrome.runtime, chrome.storage,
-// chrome.tabs, chrome.windows) to an extension's background Goja VM.
+// chrome.tabs, chrome.windows, chrome.contextualIdentities) to an
+// extension's background Goja VM.
 type ChromeAPI struct {
-	mu       sync.Mutex
-	ext      *Extension
-	vm       *goja.Runtime
-	router   *MessageRouter
-	tabOps   TabOperations
-	winOps   WindowOperations
-	platform PlatformInfo
+	mu            sync.Mutex
+	ext           *Extension
+	vm            *goja.Runtime
+	router        *MessageRouter
+	tabOps        TabOperations
+	winOps        WindowOperations
+	containerOps  ContainerOperations
+	cookieOps     CookieOperations
+	platform      PlatformInfo
 }
 
 // NewChromeAPI creates a ChromeAPI binding for the given extension and VM.
@@ -126,6 +172,20 @@ func (c *ChromeAPI) SetWindowOperations(ops WindowOperations) {
 	c.winOps = ops
 }
 
+// SetContainerOperations sets the container operations provider (called by the shell).
+func (c *ChromeAPI) SetContainerOperations(ops ContainerOperations) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.containerOps = ops
+}
+
+// SetCookieOperations sets the cookie operations provider (called by the shell).
+func (c *ChromeAPI) SetCookieOperations(ops CookieOperations) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.cookieOps = ops
+}
+
 // Bind installs all chrome.* APIs into the extension's background VM.
 func (c *ChromeAPI) Bind() error {
 	c.mu.Lock()
@@ -134,6 +194,8 @@ func (c *ChromeAPI) Bind() error {
 	router := c.router
 	tabOps := c.tabOps
 	winOps := c.winOps
+	containerOps := c.containerOps
+	cookieOps := c.cookieOps
 	c.mu.Unlock()
 
 	if vm == nil {
@@ -161,6 +223,20 @@ func (c *ChromeAPI) Bind() error {
 	if winOps != nil {
 		if err := c.bindWindows(vm, ext, winOps); err != nil {
 			return fmt.Errorf("bind chrome.windows: %w", err)
+		}
+	}
+
+	// Bind chrome.contextualIdentities (requires containerOps).
+	if containerOps != nil {
+		if err := c.bindContextualIdentities(vm, ext, containerOps); err != nil {
+			return fmt.Errorf("bind chrome.contextualIdentities: %w", err)
+		}
+	}
+
+	// Bind chrome.cookies (requires cookieOps).
+	if cookieOps != nil {
+		if err := c.bindCookies(vm, ext, cookieOps); err != nil {
+			return fmt.Errorf("bind chrome.cookies: %w", err)
 		}
 	}
 
@@ -677,6 +753,395 @@ func (c *ChromeAPI) bindWindows(vm *goja.Runtime, ext *Extension, winOps WindowO
 	})
 
 	_ = chromeObj.Set("windows", windowsObj)
+	return nil
+}
+
+// bindContextualIdentities installs chrome.contextualIdentities into the VM.
+func (c *ChromeAPI) bindContextualIdentities(vm *goja.Runtime, ext *Extension, containerOps ContainerOperations) error {
+	chrome := vm.Get("chrome")
+	var chromeObj *goja.Object
+	if chrome == nil || chrome.ToObject(vm) == nil {
+		chromeObj = vm.NewObject()
+		_ = vm.Set("chrome", chromeObj)
+	} else {
+		chromeObj = chrome.ToObject(vm)
+	}
+
+	ciObj := vm.NewObject()
+
+	// chrome.contextualIdentities.query
+	_ = ciObj.Set("query", func(call goja.FunctionCall) goja.Value {
+		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		containers := containerOps.QueryContainers()
+		result := make([]interface{}, 0, len(containers))
+		for _, c := range containers {
+			result = append(result, map[string]interface{}{
+				"id":    c.ID,
+				"name":  c.Name,
+				"color": c.Color,
+				"icon":  c.Icon,
+			})
+		}
+		if callback != nil {
+			_, _ = callback(vm.ToValue(result))
+		}
+		return goja.Undefined()
+	})
+
+	// chrome.contextualIdentities.get
+	_ = ciObj.Set("get", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			return goja.Undefined()
+		}
+		id := call.Argument(0).String()
+		callback, _ := goja.AssertFunction(call.Argument(1))
+		c, err := containerOps.GetContainer(id)
+		if err != nil || c == nil {
+			if callback != nil {
+				_, _ = callback(goja.Undefined())
+			}
+			return goja.Undefined()
+		}
+		if callback != nil {
+			_, _ = callback(vm.ToValue(map[string]interface{}{
+				"id":    c.ID,
+				"name":  c.Name,
+				"color": c.Color,
+				"icon":  c.Icon,
+			}))
+		}
+		return goja.Undefined()
+	})
+
+	// chrome.contextualIdentities.create
+	_ = ciObj.Set("create", func(call goja.FunctionCall) goja.Value {
+		name := ""
+		color := ""
+		if len(call.Arguments) > 0 {
+			createObj := call.Argument(0).ToObject(vm)
+			if createObj != nil {
+				if nameVal := createObj.Get("name"); nameVal != nil {
+					name = nameVal.String()
+				}
+				if colorVal := createObj.Get("color"); colorVal != nil {
+					color = colorVal.String()
+				}
+			}
+		}
+		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		c, err := containerOps.CreateContainer(name, color)
+		if err != nil || c == nil {
+			if callback != nil {
+				_, _ = callback(goja.Undefined())
+			}
+			return goja.Undefined()
+		}
+		if callback != nil {
+			_, _ = callback(vm.ToValue(map[string]interface{}{
+				"id":    c.ID,
+				"name":  c.Name,
+				"color": c.Color,
+				"icon":  c.Icon,
+			}))
+		}
+		return goja.Undefined()
+	})
+
+	// chrome.contextualIdentities.update
+	_ = ciObj.Set("update", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			return goja.Undefined()
+		}
+		id := call.Argument(0).String()
+		name := ""
+		color := ""
+		if len(call.Arguments) > 1 {
+			updateObj := call.Argument(1).ToObject(vm)
+			if updateObj != nil {
+				if nameVal := updateObj.Get("name"); nameVal != nil {
+					name = nameVal.String()
+				}
+				if colorVal := updateObj.Get("color"); colorVal != nil {
+					color = colorVal.String()
+				}
+			}
+		}
+		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		c, err := containerOps.UpdateContainer(id, name, color)
+		if err != nil || c == nil {
+			if callback != nil {
+				_, _ = callback(goja.Undefined())
+			}
+			return goja.Undefined()
+		}
+		if callback != nil {
+			_, _ = callback(vm.ToValue(map[string]interface{}{
+				"id":    c.ID,
+				"name":  c.Name,
+				"color": c.Color,
+				"icon":  c.Icon,
+			}))
+		}
+		return goja.Undefined()
+	})
+
+	// chrome.contextualIdentities.remove
+	_ = ciObj.Set("remove", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			return goja.Undefined()
+		}
+		id := call.Argument(0).String()
+		callback, _ := goja.AssertFunction(call.Argument(1))
+		_ = containerOps.RemoveContainer(id)
+		if callback != nil {
+			_, _ = callback(goja.Undefined())
+		}
+		return goja.Undefined()
+	})
+
+	_ = chromeObj.Set("contextualIdentities", ciObj)
+	return nil
+}
+
+// bindCookies installs chrome.cookies into the VM.
+func (c *ChromeAPI) bindCookies(vm *goja.Runtime, ext *Extension, cookieOps CookieOperations) error {
+	chrome := vm.Get("chrome")
+	var chromeObj *goja.Object
+	if chrome == nil || chrome.ToObject(vm) == nil {
+		chromeObj = vm.NewObject()
+		_ = vm.Set("chrome", chromeObj)
+	} else {
+		chromeObj = chrome.ToObject(vm)
+	}
+
+	cookiesObj := vm.NewObject()
+
+	// chrome.cookies.get
+	_ = cookiesObj.Set("get", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			return goja.Undefined()
+		}
+		details := call.Argument(0).ToObject(vm)
+		if details == nil {
+			return goja.Undefined()
+		}
+		urlVal := details.Get("url")
+		nameVal := details.Get("name")
+		storeIDVal := details.Get("storeId")
+
+		url := ""
+		if urlVal != nil {
+			url = urlVal.String()
+		}
+		name := ""
+		if nameVal != nil {
+			name = nameVal.String()
+		}
+		storeID := ""
+		if storeIDVal != nil {
+			storeID = storeIDVal.String()
+		}
+
+		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		cookies, err := cookieOps.GetCookies(storeID, url)
+		if err != nil {
+			if callback != nil {
+				_, _ = callback(goja.Undefined())
+			}
+			return goja.Undefined()
+		}
+		for _, cookie := range cookies {
+			if cookie.Name == name {
+				if callback != nil {
+					_, _ = callback(vm.ToValue(map[string]interface{}{
+						"name":       cookie.Name,
+						"value":      cookie.Value,
+						"domain":     cookie.Domain,
+						"path":       cookie.Path,
+						"secure":     cookie.Secure,
+						"httpOnly":   cookie.HttpOnly,
+						"sameSite":   cookie.SameSite,
+						"session":    cookie.Session,
+						"expiration": cookie.Expiration,
+						"storeId":    cookie.StoreID,
+					}))
+				}
+				return goja.Undefined()
+			}
+		}
+		if callback != nil {
+			_, _ = callback(goja.Undefined())
+		}
+		return goja.Undefined()
+	})
+
+	// chrome.cookies.set
+	_ = cookiesObj.Set("set", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			return goja.Undefined()
+		}
+		details := call.Argument(0).ToObject(vm)
+		if details == nil {
+			return goja.Undefined()
+		}
+		cookie := Cookie{}
+		if nameVal := details.Get("name"); nameVal != nil {
+			cookie.Name = nameVal.String()
+		}
+		if valueVal := details.Get("value"); valueVal != nil {
+			cookie.Value = valueVal.String()
+		}
+		if domainVal := details.Get("domain"); domainVal != nil {
+			cookie.Domain = domainVal.String()
+		}
+		if pathVal := details.Get("path"); pathVal != nil {
+			cookie.Path = pathVal.String()
+		}
+		if secureVal := details.Get("secure"); secureVal != nil {
+			cookie.Secure = secureVal.ToBoolean()
+		}
+		if httpOnlyVal := details.Get("httpOnly"); httpOnlyVal != nil {
+			cookie.HttpOnly = httpOnlyVal.ToBoolean()
+		}
+		if sameSiteVal := details.Get("sameSite"); sameSiteVal != nil {
+			cookie.SameSite = sameSiteVal.String()
+		}
+		if sessionVal := details.Get("session"); sessionVal != nil {
+			cookie.Session = sessionVal.ToBoolean()
+		}
+		if expirationVal := details.Get("expiration"); expirationVal != nil {
+			cookie.Expiration = expirationVal.String()
+		}
+		if storeIDVal := details.Get("storeId"); storeIDVal != nil {
+			cookie.StoreID = storeIDVal.String()
+		}
+
+		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		if err := cookieOps.SetCookie(cookie.StoreID, cookie); err != nil {
+			if callback != nil {
+				_, _ = callback(goja.Undefined())
+			}
+			return goja.Undefined()
+		}
+		if callback != nil {
+			_, _ = callback(vm.ToValue(map[string]interface{}{
+				"name":       cookie.Name,
+				"value":      cookie.Value,
+				"domain":     cookie.Domain,
+				"path":       cookie.Path,
+				"secure":     cookie.Secure,
+				"httpOnly":   cookie.HttpOnly,
+				"sameSite":   cookie.SameSite,
+				"session":    cookie.Session,
+				"expiration": cookie.Expiration,
+				"storeId":    cookie.StoreID,
+			}))
+		}
+		return goja.Undefined()
+	})
+
+	// chrome.cookies.remove
+	_ = cookiesObj.Set("remove", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			return goja.Undefined()
+		}
+		details := call.Argument(0).ToObject(vm)
+		if details == nil {
+			return goja.Undefined()
+		}
+		cookie := Cookie{}
+		if urlVal := details.Get("url"); urlVal != nil {
+			// URL is used to identify the cookie but not stored in Cookie struct
+			_ = urlVal.String()
+		}
+		if nameVal := details.Get("name"); nameVal != nil {
+			cookie.Name = nameVal.String()
+		}
+		if storeIDVal := details.Get("storeId"); storeIDVal != nil {
+			cookie.StoreID = storeIDVal.String()
+		}
+
+		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		if err := cookieOps.RemoveCookie(cookie.StoreID, cookie); err != nil {
+			if callback != nil {
+				_, _ = callback(goja.Undefined())
+			}
+			return goja.Undefined()
+		}
+		if callback != nil {
+			_, _ = callback(vm.ToValue(map[string]interface{}{
+				"name":    cookie.Name,
+				"storeId": cookie.StoreID,
+			}))
+		}
+		return goja.Undefined()
+	})
+
+	// chrome.cookies.getAll
+	_ = cookiesObj.Set("getAll", func(call goja.FunctionCall) goja.Value {
+		storeID := ""
+		if len(call.Arguments) > 0 {
+			details := call.Argument(0).ToObject(vm)
+			if details != nil {
+				if storeIDVal := details.Get("storeId"); storeIDVal != nil {
+					storeID = storeIDVal.String()
+				}
+			}
+		}
+		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		cookies, err := cookieOps.GetAllCookies(storeID)
+		if err != nil {
+			if callback != nil {
+				_, _ = callback(goja.Undefined())
+			}
+			return goja.Undefined()
+		}
+		result := make([]interface{}, 0, len(cookies))
+		for _, cookie := range cookies {
+			result = append(result, map[string]interface{}{
+				"name":       cookie.Name,
+				"value":      cookie.Value,
+				"domain":     cookie.Domain,
+				"path":       cookie.Path,
+				"secure":     cookie.Secure,
+				"httpOnly":   cookie.HttpOnly,
+				"sameSite":   cookie.SameSite,
+				"session":    cookie.Session,
+				"expiration": cookie.Expiration,
+				"storeId":    cookie.StoreID,
+			})
+		}
+		if callback != nil {
+			_, _ = callback(vm.ToValue(result))
+		}
+		return goja.Undefined()
+	})
+
+	// chrome.cookies.removeAll (clear all cookies for a store)
+	_ = cookiesObj.Set("removeAll", func(call goja.FunctionCall) goja.Value {
+		storeID := ""
+		if len(call.Arguments) > 0 {
+			details := call.Argument(0).ToObject(vm)
+			if details != nil {
+				if storeIDVal := details.Get("storeId"); storeIDVal != nil {
+					storeID = storeIDVal.String()
+				}
+			}
+		}
+		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		if err := cookieOps.ClearCookies(storeID); err != nil {
+			if callback != nil {
+				_, _ = callback(goja.Undefined())
+			}
+			return goja.Undefined()
+		}
+		if callback != nil {
+			_, _ = callback(goja.Undefined())
+		}
+		return goja.Undefined()
+	})
+
+	_ = chromeObj.Set("cookies", cookiesObj)
 	return nil
 }
 

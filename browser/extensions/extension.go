@@ -115,8 +115,11 @@ type Extension struct {
 	// ContentScripts maps URL patterns to registered content scripts.
 	ContentScripts []ContentScript `json:"-"`
 
-	// Storage is the per-extension storage partition.
+	// Storage is the per-extension storage partition (default container).
 	Storage *StoragePartition `json:"-"`
+
+	// ContainerStorage is the per-container, per-extension storage partition.
+	ContainerStorage *ContainerStoragePartition `json:"-"`
 
 	mu sync.Mutex `json:"-"`
 }
