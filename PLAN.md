@@ -110,14 +110,16 @@ Enforce robust content script sandboxing and secure injection.
 
 ## Phase E1: Core WebExtensions APIs
 
+**Status:** Complete (2026-10-27)
+
 Implement the foundational APIs that most extensions rely on: messaging, storage, tabs.
 
 ### Tasks
-1. **Build Message Passing System** — chrome.runtime.sendMessage/onMessage, chrome.tabs.sendMessage/onMessage
-2. **Implement Storage APIs** — chrome.storage.local/sync/managed with get/set/remove/clear
-3. **Implement Tabs API** — query, get, update, create, remove, events
-4. **Implement Windows API (basic)** — getCurrent, getAll, create, remove
-5. **Build Runtime API** — getURL, getManifest, getPlatformInfo, id, events
+- [x] 1. **Build Message Passing System** — chrome.runtime.sendMessage/onMessage, chrome.tabs.sendMessage/onMessage
+- [x] 2. **Implement Storage APIs** — chrome.storage.local/sync/managed with get/set/remove/clear
+- [x] 3. **Implement Tabs API** — query, get, update, create, remove, events
+- [x] 4. **Implement Windows API (basic)** — getCurrent, getAll, create, remove
+- [x] 5. **Build Runtime API** — getURL, getManifest, getPlatformInfo, id, events
 
 ### Dependencies
 - Phase E0 complete

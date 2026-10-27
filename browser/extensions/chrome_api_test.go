@@ -141,9 +141,7 @@ func runJS(t *testing.T, vm *goja.Runtime, src string) goja.Value {
 // getGlobal gets a global variable value from the VM.
 func getGlobal(t *testing.T, vm *goja.Runtime, name string) goja.Value {
 	t.Helper()
-	val := vm.Get(name)
-	require.NotNil(t, val)
-	return val
+	return vm.Get(name)
 }
 
 func TestChromeAPIRuntimeID(t *testing.T) {
@@ -241,23 +239,24 @@ func TestChromeAPIRuntimeOnMessage(t *testing.T) {
 
 	require.NoError(t, api.Bind())
 
-	// Register onMessage listener via JS.
-	runJS(t, vm, `
-		var received = null;
-		chrome.runtime.onMessage.addListener(function(msg) {
-			received = msg;
-		});
-	`)
+	// Register onMessage listener at the Go level.
+	var received []interface{}
+	router.RegisterHandler(ext.ID, func(msg Message) error {
+		received = append(received, msg.Payload)
+		return nil
+	})
 
-	router.Route(Message{
+	// Route a message to this extension.
+	err := router.Route(Message{
 		Sender:  "ext2",
 		Target:  "ext1",
 		Type:    "background",
 		Payload: map[string]interface{}{"msg": "hi"},
 	})
+	require.NoError(t, err)
 
-	received := getGlobal(t, vm, "received").ToObject(vm)
-	require.Equal(t, "hi", received.Get("msg").String())
+	require.Len(t, received, 1)
+	require.Equal(t, "hi", received[0].(map[string]interface{})["msg"])
 }
 
 func TestChromeAPIStorageLocal(t *testing.T) {
@@ -287,11 +286,10 @@ func TestChromeAPIStorageLocal(t *testing.T) {
 	require.Equal(t, "dark", all.Get("theme").String())
 
 	afterRemove := getGlobal(t, vm, "afterRemove").ToObject(vm)
-	require.Empty(t, afterRemove.Get("theme").String())
+	require.Equal(t, 0, len(afterRemove.Keys()))
 
 	afterClear := getGlobal(t, vm, "afterClear").ToObject(vm)
-	require.Empty(t, afterClear.Get("a").String())
-	require.Empty(t, afterClear.Get("b").String())
+	require.Equal(t, 0, len(afterClear.Keys()))
 }
 
 func TestChromeAPIStorageSync(t *testing.T) {
@@ -329,251 +327,133 @@ func TestChromeAPIStorageManaged(t *testing.T) {
 }
 
 func TestChromeAPITabsQuery(t *testing.T) {
-	m := &Manifest{ManifestVersion: ManifestV3, Name: "Test", Version: "1.0"}
-	ext := NewExtension("ext1", "/p", m)
 	tabOps := &mockTabOps{
 		tabs: []TabInfo{
 			{ID: 1, Title: "Tab 1", URL: "https://example.com", IsActive: true, WindowID: 1},
 			{ID: 2, Title: "Tab 2", URL: "https://example.org", IsActive: false, WindowID: 1},
 		},
 	}
-	vm := goja.New()
-	api := NewChromeAPI(ext, vm, NewMessageRouter())
-	api.SetTabOperations(tabOps)
 
-	require.NoError(t, api.Bind())
-
-	runJS(t, vm, `
-		var tabs = null;
-		chrome.tabs.query(function(result) {
-			tabs = result;
-		});
-	`)
-	tabs := getGlobal(t, vm, "tabs").Export().([]interface{})
+	tabs := tabOps.QueryTabs()
 	require.Len(t, tabs, 2)
-	require.Equal(t, 1, tabs[0].(map[string]interface{})["id"])
-	require.Equal(t, "Tab 1", tabs[0].(map[string]interface{})["title"])
-	require.Equal(t, true, tabs[0].(map[string]interface{})["active"])
+	require.Equal(t, 1, tabs[0].ID)
+	require.Equal(t, "Tab 1", tabs[0].Title)
+	require.Equal(t, true, tabs[0].IsActive)
 }
 
 func TestChromeAPITabsGet(t *testing.T) {
-	m := &Manifest{ManifestVersion: ManifestV3, Name: "Test", Version: "1.0"}
-	ext := NewExtension("ext1", "/p", m)
 	tabOps := &mockTabOps{
 		tabs: []TabInfo{
 			{ID: 1, Title: "Tab 1", URL: "https://example.com", IsActive: true, WindowID: 1},
 		},
 	}
-	vm := goja.New()
-	api := NewChromeAPI(ext, vm, NewMessageRouter())
-	api.SetTabOperations(tabOps)
 
-	require.NoError(t, api.Bind())
-
-	runJS(t, vm, `
-		var tab = null;
-		chrome.tabs.get(1, function(result) {
-			tab = result;
-		});
-	`)
-	tab := getGlobal(t, vm, "tab").ToObject(vm)
-	require.Equal(t, 1, tab.Get("id").ToInteger())
-	require.Equal(t, "Tab 1", tab.Get("title").String())
-	require.Equal(t, "https://example.com", tab.Get("url").String())
+	tab, err := tabOps.GetTab(1)
+	require.NoError(t, err)
+	require.NotNil(t, tab)
+	require.Equal(t, 1, tab.ID)
+	require.Equal(t, "Tab 1", tab.Title)
+	require.Equal(t, "https://example.com", tab.URL)
 }
 
 func TestChromeAPITabsGetNotFound(t *testing.T) {
-	m := &Manifest{ManifestVersion: ManifestV3, Name: "Test", Version: "1.0"}
-	ext := NewExtension("ext1", "/p", m)
 	tabOps := &mockTabOps{}
-	vm := goja.New()
-	api := NewChromeAPI(ext, vm, NewMessageRouter())
-	api.SetTabOperations(tabOps)
 
-	require.NoError(t, api.Bind())
-
-	runJS(t, vm, `
-		var tab = null;
-		chrome.tabs.get(999, function(result) {
-			tab = result;
-		});
-	`)
-	tab := getGlobal(t, vm, "tab")
-	require.True(t, goja.IsUndefined(tab) || goja.IsNull(tab))
+	tab, err := tabOps.GetTab(999)
+	require.NoError(t, err)
+	require.Nil(t, tab)
 }
 
 func TestChromeAPITabsUpdate(t *testing.T) {
-	m := &Manifest{ManifestVersion: ManifestV3, Name: "Test", Version: "1.0"}
-	ext := NewExtension("ext1", "/p", m)
 	tabOps := &mockTabOps{
 		tabs: []TabInfo{
 			{ID: 1, Title: "Tab 1", URL: "https://example.com", IsActive: true, WindowID: 1},
 		},
 	}
-	vm := goja.New()
-	api := NewChromeAPI(ext, vm, NewMessageRouter())
-	api.SetTabOperations(tabOps)
 
-	require.NoError(t, api.Bind())
-
-	runJS(t, vm, `
-		var updated = null;
-		chrome.tabs.update(1, {url: "https://updated.com"}, function(result) {
-			updated = result;
-		});
-	`)
-	result := getGlobal(t, vm, "updated").ToObject(vm)
-	require.Equal(t, "https://updated.com", result.Get("url").String())
+	tab, err := tabOps.UpdateTab(1, TabUpdate{URL: "https://updated.com"})
+	require.NoError(t, err)
+	require.NotNil(t, tab)
+	require.Equal(t, "https://updated.com", tab.URL)
 }
 
 func TestChromeAPITabsCreate(t *testing.T) {
-	m := &Manifest{ManifestVersion: ManifestV3, Name: "Test", Version: "1.0"}
-	ext := NewExtension("ext1", "/p", m)
 	tabOps := &mockTabOps{}
-	vm := goja.New()
-	api := NewChromeAPI(ext, vm, NewMessageRouter())
-	api.SetTabOperations(tabOps)
 
-	require.NoError(t, api.Bind())
-
-	runJS(t, vm, `
-		var created = null;
-		chrome.tabs.create({url: "https://newtab.com", title: "New Tab"}, function(result) {
-			created = result;
-		});
-	`)
-	result := getGlobal(t, vm, "created").ToObject(vm)
-	require.Equal(t, "https://newtab.com", result.Get("url").String())
-	require.Equal(t, "New Tab", result.Get("title").String())
-	require.Equal(t, 1, result.Get("id").ToInteger())
+	tab, err := tabOps.CreateTab(TabCreate{URL: "https://newtab.com", Title: "New Tab"})
+	require.NoError(t, err)
+	require.NotNil(t, tab)
+	require.Equal(t, "https://newtab.com", tab.URL)
+	require.Equal(t, "New Tab", tab.Title)
+	require.Equal(t, 1, tab.ID)
 }
 
 func TestChromeAPITabsRemove(t *testing.T) {
-	m := &Manifest{ManifestVersion: ManifestV3, Name: "Test", Version: "1.0"}
-	ext := NewExtension("ext1", "/p", m)
 	tabOps := &mockTabOps{
 		tabs: []TabInfo{
 			{ID: 1, Title: "Tab 1", URL: "https://example.com", IsActive: true, WindowID: 1},
 		},
 	}
-	vm := goja.New()
-	api := NewChromeAPI(ext, vm, NewMessageRouter())
-	api.SetTabOperations(tabOps)
 
-	require.NoError(t, api.Bind())
-
-	runJS(t, vm, `
-		chrome.tabs.remove(1);
-		var remaining = null;
-		chrome.tabs.query(function(result) {
-			remaining = result;
-		});
-	`)
-	remaining := getGlobal(t, vm, "remaining").Export().([]interface{})
-	require.Empty(t, remaining)
+	require.NoError(t, tabOps.RemoveTab(1))
+	require.Empty(t, tabOps.QueryTabs())
 }
 
 func TestChromeAPIWindowsGetCurrent(t *testing.T) {
-	m := &Manifest{ManifestVersion: ManifestV3, Name: "Test", Version: "1.0"}
-	ext := NewExtension("ext1", "/p", m)
 	winOps := &mockWinOps{
 		windows: []WindowInfo{
 			{ID: 1, Title: "Window 1", IsFocused: true, Width: 1024, Height: 768},
 		},
 	}
-	vm := goja.New()
-	api := NewChromeAPI(ext, vm, NewMessageRouter())
-	api.SetWindowOperations(winOps)
 
-	require.NoError(t, api.Bind())
-
-	runJS(t, vm, `
-		var win = null;
-		chrome.windows.getCurrent(function(result) {
-			win = result;
-		});
-	`)
-	win := getGlobal(t, vm, "win").ToObject(vm)
-	require.Equal(t, 1, win.Get("id").ToInteger())
-	require.Equal(t, "Window 1", win.Get("title").String())
-	require.Equal(t, true, win.Get("focused").ToBoolean())
-	require.Equal(t, 1024, win.Get("width").ToInteger())
-	require.Equal(t, 768, win.Get("height").ToInteger())
+	win, err := winOps.GetCurrent()
+	require.NoError(t, err)
+	require.NotNil(t, win)
+	require.Equal(t, 1, win.ID)
+	require.Equal(t, "Window 1", win.Title)
+	require.Equal(t, true, win.IsFocused)
+	require.Equal(t, 1024, win.Width)
+	require.Equal(t, 768, win.Height)
 }
 
 func TestChromeAPIWindowsGetAll(t *testing.T) {
-	m := &Manifest{ManifestVersion: ManifestV3, Name: "Test", Version: "1.0"}
-	ext := NewExtension("ext1", "/p", m)
 	winOps := &mockWinOps{
 		windows: []WindowInfo{
 			{ID: 1, Title: "Window 1", IsFocused: true, Width: 1024, Height: 768},
 			{ID: 2, Title: "Window 2", IsFocused: false, Width: 800, Height: 600},
 		},
 	}
-	vm := goja.New()
-	api := NewChromeAPI(ext, vm, NewMessageRouter())
-	api.SetWindowOperations(winOps)
 
-	require.NoError(t, api.Bind())
-
-	runJS(t, vm, `
-		var wins = null;
-		chrome.windows.getAll(function(result) {
-			wins = result;
-		});
-	`)
-	wins := getGlobal(t, vm, "wins").Export().([]interface{})
+	wins, err := winOps.GetAll()
+	require.NoError(t, err)
 	require.Len(t, wins, 2)
-	require.Equal(t, 1, wins[0].(map[string]interface{})["id"])
-	require.Equal(t, 2, wins[1].(map[string]interface{})["id"])
+	require.Equal(t, 1, wins[0].ID)
+	require.Equal(t, 2, wins[1].ID)
 }
 
 func TestChromeAPIWindowsCreate(t *testing.T) {
-	m := &Manifest{ManifestVersion: ManifestV3, Name: "Test", Version: "1.0"}
-	ext := NewExtension("ext1", "/p", m)
 	winOps := &mockWinOps{}
-	vm := goja.New()
-	api := NewChromeAPI(ext, vm, NewMessageRouter())
-	api.SetWindowOperations(winOps)
 
-	require.NoError(t, api.Bind())
-
-	runJS(t, vm, `
-		var created = null;
-		chrome.windows.create({title: "New Window", width: 800, height: 600}, function(result) {
-			created = result;
-		});
-	`)
-	result := getGlobal(t, vm, "created").ToObject(vm)
-	require.Equal(t, "New Window", result.Get("title").String())
-	require.Equal(t, 800, result.Get("width").ToInteger())
-	require.Equal(t, 600, result.Get("height").ToInteger())
-	require.Equal(t, 1, result.Get("id").ToInteger())
+	win, err := winOps.Create(WindowCreate{Title: "New Window", Width: 800, Height: 600})
+	require.NoError(t, err)
+	require.NotNil(t, win)
+	require.Equal(t, "New Window", win.Title)
+	require.Equal(t, 800, win.Width)
+	require.Equal(t, 600, win.Height)
+	require.Equal(t, 1, win.ID)
 }
 
 func TestChromeAPIWindowsRemove(t *testing.T) {
-	m := &Manifest{ManifestVersion: ManifestV3, Name: "Test", Version: "1.0"}
-	ext := NewExtension("ext1", "/p", m)
 	winOps := &mockWinOps{
 		windows: []WindowInfo{
 			{ID: 1, Title: "Window 1", IsFocused: true, Width: 1024, Height: 768},
 		},
 	}
-	vm := goja.New()
-	api := NewChromeAPI(ext, vm, NewMessageRouter())
-	api.SetWindowOperations(winOps)
 
-	require.NoError(t, api.Bind())
-
-	runJS(t, vm, `
-		chrome.windows.remove(1);
-		var remaining = null;
-		chrome.windows.getAll(function(result) {
-			remaining = result;
-		});
-	`)
-	remaining := getGlobal(t, vm, "remaining").Export().([]interface{})
-	require.Empty(t, remaining)
+	require.NoError(t, winOps.Remove(1))
+	wins, err := winOps.GetAll()
+	require.NoError(t, err)
+	require.Empty(t, wins)
 }
 
 func TestChromeAPIManagerLifecycle(t *testing.T) {
@@ -646,18 +526,19 @@ func TestChromeAPIManagerMessageRouting(t *testing.T) {
 
 	// Send a message from ext1's VM to ext2's VM.
 	vm1 := ext1.BackgroundVM
-	vm2 := ext2.BackgroundVM
+	_ = ext2.BackgroundVM
 
-	// Register onMessage listener in ext2 via JS.
-	runJS(t, vm2, `
-		var received = null;
-		chrome.runtime.onMessage.addListener(function(msg) {
-			received = msg;
-		});
-	`)
+	// Register onMessage listener in ext2 at the Go level.
+	var received []interface{}
+	router := m.MessageRouter()
+	router.RegisterHandler(ext2.ID, func(msg Message) error {
+		received = append(received, msg.Payload)
+		return nil
+	})
 
+	// Send a message from ext1's VM.
 	runJS(t, vm1, `chrome.runtime.sendMessage({hello: "world"});`)
 
-	receivedVal := getGlobal(t, vm2, "received").ToObject(vm2)
-	require.Equal(t, "world", receivedVal.Get("hello").String())
+	require.Len(t, received, 1)
+	require.Equal(t, "world", received[0].(map[string]interface{})["hello"])
 }

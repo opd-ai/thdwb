@@ -66,7 +66,13 @@ func (lm *LifecycleManager) Enable(ext *Extension) error {
 	defer lm.mu.Unlock()
 
 	if lm.enabled[ext.ID] {
-		return nil // already enabled
+		// Already enabled; ensure background VM is initialized if hooks exist.
+		if lm.onStart != nil && ext.BackgroundVM == nil {
+			if err := lm.onStart(ext); err != nil {
+				return fmt.Errorf("start extension %s: %w", ext.ID, err)
+			}
+		}
+		return nil
 	}
 
 	if lm.onStart != nil {

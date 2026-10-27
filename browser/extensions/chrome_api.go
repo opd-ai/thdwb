@@ -285,10 +285,23 @@ func (c *ChromeAPI) bindStorage(vm *goja.Runtime, ext *Extension) error {
 
 		_ = areaObj.Set("get", func(call goja.FunctionCall) goja.Value {
 			var keys interface{}
-			if len(call.Arguments) > 0 {
+			var callback goja.Callable
+
+			switch len(call.Arguments) {
+			case 0:
+				// get() - return all.
+			case 1:
+				// Could be get(keys) or get(callback).
+				if cb, ok := goja.AssertFunction(call.Argument(0)); ok {
+					callback = cb
+				} else {
+					keys = call.Argument(0).Export()
+				}
+			default:
+				// get(keys, callback).
 				keys = call.Argument(0).Export()
+				callback, _ = goja.AssertFunction(call.Argument(1))
 			}
-			callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
 
 			result := make(map[string]interface{})
 			switch k := keys.(type) {
@@ -326,8 +339,14 @@ func (c *ChromeAPI) bindStorage(vm *goja.Runtime, ext *Extension) error {
 				return goja.Undefined()
 			}
 			for k, v := range itemsMap {
-				val, _ := json.Marshal(v)
-				_ = sp.Set(area, k, string(val))
+				// Store the raw value (string, number, bool) directly.
+				switch val := v.(type) {
+				case string:
+					_ = sp.Set(area, k, val)
+				default:
+					data, _ := json.Marshal(val)
+					_ = sp.Set(area, k, string(data))
+				}
 			}
 			return goja.Undefined()
 		})
