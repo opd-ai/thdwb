@@ -124,6 +124,7 @@ type Extension struct {
 // ContentScript is a registered content script with URL pattern matching.
 type ContentScript struct {
 	ID          string
+	ExtID       string
 	Matches     []string
 	ExcludeMatches []string
 	JS          []string

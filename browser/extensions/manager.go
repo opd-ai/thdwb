@@ -16,16 +16,20 @@ type Manager struct {
 	extensions  map[string]*Extension
 	storageDir  string
 	contentReg  *ContentScriptRegistry
+	contentLoader *ContentScriptLoader
+	sandboxes   map[string]*ContentScriptSandbox
 }
 
 // NewManager creates a new extension manager.
 func NewManager(storageDir string) *Manager {
 	return &Manager{
-		discovery:  NewDiscovery(),
-		lifecycle:  NewLifecycleManager(),
-		extensions: make(map[string]*Extension),
-		storageDir: storageDir,
-		contentReg: NewContentScriptRegistry(),
+		discovery:    NewDiscovery(),
+		lifecycle:    NewLifecycleManager(),
+		extensions:   make(map[string]*Extension),
+		storageDir:   storageDir,
+		contentReg:   NewContentScriptRegistry(),
+		contentLoader: NewContentScriptLoader(),
+		sandboxes:    make(map[string]*ContentScriptSandbox),
 	}
 }
 
@@ -59,6 +63,7 @@ func (m *Manager) Scan() ([]*Extension, error) {
 		for _, cs := range ext.Manifest.ContentScripts {
 			script := ContentScript{
 				ID:             ext.ID + ":" + cs.JS[0],
+				ExtID:          ext.ID,
 				Matches:        cs.Matches,
 				ExcludeMatches: cs.ExcludeMatches,
 				JS:             cs.JS,
@@ -68,6 +73,7 @@ func (m *Manager) Scan() ([]*Extension, error) {
 			}
 			ext.ContentScripts = append(ext.ContentScripts, script)
 			m.contentReg.Register(script)
+			m.contentLoader.Register(script)
 		}
 
 		// Initialize lifecycle state (extensions start enabled).
@@ -156,6 +162,8 @@ func (m *Manager) Uninstall(id string) error {
 	}
 	m.mu.Lock()
 	delete(m.extensions, id)
+	m.contentLoader.RemoveForExtension(id)
+	m.RemoveSandbox(id)
 	m.mu.Unlock()
 	return nil
 }
@@ -199,6 +207,34 @@ func (m *Manager) StorageFor(id string) *StoragePartition {
 // ContentRegistry returns the content script registry.
 func (m *Manager) ContentRegistry() *ContentScriptRegistry {
 	return m.contentReg
+}
+
+// ContentLoader returns the content script loader.
+func (m *Manager) ContentLoader() *ContentScriptLoader {
+	return m.contentLoader
+}
+
+// SandboxFor returns the content script sandbox for the given extension,
+// creating one if it doesn't exist.
+func (m *Manager) SandboxFor(extID string) *ContentScriptSandbox {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if s, ok := m.sandboxes[extID]; ok {
+		return s
+	}
+	s := NewContentScriptSandbox(extID)
+	m.sandboxes[extID] = s
+	return s
+}
+
+// RemoveSandbox removes the content script sandbox for the given extension.
+func (m *Manager) RemoveSandbox(extID string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if s, ok := m.sandboxes[extID]; ok {
+		_ = s.Close()
+		delete(m.sandboxes, extID)
+	}
 }
 
 // SetLifecycleHooks registers start/stop/reload hooks for background scripts.
