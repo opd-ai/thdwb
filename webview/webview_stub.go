@@ -3,91 +3,60 @@
 package webview
 
 import (
-	"fmt"
-
 	"github.com/danfragoso/thdwb/platform"
 )
 
 // stubWebView implements WebView for desktop platforms without native WebView
-// bindings. It provides a placeholder that can be extended with platform-specific
-// WebView implementations (WebKitGTK on Linux, WebKit on macOS, WebView2 on Windows).
+// bindings. It delegates to the desktopWebView implementation which integrates
+// with the thdwb rendering engine (hotdog) for actual content rendering.
 type stubWebView struct {
-	config    Config
-	delegate  Delegate
-	url       string
-	width     int
-	height    int
-	visible   bool
-	destroyed bool
+	desktop *desktopWebView
 }
 
 var _ WebView = (*stubWebView)(nil)
 
 func newWebView(config Config) (WebView, error) {
-	return &stubWebView{
-		config:  config,
-		url:     "",
-		width:   config.Width,
-		height:  config.Height,
-		visible: false,
-	}, nil
+	dwv, err := newDesktopWebView(config)
+	if err != nil {
+		return nil, err
+	}
+	return &stubWebView{desktop: dwv.(*desktopWebView)}, nil
 }
 
 func (w *stubWebView) LoadURL(url string) error {
-	if w.destroyed {
-		return fmt.Errorf("webview: WebView is destroyed")
-	}
-	w.url = url
-	if w.delegate != nil {
-		w.delegate.OnPageStarted(url)
-		w.delegate.OnPageFinished(url)
-	}
-	return nil
+	return w.desktop.LoadURL(url)
 }
 
 func (w *stubWebView) LoadHTML(html, baseURL string) error {
-	if w.destroyed {
-		return fmt.Errorf("webview: WebView is destroyed")
-	}
-	w.url = baseURL
-	if w.delegate != nil {
-		w.delegate.OnPageStarted(baseURL)
-		w.delegate.OnPageFinished(baseURL)
-	}
-	return nil
+	return w.desktop.LoadHTML(html, baseURL)
 }
 
 func (w *stubWebView) SetSize(width, height int) {
-	w.width = width
-	w.height = height
+	w.desktop.SetSize(width, height)
 }
 
 func (w *stubWebView) Size() (int, int) {
-	return w.width, w.height
+	return w.desktop.Size()
 }
 
 func (w *stubWebView) Show() {
-	w.visible = true
+	w.desktop.Show()
 }
 
 func (w *stubWebView) Hide() {
-	w.visible = false
+	w.desktop.Hide()
 }
 
 func (w *stubWebView) Destroy() {
-	w.destroyed = true
-	w.visible = false
+	w.desktop.Destroy()
 }
 
 func (w *stubWebView) EvaluateJS(script string) (string, error) {
-	if w.destroyed {
-		return "", fmt.Errorf("webview: WebView is destroyed")
-	}
-	return "", nil
+	return w.desktop.EvaluateJS(script)
 }
 
 func (w *stubWebView) SetDelegate(delegate Delegate) {
-	w.delegate = delegate
+	w.desktop.SetDelegate(delegate)
 }
 
 // Compile-time check that platform.Window is used.
