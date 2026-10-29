@@ -254,6 +254,74 @@ func (wc *WindowContext) SetOrigin(rawURL string) error {
 	return nil
 }
 
+// LoadHTML parses the given HTML string and sets it as the active document
+// for this window context. It sets the document origin from baseURL and
+// initializes the JS runtime with the document's DOM.
+func (wc *WindowContext) LoadHTML(html, baseURL string) error {
+	if wc == nil {
+		return fmt.Errorf("window context is nil")
+	}
+	if wc.destroyed {
+		return fmt.Errorf("window context is destroyed")
+	}
+
+	doc := &Document{
+		Title: "",
+		URL:   &url.URL{},
+		DOM:   &NodeDOM{Type: NodeTypeElement, Element: "html", Children: make([]*NodeDOM, 0)},
+	}
+
+	if baseURL != "" {
+		u, err := url.Parse(baseURL)
+		if err == nil {
+			doc.URL = u
+			wc.SetOrigin(baseURL)
+		}
+	}
+
+	nodes, err := parseHTMLFragment(html, doc)
+	if err != nil {
+		return fmt.Errorf("parse HTML: %w", err)
+	}
+
+	for _, node := range nodes {
+		doc.DOM.appendChildNode(node)
+	}
+
+	wc.ActiveDocument = doc
+	wc.Documents = append(wc.Documents, doc)
+
+	// Initialize the JS runtime with the window object
+	if err := wc.InitJSRuntime(); err != nil {
+		return fmt.Errorf("init JS runtime: %w", err)
+	}
+
+	return nil
+}
+
+// LoadURL fetches the given URL and loads its content into this window context.
+// It uses the window's HTTP client for cookie isolation.
+func (wc *WindowContext) LoadURL(rawURL string) error {
+	if wc == nil {
+		return fmt.Errorf("window context is nil")
+	}
+	if wc.destroyed {
+		return fmt.Errorf("window context is destroyed")
+	}
+
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("parse URL: %w", err)
+	}
+
+	resource := sauce.FetchExternalPageWithOptions(u, "GET", nil, nil)
+	if resource.Code >= 400 {
+		return fmt.Errorf("HTTP %d: %s", resource.Code, resource.Body)
+	}
+
+	return wc.LoadHTML(resource.Body, resource.URL.String())
+}
+
 // GetOrigin returns the origin for this window context.
 func (wc *WindowContext) GetOrigin() *url.URL {
 	if wc.Origin == nil {
