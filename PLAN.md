@@ -214,13 +214,15 @@ Implement powerful APIs for network interception, file handling, and user notifi
 
 Build user-facing installation flow and automatic update mechanisms.
 
+**Status:** Complete (2026-10-29)
+
 ### Tasks
-1. **Create Extension Package Format** — .xpi (ZIP) support, package validation, checksum verification
-2. **Build Installation UI** — Extension metadata display, permission confirmation
-3. **Implement Extension Permissions Prompt** — Human-readable permission descriptions
-4. **Build Extension Updates Mechanism** — Update URL checking, download, verify, migrate
-5. **Create Extension Uninstall Flow** — Cleanup storage and files
-6. **Build Extension Info/Settings Page** — Metadata, storage usage, enable/disable
+- [x] 1. **Create Extension Package Format** — .xpi (ZIP) support, package validation, checksum verification
+- [x] 2. **Build Installation UI** — Extension metadata display, permission confirmation
+- [x] 3. **Implement Extension Permissions Prompt** — Human-readable permission descriptions
+- [x] 4. **Build Extension Updates Mechanism** — Update URL checking, download, verify, migrate
+- [x] 5. **Create Extension Uninstall Flow** — Cleanup storage and files
+- [x] 6. **Build Extension Info/Settings Page** — Metadata, storage usage, enable/disable
 
 ### Dependencies
 - Phase E0 complete
