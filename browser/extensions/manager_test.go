@@ -154,6 +154,55 @@ func TestManagerUninstallUnknown(t *testing.T) {
 	require.Contains(t, err.Error(), "not found")
 }
 
+func TestManagerUninstallCleansUpFiles(t *testing.T) {
+	root := t.TempDir()
+	extDir := filepath.Join(root, "extensions")
+	storageDir := filepath.Join(root, "storage")
+	require.NoError(t, os.MkdirAll(extDir, 0o755))
+	require.NoError(t, os.MkdirAll(storageDir, 0o755))
+
+	writeExtDir(t, extDir, "ext-cleanup", `{
+		"manifest_version": 3,
+		"name": "Cleanup Test",
+		"version": "1.0"
+	}`)
+
+	m := NewManager(storageDir)
+	m.AddWatchDir(extDir)
+	_, err := m.Scan()
+	require.NoError(t, err)
+
+	require.NoError(t, m.Enable("ext-cleanup"))
+	require.True(t, m.IsEnabled("ext-cleanup"))
+
+	extPath := filepath.Join(extDir, "ext-cleanup")
+	storagePath := filepath.Join(storageDir, "ext-cleanup.json")
+	require.NoError(t, os.WriteFile(storagePath, []byte("{}"), 0o644))
+
+	require.NoError(t, m.Uninstall("ext-cleanup"))
+
+	require.False(t, m.IsInstalled("ext-cleanup"))
+	require.False(t, m.IsEnabled("ext-cleanup"))
+	require.Nil(t, m.Get("ext-cleanup"))
+	require.Equal(t, 0, m.Count())
+
+	// Extension directory should be removed.
+	require.False(t, dirExists(extPath), "extension directory should be removed")
+
+	// Storage file should be removed.
+	require.False(t, fileExists(storagePath), "storage file should be removed")
+}
+
+func dirExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
+}
+
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
+}
+
 func TestManagerStorageFor(t *testing.T) {
 	root := t.TempDir()
 	storageDir := filepath.Join(root, "storage")

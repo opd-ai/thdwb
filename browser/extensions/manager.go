@@ -182,7 +182,9 @@ func (m *Manager) Reload(id string) error {
 	return m.lifecycle.Reload(ext)
 }
 
-// Uninstall removes an extension by ID.
+// Uninstall removes an extension by ID. It stops the extension, removes it
+// from memory, and cleans up its filesystem files (extension directory and
+// storage partition).
 func (m *Manager) Uninstall(id string) error {
 	m.mu.Lock()
 	ext := m.extensions[id]
@@ -197,7 +199,26 @@ func (m *Manager) Uninstall(id string) error {
 	if ext == nil {
 		return fmt.Errorf("extension not found: %s", id)
 	}
-	return m.lifecycle.Uninstall(ext)
+
+	// Stop the extension lifecycle.
+	if err := m.lifecycle.Uninstall(ext); err != nil {
+		return err
+	}
+
+	// Clean up storage files.
+	if ext.Storage != nil && ext.Storage.path != "" {
+		_ = os.Remove(ext.Storage.path)
+	}
+	if ext.ContainerStorage != nil && ext.ContainerStorage.basePath != "" {
+		_ = os.RemoveAll(ext.ContainerStorage.basePath)
+	}
+
+	// Remove the extension directory from disk.
+	if ext.Path != "" {
+		_ = os.RemoveAll(ext.Path)
+	}
+
+	return nil
 }
 
 // IsEnabled reports whether an extension is enabled.
