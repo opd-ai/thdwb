@@ -44,8 +44,9 @@ type Manifest struct {
 	Permissions     []string          `json:"permissions,omitempty"`
 	OptionalPermissions []string       `json:"optional_permissions,omitempty"`
 	ContentSecurityPolicy string        `json:"content_security_policy,omitempty"`
-	HomepageURL     string          `json:"homepage_url,omitempty"`
-	Author          string          `json:"author,omitempty"`
+	HomepageURL           string          `json:"homepage_url,omitempty"`
+	Author                string          `json:"author,omitempty"`
+	UpdateURL             string          `json:"update_url,omitempty"`
 }
 
 // ActionManifest describes a browser/page action (toolbar icon).
