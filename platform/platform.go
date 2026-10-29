@@ -125,6 +125,12 @@ type GPUProvider interface {
 	GPUInfo() GPUInfo
 }
 
+// GetGPUProvider returns the platform-specific GPU provider, or nil if none
+// is available for the current build.
+func GetGPUProvider() GPUProvider {
+	return gpuProvider()
+}
+
 // Key represents a keyboard key.
 type Key int
 
