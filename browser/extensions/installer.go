@@ -253,21 +253,26 @@ func (m *Manager) registerExtension(ext *Extension) error {
 	}
 	ext.ContainerStorage = NewContainerStoragePartition(ext.ID, containerStoragePath)
 
-	// Register content scripts from manifest.
-	for _, cs := range ext.Manifest.ContentScripts {
-		script := ContentScript{
-			ID:             ext.ID + ":" + cs.JS[0],
-			ExtID:          ext.ID,
-			Matches:        cs.Matches,
-			ExcludeMatches: cs.ExcludeMatches,
-			JS:             cs.JS,
-			CSS:            cs.CSS,
-			RunAt:          cs.RunAt,
-			AllFrames:      cs.AllFrames,
+	// Register content scripts from manifest (if any).
+	if ext.Manifest != nil {
+		for _, cs := range ext.Manifest.ContentScripts {
+			if len(cs.JS) == 0 {
+				continue
+			}
+			script := ContentScript{
+				ID:             ext.ID + ":" + cs.JS[0],
+				ExtID:          ext.ID,
+				Matches:        cs.Matches,
+				ExcludeMatches: cs.ExcludeMatches,
+				JS:             cs.JS,
+				CSS:            cs.CSS,
+				RunAt:          cs.RunAt,
+				AllFrames:      cs.AllFrames,
+			}
+			ext.ContentScripts = append(ext.ContentScripts, script)
+			m.contentReg.Register(script)
+			m.contentLoader.Register(script)
 		}
-		ext.ContentScripts = append(ext.ContentScripts, script)
-		m.contentReg.Register(script)
-		m.contentLoader.Register(script)
 	}
 
 	// Initialize lifecycle state (extensions start enabled).

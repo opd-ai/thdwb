@@ -125,6 +125,13 @@ func (m *Manager) Get(id string) *Extension {
 	return m.extensions[id]
 }
 
+// AddExtension registers an extension with the manager. It initializes
+// storage partitions and content scripts from the manifest. Extensions are
+// registered in the enabled state by default.
+func (m *Manager) AddExtension(ext *Extension) error {
+	return m.registerExtension(ext)
+}
+
 // GetAll returns all loaded extensions.
 func (m *Manager) GetAll() []*Extension {
 	m.mu.Lock()
