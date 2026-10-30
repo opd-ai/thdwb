@@ -90,3 +90,122 @@ func TestAddressBarNavigateAddsHTTPScheme(t *testing.T) {
 		t.Fatalf("tab URL = %q, want https://example.com", got)
 	}
 }
+
+func TestAddressBarBuildSuggestionsFromHistory(t *testing.T) {
+	window := newTestWindow(t)
+	m := NewTabManager()
+	ab := NewAddressBar(window, m)
+
+	ab.SetHistoryProvider(func() []*HistoryEntry {
+		return []*HistoryEntry{
+			{ID: 1, Title: "Example Site", URL: "https://example.com"},
+			{ID: 2, Title: "Other Site", URL: "https://other.com"},
+		}
+	})
+
+	ab.buildSuggestions("example")
+	if len(ab.suggestions) == 0 {
+		t.Fatal("expected suggestions for 'example'")
+	}
+	found := false
+	for _, s := range ab.suggestions {
+		if s.URL == "https://example.com" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected example.com in suggestions, got %+v", ab.suggestions)
+	}
+}
+
+func TestAddressBarBuildSuggestionsFromBookmarks(t *testing.T) {
+	window := newTestWindow(t)
+	m := NewTabManager()
+	ab := NewAddressBar(window, m)
+
+	ab.SetBookmarkProvider(func() []*Bookmark {
+		return []*Bookmark{
+			{ID: 1, Title: "Bookmark A", URL: "https://bookmark-a.com"},
+		}
+	})
+
+	ab.buildSuggestions("bookmark")
+	if len(ab.suggestions) == 0 {
+		t.Fatal("expected suggestions for 'bookmark'")
+	}
+	found := false
+	for _, s := range ab.suggestions {
+		if s.URL == "https://bookmark-a.com" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected bookmark-a.com in suggestions, got %+v", ab.suggestions)
+	}
+}
+
+func TestAddressBarSelectSuggestionNavigates(t *testing.T) {
+	window := newTestWindow(t)
+	m := NewTabManager()
+	ab := NewAddressBar(window, m)
+
+	a := m.Add("A", "https://example.com", "", "", "")
+	ab.selectSuggestion(suggestion{Title: "Test", URL: "https://suggested.com"})
+	if got := a.URL; got != "https://suggested.com" {
+		t.Fatalf("tab URL after suggestion select = %q, want https://suggested.com", got)
+	}
+}
+
+func TestAddressBarSelectNextAndPreviousSuggestion(t *testing.T) {
+	window := newTestWindow(t)
+	m := NewTabManager()
+	ab := NewAddressBar(window, m)
+
+	ab.suggestions = []suggestion{
+		{Title: "One", URL: "https://one.com"},
+		{Title: "Two", URL: "https://two.com"},
+		{Title: "Three", URL: "https://three.com"},
+	}
+
+	if ab.selectedSugg != 0 {
+		t.Fatalf("initial selectedSugg = %d, want 0", ab.selectedSugg)
+	}
+
+	ab.selectNextSuggestion()
+	if ab.selectedSugg != 1 {
+		t.Fatalf("after next selectedSugg = %d, want 1", ab.selectedSugg)
+	}
+
+	ab.selectNextSuggestion()
+	if ab.selectedSugg != 2 {
+		t.Fatalf("after second next selectedSugg = %d, want 2", ab.selectedSugg)
+	}
+
+	// Wrap around.
+	ab.selectNextSuggestion()
+	if ab.selectedSugg != 0 {
+		t.Fatalf("after wrap next selectedSugg = %d, want 0", ab.selectedSugg)
+	}
+
+	ab.selectPreviousSuggestion()
+	if ab.selectedSugg != 2 {
+		t.Fatalf("after previous selectedSugg = %d, want 2", ab.selectedSugg)
+	}
+}
+
+func TestAddressBarHideSuggestions(t *testing.T) {
+	window := newTestWindow(t)
+	m := NewTabManager()
+	ab := NewAddressBar(window, m)
+
+	ab.suggestions = []suggestion{{Title: "One", URL: "https://one.com"}}
+	ab.suggestionsVisible = true
+	ab.hideSuggestions()
+
+	if ab.suggestionsVisible {
+		t.Fatal("suggestions should be hidden")
+	}
+	if len(ab.suggestions) != 0 {
+		t.Fatal("suggestions should be cleared")
+	}
+}

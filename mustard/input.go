@@ -54,6 +54,11 @@ func (input *InputWidget) SetReturnCallback(returnCallback func()) {
 	input.returnCallback = returnCallback
 }
 
+// SetChangeCallback sets a callback invoked whenever the input value changes.
+func (input *InputWidget) SetChangeCallback(changeCallback func(string)) {
+	input.changeCallback = changeCallback
+}
+
 // SetFontColor - Sets the input font color
 func (input *InputWidget) SetFontColor(fontColor string) {
 	if len(fontColor) > 0 && string(fontColor[0]) == "#" {

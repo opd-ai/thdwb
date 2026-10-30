@@ -31,12 +31,12 @@ type AddressBar struct {
 	containerID   string
 
 	// Autocomplete state.
-	suggestions     []suggestion
-	selectedSugg    int
-	suggestionFrame *mustard.Frame // dropdown container for suggestions
-	suggestionOverlay *mustard.Overlay
+	suggestions        []suggestion
+	selectedSugg       int
+	suggestionFrame    *mustard.Frame // dropdown container for suggestions
 	suggestionsVisible bool
-	onSuggestionSelect func(suggestion) // optional callback when a suggestion is chosen
+	onHistory          func() []*HistoryEntry
+	onBookmarks        func() []*Bookmark
 }
 
 // NewAddressBar constructs an address bar bound to manager. The bar updates
@@ -83,6 +83,7 @@ func NewAddressBar(window *mustard.WindowBase, manager *TabManager) *AddressBar 
 
 	window.RegisterButton(ab.goBtn, func() { ab.navigate(ab.input.GetValue()) })
 	ab.input.SetReturnCallback(func() { ab.navigate(ab.input.GetValue()) })
+	ab.input.SetChangeCallback(func(text string) { ab.buildSuggestions(text) })
 
 	manager.OnChanged(func() { ab.syncFromActiveTab() })
 	ab.syncFromActiveTab()
@@ -147,10 +148,6 @@ func (ab *AddressBar) buildSuggestions(query string) {
 
 // historyEntries returns all history entries.
 func (ab *AddressBar) historyEntries() []*HistoryEntry {
-	if ab.manager == nil {
-		return nil
-	}
-	// The shell owns the history manager; expose via a callback if set.
 	if ab.onHistory != nil {
 		return ab.onHistory()
 	}
@@ -164,13 +161,6 @@ func (ab *AddressBar) bookmarks() []*Bookmark {
 	}
 	return nil
 }
-
-// onHistory and onBookmarks are optional callbacks wired by the shell to
-// provide history and bookmark data for autocomplete.
-var (
-	onHistory func() []*HistoryEntry
-	onBookmarks func() []*Bookmark
-)
 
 // SetHistoryProvider sets the callback that supplies history entries for
 // autocomplete suggestions.
@@ -203,24 +193,13 @@ func (ab *AddressBar) showSuggestions() {
 			label.SetBackgroundColor("#e3f2fd")
 		}
 		frame.AttachWidget(label)
-
-		// Capture the suggestion for the click callback.
-		sugg := s
-		ab.window.RegisterButton(mustard.CreateButtonWidget("", nil), func() {
-			ab.selectSuggestion(sugg)
-		})
 	}
 
 	// Remove any existing overlay.
 	ab.hideSuggestions()
 
-	// Position the dropdown just below the address bar.
-	overlay := mustard.CreateOverlay("addressbar-suggestions", nil, image.Point{})
-	ab.suggestionOverlay = overlay
 	ab.suggestionFrame = frame
 	ab.suggestionsVisible = true
-
-	ab.window.AddOverlay(overlay)
 }
 
 // hideSuggestions removes the autocomplete dropdown.
@@ -228,10 +207,6 @@ func (ab *AddressBar) hideSuggestions() {
 	ab.suggestionsVisible = false
 	ab.suggestions = nil
 	ab.selectedSugg = 0
-	if ab.suggestionOverlay != nil {
-		ab.window.RemoveOverlay(ab.suggestionOverlay)
-		ab.suggestionOverlay = nil
-	}
 	ab.suggestionFrame = nil
 }
 

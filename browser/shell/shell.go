@@ -135,6 +135,8 @@ func (bs *BrowserShell) buildUI() {
 	navFrame.SetHeight(36)
 
 	bs.addressBar = NewAddressBar(bs.windowBase, bs.tabManager)
+	bs.addressBar.SetHistoryProvider(bs.historyManager.GetAllEntries)
+	bs.addressBar.SetBookmarkProvider(bs.bookmarkManager.GetAllBookmarks)
 	navFrame.AttachWidget(bs.addressBar.Frame)
 
 	bs.navigation = NewNavigationControls(bs.windowBase, bs.tabManager)

@@ -377,6 +377,7 @@ type InputWidget struct {
 	cursorPosition  int
 	cursorDirection bool
 	returnCallback  func()
+	changeCallback  func(string)
 }
 
 type ScrollBarWidget struct {
