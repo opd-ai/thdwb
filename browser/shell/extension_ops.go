@@ -2,8 +2,11 @@ package shell
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -737,11 +740,14 @@ func (eo *extensionOps) GetAllNotifications(extID string) ([]extensions.Notifica
 
 // downloads holds download items keyed by download ID.
 var downloads map[int]extensions.DownloadItem
+// downloadExtIDs maps download ID to extension ID.
+var downloadExtIDs map[int]string
 var downloadsMu sync.Mutex
 var nextDownloadID int
 
 func init() {
 	downloads = make(map[int]extensions.DownloadItem)
+	downloadExtIDs = make(map[int]string)
 	nextDownloadID = 0
 }
 
@@ -757,9 +763,7 @@ func newDownloadOps(bs *BrowserShell) *downloadOps {
 
 // Download starts a file download.
 func (do *downloadOps) Download(extID string, options extensions.DownloadOptions) (int, error) {
-	_ = extID
 	downloadsMu.Lock()
-	defer downloadsMu.Unlock()
 	nextDownloadID++
 	item := extensions.DownloadItem{
 		ID:         nextDownloadID,
@@ -769,40 +773,190 @@ func (do *downloadOps) Download(extID string, options extensions.DownloadOptions
 		StartTime:  float64(time.Now().UnixMilli()),
 	}
 	downloads[nextDownloadID] = item
+	downloadExtIDs[nextDownloadID] = extID
+	downloadsMu.Unlock()
+
+	// Fire onCreated event for the new download.
+	do.bs.extManager.FireDownloadEvent(extID, "onCreated", item)
+
+	// Perform the actual download in a goroutine so the API call returns
+	// immediately with the download ID.
+	go do.downloadFile(nextDownloadID, extID, options)
+
 	return nextDownloadID, nil
+}
+
+// downloadFile performs the actual HTTP download and tracks progress.
+func (do *downloadOps) downloadFile(downloadID int, extID string, options extensions.DownloadOptions) {
+	downloadsMu.Lock()
+	item, ok := downloads[downloadID]
+	downloadsMu.Unlock()
+	if !ok {
+		return
+	}
+
+	// Determine the download directory.
+	downloadDir := do.bs.settings.DownloadsDir
+	if downloadDir == "" {
+		downloadDir = filepath.Join(os.TempDir(), "thdwb-downloads")
+	}
+	if err := os.MkdirAll(downloadDir, 0o755); err != nil {
+		do.failDownload(downloadID, "failed to create download directory: "+err.Error())
+		return
+	}
+
+	// Determine the filename.
+	filename := options.Filename
+	if filename == "" {
+		u, err := url.Parse(options.URL)
+		if err == nil {
+			filename = filepath.Base(u.Path)
+		}
+		if filename == "" || filename == "/" {
+			filename = "download"
+		}
+	}
+	filePath := filepath.Join(downloadDir, filename)
+
+	// Perform the HTTP request.
+	req, err := http.NewRequest(http.MethodGet, options.URL, nil)
+	if err != nil {
+		do.failDownload(downloadID, "failed to create request: "+err.Error())
+		return
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		do.failDownload(downloadID, "failed to fetch URL: "+err.Error())
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		do.failDownload(downloadID, fmt.Sprintf("server returned HTTP %d", resp.StatusCode))
+		return
+	}
+
+	item.TotalBytes = resp.ContentLength
+	item.Mime = resp.Header.Get("Content-Type")
+
+	out, err := os.Create(filePath)
+	if err != nil {
+		do.failDownload(downloadID, "failed to create file: "+err.Error())
+		return
+	}
+	defer out.Close()
+
+	// Track progress as we write.
+	var written int64
+	buf := make([]byte, 32*1024)
+	for {
+		n, err := resp.Body.Read(buf)
+		if n > 0 {
+			if _, writeErr := out.Write(buf[:n]); writeErr != nil {
+				do.failDownload(downloadID, "failed to write file: "+writeErr.Error())
+				return
+			}
+			written += int64(n)
+			item.BytesReceived = written
+			item.Filename = filename
+			do.updateDownload(downloadID, item)
+		}
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			do.failDownload(downloadID, "read error: "+err.Error())
+			return
+		}
+	}
+
+	// Mark complete.
+	downloadsMu.Lock()
+	item, ok = downloads[downloadID]
+	if ok {
+		item.State = "complete"
+		item.EndTime = float64(time.Now().UnixMilli())
+		item.BytesReceived = written
+		downloads[downloadID] = item
+	}
+	downloadsMu.Unlock()
+
+	if ok {
+		do.bs.extManager.FireDownloadEvent(extID, "onChanged", item)
+	}
+}
+
+// failDownload marks a download as failed with the given error.
+func (do *downloadOps) failDownload(downloadID int, errMsg string) {
+	downloadsMu.Lock()
+	item, ok := downloads[downloadID]
+	if ok {
+		item.State = "interrupted"
+		item.Error = errMsg
+		item.EndTime = float64(time.Now().UnixMilli())
+		downloads[downloadID] = item
+	}
+	extID := downloadExtIDs[downloadID]
+	downloadsMu.Unlock()
+
+	if ok {
+		do.bs.extManager.FireDownloadEvent(extID, "onChanged", item)
+	}
+}
+
+// updateDownload updates a download item and fires onChanged event.
+func (do *downloadOps) updateDownload(downloadID int, item extensions.DownloadItem) {
+	downloadsMu.Lock()
+	downloads[downloadID] = item
+	downloadsMu.Unlock()
+	extID := downloadExtIDs[downloadID]
+	do.bs.extManager.FireDownloadEvent(extID, "onChanged", item)
 }
 
 // Cancel aborts a download.
 func (do *downloadOps) Cancel(downloadID int) error {
 	downloadsMu.Lock()
-	defer downloadsMu.Unlock()
 	if item, ok := downloads[downloadID]; ok {
 		item.State = "interrupted"
 		item.Error = "cancelled"
 		downloads[downloadID] = item
+		extID := downloadExtIDs[downloadID]
+		downloadsMu.Unlock()
+		do.bs.extManager.FireDownloadEvent(extID, "onChanged", item)
+		return nil
 	}
+	downloadsMu.Unlock()
 	return nil
 }
 
 // Pause pauses a download.
 func (do *downloadOps) Pause(downloadID int) error {
 	downloadsMu.Lock()
-	defer downloadsMu.Unlock()
 	if item, ok := downloads[downloadID]; ok {
 		item.Paused = true
 		downloads[downloadID] = item
+		extID := downloadExtIDs[downloadID]
+		downloadsMu.Unlock()
+		do.bs.extManager.FireDownloadEvent(extID, "onChanged", item)
+		return nil
 	}
+	downloadsMu.Unlock()
 	return nil
 }
 
 // Resume resumes a download.
 func (do *downloadOps) Resume(downloadID int) error {
 	downloadsMu.Lock()
-	defer downloadsMu.Unlock()
 	if item, ok := downloads[downloadID]; ok {
 		item.Paused = false
 		downloads[downloadID] = item
+		extID := downloadExtIDs[downloadID]
+		downloadsMu.Unlock()
+		do.bs.extManager.FireDownloadEvent(extID, "onChanged", item)
+		return nil
 	}
+	downloadsMu.Unlock()
 	return nil
 }
 
@@ -830,8 +984,17 @@ func (do *downloadOps) GetAll() ([]extensions.DownloadItem, error) {
 // Erase removes a download from history.
 func (do *downloadOps) Erase(downloadID int) error {
 	downloadsMu.Lock()
-	defer downloadsMu.Unlock()
-	delete(downloads, downloadID)
+	item, ok := downloads[downloadID]
+	extID := downloadExtIDs[downloadID]
+	if ok {
+		delete(downloads, downloadID)
+		delete(downloadExtIDs, downloadID)
+	}
+	downloadsMu.Unlock()
+
+	if ok {
+		do.bs.extManager.FireDownloadEvent(extID, "onErased", item)
+	}
 	return nil
 }
 

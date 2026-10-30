@@ -327,6 +327,8 @@ type ChromeAPI struct {
 	runtimeEventListeners map[string][]goja.Callable
 	// webRequestEventListeners holds listeners for webRequest events keyed by event name.
 	webRequestEventListeners map[string][]goja.Callable
+	// downloadEventListeners holds listeners for download events keyed by event name.
+	downloadEventListeners map[string][]goja.Callable
 }
 
 // NewChromeAPI creates a ChromeAPI binding for the given extension and VM.
@@ -337,13 +339,14 @@ func NewChromeAPI(ext *Extension, vm *goja.Runtime, router *MessageRouter) *Chro
 		router: router,
 		platform: PlatformInfo{
 			OS:           runtime.GOOS,
-			Arch:         runtime.GOARCH,
+			Arch:           runtime.GOARCH,
 			Platform:     runtime.GOOS + "/" + runtime.GOARCH,
 			BrowserVersion: "thdwb dev",
 		},
 		tabEventListeners:    make(map[string][]goja.Callable),
 		runtimeEventListeners: make(map[string][]goja.Callable),
 		webRequestEventListeners: make(map[string][]goja.Callable),
+		downloadEventListeners: make(map[string][]goja.Callable),
 	}
 }
 
@@ -1152,6 +1155,36 @@ func (c *ChromeAPI) FireWebRequestEvent(event string, details WebRequestDetails)
 			"initiator":    details.Initiator,
 			"tabId":        details.TabID,
 			"timestamp":    details.Timestamp,
+		}))
+	}
+}
+
+// FireDownloadEvent fires a chrome.downloads event to all registered
+// listeners for this extension. It is called by the shell when download
+// state changes (created, changed, erased).
+func (c *ChromeAPI) FireDownloadEvent(event string, item DownloadItem) {
+	c.mu.Lock()
+	listeners := make([]goja.Callable, len(c.downloadEventListeners[event]))
+	copy(listeners, c.downloadEventListeners[event])
+	c.mu.Unlock()
+
+	for _, cb := range listeners {
+		if event == "onErased" {
+			_, _ = cb(goja.Undefined(), c.vm.ToValue(item.ID))
+			continue
+		}
+		_, _ = cb(goja.Undefined(), c.vm.ToValue(map[string]interface{}{
+			"id":           item.ID,
+			"url":          item.URL,
+			"filename":     item.Filename,
+			"state":        item.State,
+			"totalBytes":   item.TotalBytes,
+			"bytesReceived": item.BytesReceived,
+			"mime":         item.Mime,
+			"startTime":    item.StartTime,
+			"endTime":      item.EndTime,
+			"paused":       item.Paused,
+			"error":        item.Error,
 		}))
 	}
 }
@@ -2764,6 +2797,48 @@ func (c *ChromeAPI) bindDownloads(vm *goja.Runtime, ext *Extension, ops Download
 		}
 		return goja.Undefined()
 	})
+
+	// chrome.downloads.onCreated event
+	onCreatedObj := vm.NewObject()
+	_ = onCreatedObj.Set("addListener", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) > 0 {
+			if cb, ok := goja.AssertFunction(call.Argument(0)); ok {
+				c.mu.Lock()
+				c.downloadEventListeners["onCreated"] = append(c.downloadEventListeners["onCreated"], cb)
+				c.mu.Unlock()
+			}
+		}
+		return goja.Undefined()
+	})
+	_ = dlObj.Set("onCreated", onCreatedObj)
+
+	// chrome.downloads.onChanged event
+	onChangedObj := vm.NewObject()
+	_ = onChangedObj.Set("addListener", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) > 0 {
+			if cb, ok := goja.AssertFunction(call.Argument(0)); ok {
+				c.mu.Lock()
+				c.downloadEventListeners["onChanged"] = append(c.downloadEventListeners["onChanged"], cb)
+				c.mu.Unlock()
+			}
+		}
+		return goja.Undefined()
+	})
+	_ = dlObj.Set("onChanged", onChangedObj)
+
+	// chrome.downloads.onErased event
+	onErasedObj := vm.NewObject()
+	_ = onErasedObj.Set("addListener", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) > 0 {
+			if cb, ok := goja.AssertFunction(call.Argument(0)); ok {
+				c.mu.Lock()
+				c.downloadEventListeners["onErased"] = append(c.downloadEventListeners["onErased"], cb)
+				c.mu.Unlock()
+			}
+		}
+		return goja.Undefined()
+	})
+	_ = dlObj.Set("onErased", onErasedObj)
 
 	_ = chromeObj.Set("downloads", dlObj)
 	return nil

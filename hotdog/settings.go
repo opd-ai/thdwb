@@ -15,6 +15,8 @@ type Settings struct {
 	HiDPI bool `json:"hiDPI"`
 
 	ExperimentalLayout bool `json:"experimentalLayout"` // spec-ish compliant layout engine
+
+	DownloadsDir string `json:"downloadsDir"`
 }
 
 var defaultSettings Settings = Settings{
@@ -26,6 +28,8 @@ var defaultSettings Settings = Settings{
 	HiDPI: true,
 
 	ExperimentalLayout: false,
+
+	DownloadsDir: "",
 }
 
 func LoadSettings(path string) *Settings {

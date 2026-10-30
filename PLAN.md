@@ -223,8 +223,8 @@ Implement powerful APIs for network interception, file handling, and user notifi
 - [x] WebRequest listeners observe network activity
 - [x] Request details include all required fields
 - [x] Notifications display and dismiss correctly
-- [ ] Downloads API integrates with OS download manager
-- [ ] Download progress updates in real-time
+- [x] Downloads API integrates with OS download manager
+- [x] Download progress updates in real-time
 - [x] Cookies API returns container-filtered results
 - [x] No request modification side-effects
 

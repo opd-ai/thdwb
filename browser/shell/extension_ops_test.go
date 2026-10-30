@@ -418,3 +418,54 @@ func TestExtensionOpsDownloadOperations(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, all, 0)
 }
+
+func TestExtensionOpsDownloadProgressEvents(t *testing.T) {
+	bs := newTestShell()
+	dlOps := newDownloadOps(bs)
+
+	// Start a download.
+	id, err := dlOps.Download("ext1", extensions.DownloadOptions{
+		URL:      "https://example.com/file.zip",
+		Filename: "file.zip",
+	})
+	require.NoError(t, err)
+
+	// Verify the download item exists and is in progress.
+	item, err := dlOps.Get(id)
+	require.NoError(t, err)
+	require.NotNil(t, item)
+	require.Equal(t, "in_progress", item.State)
+	require.Greater(t, item.StartTime, float64(0))
+
+	// Cancel should fire onChanged and mark interrupted.
+	require.NoError(t, dlOps.Cancel(id))
+	item, err = dlOps.Get(id)
+	require.NoError(t, err)
+	require.Equal(t, "interrupted", item.State)
+	require.Equal(t, "cancelled", item.Error)
+
+	// Erase should remove it.
+	require.NoError(t, dlOps.Erase(id))
+	all, err := dlOps.GetAll()
+	require.NoError(t, err)
+	require.Len(t, all, 0)
+}
+
+func TestExtensionOpsDownloadUnknownID(t *testing.T) {
+	bs := newTestShell()
+	dlOps := newDownloadOps(bs)
+
+	// Operations on unknown download ID should be no-ops.
+	require.NoError(t, dlOps.Cancel(999))
+	require.NoError(t, dlOps.Pause(999))
+	require.NoError(t, dlOps.Resume(999))
+	require.NoError(t, dlOps.Erase(999))
+
+	item, err := dlOps.Get(999)
+	require.NoError(t, err)
+	require.Nil(t, item)
+
+	all, err := dlOps.GetAll()
+	require.NoError(t, err)
+	require.Len(t, all, 0)
+}

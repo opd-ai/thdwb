@@ -414,6 +414,18 @@ func (m *Manager) FireWebRequestEvent(extID, event string, details WebRequestDet
 	api.FireWebRequestEvent(event, details)
 }
 
+// FireDownloadEvent fires a chrome.downloads event to the extension's
+// registered JS listeners. Called by the shell when download state changes.
+func (m *Manager) FireDownloadEvent(extID, event string, item DownloadItem) {
+	m.mu.Lock()
+	api, exists := m.chromeAPIs[extID]
+	m.mu.Unlock()
+	if !exists || api == nil {
+		return
+	}
+	api.FireDownloadEvent(event, item)
+}
+
 // onExtensionStart initializes the Chrome API bindings and background VM
 // for an extension when it is enabled.
 func (m *Manager) onExtensionStart(ext *Extension) error {

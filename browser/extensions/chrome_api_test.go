@@ -1252,6 +1252,122 @@ func TestChromeAPIDownloadsGetAll(t *testing.T) {
 	require.Equal(t, 2, len(all.Keys()))
 }
 
+func TestChromeAPIDownloadsOnCreated(t *testing.T) {
+	m := &Manifest{ManifestVersion: ManifestV3, Name: "Test", Version: "1.0"}
+	ext := NewExtension("ext1", "/p", m)
+	dlOps := &mockDownloadOps{}
+	vm := goja.New()
+	api := NewChromeAPI(ext, vm, NewMessageRouter())
+	api.SetDownloadOperations(dlOps)
+
+	require.NoError(t, api.Bind())
+
+	// Register onCreated listener.
+	runJS(t, vm, `
+		chrome.downloads.onCreated.addListener(function(item) {
+			__createdDownload = item;
+		});
+	`)
+
+	// Trigger download via JS.
+	runJS(t, vm, `
+		chrome.downloads.download({url: "https://example.com/file.zip", filename: "file.zip"});
+	`)
+
+	// Fire the event manually (as the shell would).
+	item := dlOps.downloads[1]
+	api.FireDownloadEvent("onCreated", item)
+
+	createdVal := getGlobal(t, vm, "__createdDownload")
+	require.NotNil(t, createdVal)
+	require.NotEqual(t, goja.Undefined(), createdVal)
+	created := createdVal.ToObject(vm)
+	require.NotNil(t, created)
+	require.Equal(t, "https://example.com/file.zip", created.Get("url").String())
+	require.Equal(t, "file.zip", created.Get("filename").String())
+	require.Equal(t, "in_progress", created.Get("state").String())
+}
+
+func TestChromeAPIDownloadsOnChanged(t *testing.T) {
+	m := &Manifest{ManifestVersion: ManifestV3, Name: "Test", Version: "1.0"}
+	ext := NewExtension("ext1", "/p", m)
+	dlOps := &mockDownloadOps{
+		downloads: map[int]DownloadItem{
+			1: {ID: 1, URL: "https://example.com/file.zip", State: "in_progress"},
+		},
+		nextID: 1,
+	}
+	vm := goja.New()
+	api := NewChromeAPI(ext, vm, NewMessageRouter())
+	api.SetDownloadOperations(dlOps)
+
+	require.NoError(t, api.Bind())
+
+	// Register onChanged listener.
+	runJS(t, vm, `
+		chrome.downloads.onChanged.addListener(function(delta) {
+			__changedDownload = delta;
+		});
+	`)
+
+	// Cancel the download.
+	runJS(t, vm, `
+		chrome.downloads.cancel(1);
+	`)
+
+	// Fire the event manually (as the shell would).
+	item := dlOps.downloads[1]
+	api.FireDownloadEvent("onChanged", item)
+
+	changedVal := getGlobal(t, vm, "__changedDownload")
+	require.NotNil(t, changedVal)
+	require.NotEqual(t, goja.Undefined(), changedVal)
+	changed := changedVal.ToObject(vm)
+	require.NotNil(t, changed)
+	require.Equal(t, float64(1), changed.Get("id").ToFloat())
+	require.Equal(t, "interrupted", changed.Get("state").String())
+	require.Equal(t, "cancelled", changed.Get("error").String())
+}
+
+func TestChromeAPIDownloadsOnErased(t *testing.T) {
+	m := &Manifest{ManifestVersion: ManifestV3, Name: "Test", Version: "1.0"}
+	ext := NewExtension("ext1", "/p", m)
+	dlOps := &mockDownloadOps{
+		downloads: map[int]DownloadItem{
+			1: {ID: 1, URL: "https://example.com/file.zip", State: "complete"},
+		},
+		nextID: 1,
+	}
+	vm := goja.New()
+	api := NewChromeAPI(ext, vm, NewMessageRouter())
+	api.SetDownloadOperations(dlOps)
+
+	require.NoError(t, api.Bind())
+
+	// Register onErased listener.
+	runJS(t, vm, `
+		chrome.downloads.onErased.addListener(function(downloadId) {
+			__erasedDownloadId = downloadId;
+		});
+	`)
+
+	// Capture the item before erasing (the shell would do this).
+	item := dlOps.downloads[1]
+
+	// Erase the download.
+	runJS(t, vm, `
+		chrome.downloads.erase(1);
+	`)
+
+	// Fire the event manually (as the shell would).
+	api.FireDownloadEvent("onErased", item)
+
+	erasedVal := getGlobal(t, vm, "__erasedDownloadId")
+	require.NotNil(t, erasedVal)
+	require.NotEqual(t, goja.Undefined(), erasedVal)
+	require.Equal(t, int64(1), erasedVal.ToInteger())
+}
+
 func TestChromeAPICookiesGetAllCookieStores(t *testing.T) {
 	m := &Manifest{ManifestVersion: ManifestV3, Name: "Test", Version: "1.0"}
 	ext := NewExtension("ext1", "/p", m)
