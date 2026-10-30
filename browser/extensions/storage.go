@@ -25,6 +25,11 @@ type StorageItem struct {
 	Value string `json:"value"`
 }
 
+// StorageSchemaVersion is the current storage format version.
+// Increment this when the storage format changes and add a migration
+// function in migrateStorage.
+const StorageSchemaVersion = 1
+
 // StoragePartition provides per-extension, per-area key-value storage.
 // Each extension gets its own isolated storage namespace.
 type StoragePartition struct {
@@ -33,23 +38,52 @@ type StoragePartition struct {
 	path    string
 	areas   map[StorageArea]map[string]string
 	dirty   bool
+	schema  int // schema version of the persisted data
 }
 
 // NewStoragePartition creates a storage partition for the given extension.
 // If path is empty, storage is in-memory only.
 func NewStoragePartition(extID, path string) *StoragePartition {
 	sp := &StoragePartition{
-		extID: extID,
-		path:  path,
-		areas: make(map[StorageArea]map[string]string),
+		extID:  extID,
+		path:   path,
+		areas:  make(map[StorageArea]map[string]string),
+		schema: StorageSchemaVersion,
 	}
 	sp.areas[StorageLocal] = make(map[string]string)
 	sp.areas[StorageSync] = make(map[string]string)
 	sp.areas[StorageManaged] = make(map[string]string)
 	if path != "" {
 		_ = sp.load()
+		// Migrate to the current schema version if needed.
+		_ = sp.MigrateStorage()
 	}
 	return sp
+}
+
+// SchemaVersion returns the storage schema version of this partition.
+func (sp *StoragePartition) SchemaVersion() int {
+	sp.mu.Lock()
+	defer sp.mu.Unlock()
+	return sp.schema
+}
+
+// MigrateStorage migrates the storage partition to the current schema
+// version. It applies any pending migration functions in order.
+func (sp *StoragePartition) MigrateStorage() error {
+	sp.mu.Lock()
+	defer sp.mu.Unlock()
+	return migrateStorage(sp)
+}
+
+// migrateStorage applies storage migrations from the current schema version
+// to StorageSchemaVersion. It is called when loading existing storage data.
+func migrateStorage(sp *StoragePartition) error {
+	// No migrations needed yet; schema starts at version 1.
+	// Future migrations should be added here as versioned steps:
+	// if sp.schema < 2 { ... migrate v1 -> v2 ... }
+	sp.schema = StorageSchemaVersion
+	return nil
 }
 
 // load reads persisted storage from disk.
@@ -61,17 +95,21 @@ func (sp *StoragePartition) load() error {
 		}
 		return err
 	}
-	var raw map[StorageArea]map[string]string
+	var raw storageSnapshot
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
 	}
-	for area, items := range raw {
+	for area, items := range raw.Areas {
 		if sp.areas[area] == nil {
 			sp.areas[area] = make(map[string]string)
 		}
 		for k, v := range items {
 			sp.areas[area][k] = v
 		}
+	}
+	sp.schema = raw.Schema
+	if sp.schema == 0 {
+		sp.schema = StorageSchemaVersion
 	}
 	return nil
 }
@@ -84,7 +122,11 @@ func (sp *StoragePartition) persist() error {
 	if err := os.MkdirAll(filepath.Dir(sp.path), 0o755); err != nil {
 		return err
 	}
-	data, err := json.MarshalIndent(sp.areas, "", "  ")
+	snap := storageSnapshot{
+		Schema: sp.schema,
+		Areas:  sp.areas,
+	}
+	data, err := json.MarshalIndent(snap, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -198,5 +240,6 @@ func (sp *StoragePartition) ExtensionID() string {
 
 // Format: storage area -> key -> value
 type storageSnapshot struct {
-	Areas map[StorageArea]map[string]string `json:"areas"`
+	Schema  int                              `json:"schema"`
+	Areas   map[StorageArea]map[string]string `json:"areas"`
 }

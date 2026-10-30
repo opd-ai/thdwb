@@ -143,6 +143,10 @@ func (i *Installer) Install(req *InstallRequest) (*InstallResult, error) {
 	if err := pkg.Validate(); err != nil {
 		return nil, fmt.Errorf("installer: validate package: %w", err)
 	}
+	// Validate signature if present.
+	if err := pkg.ValidateSignature(); err != nil {
+		return nil, fmt.Errorf("installer: validate signature: %w", err)
+	}
 
 	// Determine the install directory.
 	installDir := req.DestDir

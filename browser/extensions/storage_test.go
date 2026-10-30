@@ -88,3 +88,31 @@ func TestStoragePartitionExtensionID(t *testing.T) {
 	sp := NewStoragePartition("my-ext", "")
 	require.Equal(t, "my-ext", sp.ExtensionID())
 }
+
+func TestStorageSchemaVersion(t *testing.T) {
+	sp := NewStoragePartition("ext1", "")
+	require.Equal(t, StorageSchemaVersion, sp.SchemaVersion())
+}
+
+func TestStoragePersistenceIncludesSchema(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ext1.json")
+	sp := NewStoragePartition("ext1", path)
+	require.NoError(t, sp.Set(StorageLocal, "k", "v"))
+
+	// Reload from disk and verify schema version is preserved.
+	sp2 := NewStoragePartition("ext1", path)
+	require.Equal(t, StorageSchemaVersion, sp2.SchemaVersion())
+	value, ok := sp2.Get(StorageLocal, "k")
+	require.True(t, ok)
+	require.Equal(t, "v", value)
+}
+
+func TestStorageMigrateStorage(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ext1.json")
+	sp := NewStoragePartition("ext1", path)
+	require.NoError(t, sp.Set(StorageLocal, "k", "v"))
+
+	// Migration should be a no-op at current schema.
+	require.NoError(t, sp.MigrateStorage())
+	require.Equal(t, StorageSchemaVersion, sp.SchemaVersion())
+}

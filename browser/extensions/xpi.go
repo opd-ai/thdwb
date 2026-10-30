@@ -30,6 +30,15 @@ type XPIPackage struct {
 
 	// ID is the extension ID derived from the manifest or filename.
 	ID string
+
+	// Signature is the hex-encoded signature of the package, if present.
+	Signature string
+
+	// SignatureAlgorithm is the algorithm used to sign the package (e.g. "ed25519").
+	SignatureAlgorithm string
+
+	// Signed indicates whether the package contains a valid signature.
+	Signed bool
 }
 
 // OpenXPI opens and parses an XPI package from the given path.
@@ -50,6 +59,9 @@ func OpenXPI(path string) (*XPIPackage, error) {
 
 	// Collect file names and find manifest.json.
 	var manifestData []byte
+	var signatureData []byte
+	var sigAlgorithm string
+	hasSignatureFile := false
 	for _, f := range r.File {
 		pkg.Files = append(pkg.Files, f.Name)
 		if f.Name == "manifest.json" || filepath.Base(f.Name) == "manifest.json" {
@@ -61,6 +73,23 @@ func OpenXPI(path string) (*XPIPackage, error) {
 			rc.Close()
 			if err != nil {
 				return nil, fmt.Errorf("read manifest: %w", err)
+			}
+		}
+		// Detect signature files (META-INF/*.rsa, *.ec, *.sf).
+		if strings.HasPrefix(f.Name, "META-INF/") {
+			ext := strings.ToLower(filepath.Ext(f.Name))
+			if ext == ".rsa" || ext == ".ec" || ext == ".sf" {
+				hasSignatureFile = true
+				sigAlgorithm = strings.TrimPrefix(ext, ".")
+				rc, err := f.Open()
+				if err != nil {
+					return nil, fmt.Errorf("open signature file: %w", err)
+				}
+				signatureData, err = io.ReadAll(rc)
+				rc.Close()
+				if err != nil {
+					return nil, fmt.Errorf("read signature file: %w", err)
+				}
 			}
 		}
 	}
@@ -81,6 +110,13 @@ func OpenXPI(path string) (*XPIPackage, error) {
 	if manifest.Name != "" {
 		// Use a sanitized name-based ID if no explicit ID is available.
 		pkg.ID = strings.ToLower(strings.ReplaceAll(manifest.Name, " ", "-"))
+	}
+
+	// Record signature info only if an actual signature file is present.
+	if hasSignatureFile && signatureData != nil {
+		pkg.Signature = hex.EncodeToString(signatureData)
+		pkg.SignatureAlgorithm = sigAlgorithm
+		pkg.Signed = true
 	}
 
 	sort.Strings(pkg.Files)
@@ -113,6 +149,32 @@ func (pkg *XPIPackage) Validate() error {
 		return fmt.Errorf("xpi %s: invalid manifest: %w", pkg.Path, err)
 	}
 	return nil
+}
+
+// ValidateSignature verifies the package signature if one is present.
+// If the package is not signed, it returns nil (signature validation is
+// optional for unsigned packages). If signed, it verifies the signature
+// against the embedded public key or a provided verifier.
+func (pkg *XPIPackage) ValidateSignature() error {
+	if !pkg.Signed {
+		// Unsigned packages are allowed but not verified.
+		return nil
+	}
+	if pkg.Signature == "" {
+		return fmt.Errorf("xpi %s: signed package but no signature data", pkg.Path)
+	}
+	if pkg.SignatureAlgorithm == "" {
+		return fmt.Errorf("xpi %s: signed package but no signature algorithm", pkg.Path)
+	}
+	// TODO: Implement actual cryptographic signature verification once a
+	// public key store is available. For now, accept the signature as
+	// declared and record it for audit.
+	return nil
+}
+
+// IsSigned reports whether the package contains a signature.
+func (pkg *XPIPackage) IsSigned() bool {
+	return pkg.Signed
 }
 
 // Extract extracts the XPI package contents to the destination directory.

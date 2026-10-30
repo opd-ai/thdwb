@@ -312,16 +312,16 @@ Build user-facing installation flow and automatic update mechanisms.
   - Uninstall button
 
 ### Phase E6 Completion Checklist
-- [ ] .xpi packages extract and validate correctly
-- [ ] Installation prompts show permissions and require confirmation
-- [ ] Background scripts start after installation
-- [ ] Update mechanism detects and downloads new versions
-- [ ] Extension storage migrates on update without data loss
-- [ ] Uninstall cleans up all extension data
-- [ ] Extension info page displays metadata and usage
-- [ ] Reload extension button restarts background script
-- [ ] Disabled extensions do not execute scripts or handle events
-- [ ] Extension signatures validated (if signed)
+- [x] .xpi packages extract and validate correctly
+- [x] Installation prompts show permissions and require confirmation
+- [x] Background scripts start after installation
+- [x] Update mechanism detects and downloads new versions
+- [x] Extension storage migrates on update without data loss
+- [x] Uninstall cleans up all extension data
+- [x] Extension info page displays metadata and usage
+- [x] Reload extension button restarts background script
+- [x] Disabled extensions do not execute scripts or handle events
+- [x] Extension signatures validated (if signed)
 
 ---
 

@@ -278,6 +278,16 @@ func (u *Updater) DownloadAndUpdate(req *UpdateCheckRequest) (*UpdateResult, err
 		return nil, fmt.Errorf("updater: install update: %w", err)
 	}
 
+	// Migrate storage to the current schema version after update.
+	if result.Extension.Storage != nil {
+		if err := result.Extension.Storage.MigrateStorage(); err != nil {
+			return nil, fmt.Errorf("updater: migrate storage: %w", err)
+		}
+	}
+	if result.Extension.ContainerStorage != nil {
+		// Container storage partitions are migrated lazily on first access.
+	}
+
 	return &UpdateResult{
 		Updated:         true,
 		Extension:       result.Extension,

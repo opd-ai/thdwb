@@ -32,8 +32,10 @@ type extensionRow struct {
 	version *mustard.LabelWidget
 	desc    *mustard.LabelWidget
 	enabled *mustard.ButtonWidget
+	reload  *mustard.ButtonWidget
 	uninstall *mustard.ButtonWidget
 	perms   *mustard.LabelWidget
+	storage *mustard.LabelWidget
 }
 
 // NewExtensionSettingsPage creates an extension settings page bound to the
@@ -143,20 +145,44 @@ func (p *ExtensionSettingsPage) addExtensionRow(ext *extensions.Extension) {
 	}
 	row.frame.AttachWidget(row.enabled)
 
+	// Reload button (restarts background script).
+	row.reload = mustard.CreateButtonWidget("Reload", nil)
+	row.reload.SetWidth(60)
+	row.reload.SetHeight(24)
+	row.reload.SetFontSize(11)
+	extID2 := ext.ID
+	if p.window != nil {
+		p.window.RegisterButton(row.reload, func() {
+			if err := p.extMgr.Reload(extID2); err != nil {
+				// Ignore errors; the UI will reflect current state on rebuild.
+				_ = err
+			}
+			p.Rebuild()
+		})
+	}
+	row.frame.AttachWidget(row.reload)
+
+	// Storage usage.
+	storageSize := dirSize(ext.Path)
+	row.storage = mustard.CreateLabelWidget(formatBytes(storageSize))
+	row.storage.SetFontSize(11)
+	row.storage.SetFontColor("#999999")
+	row.frame.AttachWidget(row.storage)
+
 	// Uninstall button.
 	row.uninstall = mustard.CreateButtonWidget("Remove", nil)
 	row.uninstall.SetWidth(70)
 	row.uninstall.SetHeight(24)
 	row.uninstall.SetFontSize(11)
 	row.uninstall.SetFontColor("#d32f2f")
-	extID2 := ext.ID
+	extID3 := ext.ID
 	if p.window != nil {
 		p.window.RegisterButton(row.uninstall, func() {
-			if err := p.extMgr.Uninstall(extID2); err != nil {
+			if err := p.extMgr.Uninstall(extID3); err != nil {
 				_ = err
 			}
 			if p.onUninstall != nil {
-				p.onUninstall(extID2)
+				p.onUninstall(extID3)
 			}
 			p.Rebuild()
 		})
@@ -222,4 +248,19 @@ func dirSize(path string) int64 {
 		return nil
 	})
 	return size
+}
+
+// formatBytes formats a byte count into a human-readable string.
+func formatBytes(b int64) string {
+	const unit = 1024
+	if b < unit {
+		return fmt.Sprintf("%d B", b)
+	}
+	div, exp := int64(unit), 0
+	for n := b / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	prefix := "KMGTPE"[exp]
+	return fmt.Sprintf("%.1f %ciB", float64(b)/float64(div), prefix)
 }
