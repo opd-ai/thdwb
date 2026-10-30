@@ -134,7 +134,7 @@ Implement Firefox's container API for first-class container/origin isolation.
 - [x] localStorage partitioned by container + origin
 - [x] sessionStorage partitioned by container + origin
 - [x] Switching tabs shows container indicator
-- [ ] Moving tab to different container transfers cookies/storage
+- [x] Moving tab to different container transfers cookies/storage
 - [x] No cross-container data leakage in test suite
 - [x] Custom containers persist across sessions
 
