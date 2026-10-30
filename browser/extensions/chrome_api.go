@@ -325,6 +325,8 @@ type ChromeAPI struct {
 	tabEventListeners map[string][]goja.Callable
 	// runtimeEventListeners holds listeners for runtime events keyed by event name.
 	runtimeEventListeners map[string][]goja.Callable
+	// webRequestEventListeners holds listeners for webRequest events keyed by event name.
+	webRequestEventListeners map[string][]goja.Callable
 }
 
 // NewChromeAPI creates a ChromeAPI binding for the given extension and VM.
@@ -341,6 +343,7 @@ func NewChromeAPI(ext *Extension, vm *goja.Runtime, router *MessageRouter) *Chro
 		},
 		tabEventListeners:    make(map[string][]goja.Callable),
 		runtimeEventListeners: make(map[string][]goja.Callable),
+		webRequestEventListeners: make(map[string][]goja.Callable),
 	}
 }
 
@@ -1124,6 +1127,31 @@ func (c *ChromeAPI) FireTabUpdated(tabID int, changes map[string]interface{}) {
 			"tabId":      tabID,
 			"changes":    changes,
 			"status":     "complete",
+		}))
+	}
+}
+
+// FireWebRequestEvent fires a chrome.webRequest event to all registered
+// listeners for this extension. It is called by the shell when sauce
+// notifies WebRequest observers of network activity.
+func (c *ChromeAPI) FireWebRequestEvent(event string, details WebRequestDetails) {
+	c.mu.Lock()
+	listeners := make([]goja.Callable, len(c.webRequestEventListeners[event]))
+	copy(listeners, c.webRequestEventListeners[event])
+	c.mu.Unlock()
+
+	for _, cb := range listeners {
+		_, _ = cb(goja.Undefined(), c.vm.ToValue(map[string]interface{}{
+			"requestId":    details.RequestID,
+			"url":          details.URL,
+			"method":       details.Method,
+			"headers":      details.Headers,
+			"statusCode":   details.StatusCode,
+			"statusLine":   details.StatusLine,
+			"responseHeaders": details.ResponseHeaders,
+			"initiator":    details.Initiator,
+			"tabId":        details.TabID,
+			"timestamp":    details.Timestamp,
 		}))
 	}
 }
@@ -2250,7 +2278,9 @@ func (c *ChromeAPI) bindWebRequest(vm *goja.Runtime, ext *Extension, ops WebRequ
 		if err := ops.AddListener(ext.ID, "onBeforeRequest", wrDetails); err != nil {
 			return goja.Undefined()
 		}
-		_ = callback
+		c.mu.Lock()
+		c.webRequestEventListeners["onBeforeRequest"] = append(c.webRequestEventListeners["onBeforeRequest"], callback)
+		c.mu.Unlock()
 		return goja.Undefined()
 	})
 	_ = onBeforeRequest.Set("removeListener", func(call goja.FunctionCall) goja.Value {
@@ -2261,6 +2291,9 @@ func (c *ChromeAPI) bindWebRequest(vm *goja.Runtime, ext *Extension, ops WebRequ
 		if err := ops.RemoveListener(ext.ID, "onBeforeRequest"); err != nil {
 			return goja.Undefined()
 		}
+		c.mu.Lock()
+		c.webRequestEventListeners["onBeforeRequest"] = nil
+		c.mu.Unlock()
 		return goja.Undefined()
 	})
 	_ = webRequestObj.Set("onBeforeRequest", onBeforeRequest)
@@ -2286,7 +2319,9 @@ func (c *ChromeAPI) bindWebRequest(vm *goja.Runtime, ext *Extension, ops WebRequ
 		if err := ops.AddListener(ext.ID, "onBeforeSendHeaders", wrDetails); err != nil {
 			return goja.Undefined()
 		}
-		_ = callback
+		c.mu.Lock()
+		c.webRequestEventListeners["onBeforeSendHeaders"] = append(c.webRequestEventListeners["onBeforeSendHeaders"], callback)
+		c.mu.Unlock()
 		return goja.Undefined()
 	})
 	_ = onBeforeSendHeaders.Set("removeListener", func(call goja.FunctionCall) goja.Value {
@@ -2297,6 +2332,9 @@ func (c *ChromeAPI) bindWebRequest(vm *goja.Runtime, ext *Extension, ops WebRequ
 		if err := ops.RemoveListener(ext.ID, "onBeforeSendHeaders"); err != nil {
 			return goja.Undefined()
 		}
+		c.mu.Lock()
+		c.webRequestEventListeners["onBeforeSendHeaders"] = nil
+		c.mu.Unlock()
 		return goja.Undefined()
 	})
 	_ = webRequestObj.Set("onBeforeSendHeaders", onBeforeSendHeaders)
@@ -2322,7 +2360,9 @@ func (c *ChromeAPI) bindWebRequest(vm *goja.Runtime, ext *Extension, ops WebRequ
 		if err := ops.AddListener(ext.ID, "onHeadersReceived", wrDetails); err != nil {
 			return goja.Undefined()
 		}
-		_ = callback
+		c.mu.Lock()
+		c.webRequestEventListeners["onHeadersReceived"] = append(c.webRequestEventListeners["onHeadersReceived"], callback)
+		c.mu.Unlock()
 		return goja.Undefined()
 	})
 	_ = onHeadersReceived.Set("removeListener", func(call goja.FunctionCall) goja.Value {
@@ -2333,6 +2373,9 @@ func (c *ChromeAPI) bindWebRequest(vm *goja.Runtime, ext *Extension, ops WebRequ
 		if err := ops.RemoveListener(ext.ID, "onHeadersReceived"); err != nil {
 			return goja.Undefined()
 		}
+		c.mu.Lock()
+		c.webRequestEventListeners["onHeadersReceived"] = nil
+		c.mu.Unlock()
 		return goja.Undefined()
 	})
 	_ = webRequestObj.Set("onHeadersReceived", onHeadersReceived)
@@ -2358,7 +2401,9 @@ func (c *ChromeAPI) bindWebRequest(vm *goja.Runtime, ext *Extension, ops WebRequ
 		if err := ops.AddListener(ext.ID, "onCompleted", wrDetails); err != nil {
 			return goja.Undefined()
 		}
-		_ = callback
+		c.mu.Lock()
+		c.webRequestEventListeners["onCompleted"] = append(c.webRequestEventListeners["onCompleted"], callback)
+		c.mu.Unlock()
 		return goja.Undefined()
 	})
 	_ = onCompleted.Set("removeListener", func(call goja.FunctionCall) goja.Value {
@@ -2369,6 +2414,9 @@ func (c *ChromeAPI) bindWebRequest(vm *goja.Runtime, ext *Extension, ops WebRequ
 		if err := ops.RemoveListener(ext.ID, "onCompleted"); err != nil {
 			return goja.Undefined()
 		}
+		c.mu.Lock()
+		c.webRequestEventListeners["onCompleted"] = nil
+		c.mu.Unlock()
 		return goja.Undefined()
 	})
 	_ = webRequestObj.Set("onCompleted", onCompleted)
@@ -2394,7 +2442,9 @@ func (c *ChromeAPI) bindWebRequest(vm *goja.Runtime, ext *Extension, ops WebRequ
 		if err := ops.AddListener(ext.ID, "onErrorOccurred", wrDetails); err != nil {
 			return goja.Undefined()
 		}
-		_ = callback
+		c.mu.Lock()
+		c.webRequestEventListeners["onErrorOccurred"] = append(c.webRequestEventListeners["onErrorOccurred"], callback)
+		c.mu.Unlock()
 		return goja.Undefined()
 	})
 	_ = onErrorOccurred.Set("removeListener", func(call goja.FunctionCall) goja.Value {
@@ -2405,6 +2455,9 @@ func (c *ChromeAPI) bindWebRequest(vm *goja.Runtime, ext *Extension, ops WebRequ
 		if err := ops.RemoveListener(ext.ID, "onErrorOccurred"); err != nil {
 			return goja.Undefined()
 		}
+		c.mu.Lock()
+		c.webRequestEventListeners["onErrorOccurred"] = nil
+		c.mu.Unlock()
 		return goja.Undefined()
 	})
 	_ = webRequestObj.Set("onErrorOccurred", onErrorOccurred)
