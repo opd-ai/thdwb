@@ -69,7 +69,8 @@ func (r *MessageRouter) RegisterHandler(extID string, handler MessageHandler) {
 }
 
 // Route sends a message through the router, validating the sender and
-// delivering to the appropriate recipients.
+// delivering to the appropriate recipients. Cross-extension messaging is
+// blocked: messages can only be delivered within the same extension.
 func (r *MessageRouter) Route(msg Message) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -98,27 +99,35 @@ func (r *MessageRouter) Route(msg Message) error {
 
 	r.routes = append(r.routes, record)
 
-	// Deliver to handlers registered for the target extension.
+	// Cross-extension messaging is blocked: a message can only be delivered
+	// to handlers registered for the sender's own extension. When Target is
+	// empty (broadcast from chrome.runtime.sendMessage), deliver only to the
+	// sender's extension handlers. When Target is set and differs from Sender,
+	// reject the message as cross-extension.
 	target := msg.Target
 	if target == "" {
-		// Broadcast to all handlers.
-		for extID, handlers := range r.handlers {
-			if extID == msg.Sender {
-				continue // don't send back to sender
-			}
-			for _, h := range handlers {
-				if err := h(msg); err != nil {
-					return fmt.Errorf("deliver to %s: %w", extID, err)
-				}
+		// Broadcast: deliver only to handlers of the sender's extension.
+		handlers, ok := r.handlers[msg.Sender]
+		if !ok {
+			return nil // no handlers for this extension; nothing to deliver
+		}
+		for _, h := range handlers {
+			if err := h(msg); err != nil {
+				return fmt.Errorf("deliver to %s: %w", msg.Sender, err)
 			}
 		}
 		return nil
 	}
 
-	// Deliver to handlers for the specific target.
+	if target != msg.Sender {
+		return fmt.Errorf("cross-extension messaging blocked: sender %q cannot target %q", msg.Sender, target)
+	}
+
+	// Deliver to handlers for the specific target (same extension).
+	// If no handlers are registered, silently succeed (nothing to deliver).
 	handlers, ok := r.handlers[target]
 	if !ok {
-		return fmt.Errorf("no handlers registered for extension %s", target)
+		return nil
 	}
 	for _, h := range handlers {
 		if err := h(msg); err != nil {

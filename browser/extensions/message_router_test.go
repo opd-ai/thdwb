@@ -22,8 +22,9 @@ func TestMessageRouterRegisterAndRoute(t *testing.T) {
 		return nil
 	})
 
+	// Same-extension delivery works.
 	err := r.Route(Message{
-		Sender:  "ext2",
+		Sender:  "ext1",
 		Target:  "ext1",
 		Type:    "background",
 		Payload: map[string]interface{}{"hello": "world"},
@@ -31,9 +32,20 @@ func TestMessageRouterRegisterAndRoute(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Len(t, received, 1)
-	require.Equal(t, "ext2", received[0].Sender)
+	require.Equal(t, "ext1", received[0].Sender)
 	require.Equal(t, "ext1", received[0].Target)
 	require.Equal(t, "world", received[0].Payload.(map[string]interface{})["hello"])
+
+	// Cross-extension delivery is blocked.
+	err = r.Route(Message{
+		Sender:  "ext2",
+		Target:  "ext1",
+		Type:    "background",
+		Payload: map[string]interface{}{"hello": "world"},
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "cross-extension messaging blocked")
+	require.Len(t, received, 1) // no additional delivery
 }
 
 func TestMessageRouterRouteEmptySender(t *testing.T) {
@@ -51,20 +63,30 @@ func TestMessageRouterRouteEmptySender(t *testing.T) {
 func TestMessageRouterRouteUnknownTarget(t *testing.T) {
 	r := NewMessageRouter()
 
+	// Same-extension message to unknown target within same extension.
 	err := r.Route(Message{
+		Sender:  "ext1",
+		Target:  "ext1",
+		Type:    "background",
+		Payload: nil,
+	})
+	require.NoError(t, err)
+
+	// Cross-extension messaging is blocked.
+	err = r.Route(Message{
 		Sender:  "ext1",
 		Target:  "ext2",
 		Type:    "background",
 		Payload: nil,
 	})
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "no handlers registered")
+	require.Contains(t, err.Error(), "cross-extension messaging blocked")
 }
 
 func TestMessageRouterBroadcast(t *testing.T) {
 	r := NewMessageRouter()
 
-	var received1, received2 []Message
+	var received1, received2, received3 []Message
 	r.RegisterHandler("ext1", func(msg Message) error {
 		received1 = append(received1, msg)
 		return nil
@@ -73,8 +95,12 @@ func TestMessageRouterBroadcast(t *testing.T) {
 		received2 = append(received2, msg)
 		return nil
 	})
+	r.RegisterHandler("ext3", func(msg Message) error {
+		received3 = append(received3, msg)
+		return nil
+	})
 
-	// Broadcast with no target - should go to all handlers except sender.
+	// Broadcast from ext3 only delivers to ext3's own handlers.
 	err := r.Route(Message{
 		Sender:  "ext3",
 		Type:    "broadcast",
@@ -82,8 +108,11 @@ func TestMessageRouterBroadcast(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	require.Len(t, received1, 1)
-	require.Len(t, received2, 1)
+	require.Empty(t, received1)
+	require.Empty(t, received2)
+	require.Len(t, received3, 1)
+	require.Equal(t, "ext3", received3[0].Sender)
+	require.Equal(t, "hi", received3[0].Payload.(map[string]interface{})["msg"])
 }
 
 func TestMessageRouterValidateOrigin(t *testing.T) {
@@ -154,7 +183,7 @@ func TestMessageRouterRoutesRecorded(t *testing.T) {
 	r.RegisterHandler("ext1", func(msg Message) error { return nil })
 
 	err := r.Route(Message{
-		Sender:  "ext2",
+		Sender:  "ext1",
 		Target:  "ext1",
 		Type:    "background",
 		Payload: nil,
@@ -164,7 +193,7 @@ func TestMessageRouterRoutesRecorded(t *testing.T) {
 	require.Equal(t, 1, r.RouteCount())
 	routes := r.Routes()
 	require.Len(t, routes, 1)
-	require.Equal(t, "ext2", routes[0].From)
+	require.Equal(t, "ext1", routes[0].From)
 	require.Equal(t, "ext1", routes[0].To)
 }
 
@@ -182,7 +211,7 @@ func TestMessageRouterMultipleHandlers(t *testing.T) {
 	})
 
 	err := r.Route(Message{
-		Sender:  "ext2",
+		Sender:  "ext1",
 		Target:  "ext1",
 		Type:    "background",
 		Payload: nil,
@@ -202,7 +231,7 @@ func TestMessageRouterHandlerError(t *testing.T) {
 	})
 
 	err := r.Route(Message{
-		Sender:  "ext2",
+		Sender:  "ext1",
 		Target:  "ext1",
 		Type:    "background",
 		Payload: nil,
