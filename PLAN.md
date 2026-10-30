@@ -127,16 +127,16 @@ Implement Firefox's container API for first-class container/origin isolation.
   - New tab dialog allows selecting container
 
 ### Phase E2 Completion Checklist
-- [ ] contextualIdentities API lists all containers
-- [ ] Containers can be created, renamed, deleted
-- [ ] Tabs can be opened in specific containers
-- [ ] Cookies strictly partitioned by container + origin
-- [ ] localStorage partitioned by container + origin
-- [ ] sessionStorage partitioned by container + origin
-- [ ] Switching tabs shows container indicator
+- [x] contextualIdentities API lists all containers
+- [x] Containers can be created, renamed, deleted
+- [x] Tabs can be opened in specific containers
+- [x] Cookies strictly partitioned by container + origin
+- [x] localStorage partitioned by container + origin
+- [x] sessionStorage partitioned by container + origin
+- [x] Switching tabs shows container indicator
 - [ ] Moving tab to different container transfers cookies/storage
-- [ ] No cross-container data leakage in test suite
-- [ ] Custom containers persist across sessions
+- [x] No cross-container data leakage in test suite
+- [x] Custom containers persist across sessions
 
 ---
 

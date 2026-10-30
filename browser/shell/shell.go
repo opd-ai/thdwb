@@ -2,6 +2,7 @@ package shell
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	assets "github.com/danfragoso/thdwb/assets"
@@ -63,6 +64,21 @@ func NewBrowserShell(settings *hotdog.Settings, buildInfo *assets.BuildInfo) *Br
 		extManager:       extensions.NewManager(""),
 		containerManager: extensions.NewContainerManager(),
 	}
+}
+
+// NewBrowserShellWithConfigDir creates a BrowserShell that persists containers
+// to the given config directory.
+func NewBrowserShellWithConfigDir(settings *hotdog.Settings, buildInfo *assets.BuildInfo, configDir string) (*BrowserShell, error) {
+	bs := NewBrowserShell(settings, buildInfo)
+	if configDir != "" {
+		containerPath := filepath.Join(configDir, "containers.json")
+		cm, err := extensions.NewContainerManagerWithPath(containerPath)
+		if err != nil {
+			return nil, err
+		}
+		bs.containerManager = cm
+	}
+	return bs, nil
 }
 
 // Init creates the mustard app and window and builds the full UI.
