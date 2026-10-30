@@ -7,6 +7,10 @@ import (
 	"time"
 )
 
+// DefaultContainerID is the sentinel container ID used for the default
+// (non-container) browsing context.
+const DefaultContainerID = ""
+
 // ContainerCookieJar implements http.CookieJar with per-container, per-origin
 // cookie partitioning. Each (containerID, origin) pair gets its own isolated
 // cookie store, enabling Firefox-style container tab cookie isolation.
@@ -144,4 +148,26 @@ func (jar *ContainerCookieJar) ContainerCount() int {
 		}
 	}
 	return len(containers)
+}
+
+// defaultContainerCookieJar adapts a ContainerCookieJar to the http.CookieJar
+// interface using the default (non-container) container ID.
+type DefaultContainerCookieJar struct {
+	jar *ContainerCookieJar
+}
+
+// NewDefaultContainerCookieJar wraps a ContainerCookieJar as an http.CookieJar
+// using the default (non-container) container ID.
+func NewDefaultContainerCookieJar(jar *ContainerCookieJar) *DefaultContainerCookieJar {
+	return &DefaultContainerCookieJar{jar: jar}
+}
+
+// SetCookies implements http.CookieJar for the default container.
+func (j *DefaultContainerCookieJar) SetCookies(u *url.URL, cookies []*http.Cookie) {
+	j.jar.SetCookies(DefaultContainerID, u, cookies)
+}
+
+// Cookies implements http.CookieJar for the default container.
+func (j *DefaultContainerCookieJar) Cookies(u *url.URL) []*http.Cookie {
+	return j.jar.Cookies(DefaultContainerID, u)
 }
