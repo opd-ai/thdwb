@@ -7,6 +7,12 @@ import (
 	mustard "github.com/danfragoso/thdwb/mustard"
 )
 
+// suggestion is a single autocomplete entry shown below the address bar.
+type suggestion struct {
+	Title string
+	URL   string
+}
+
 // AddressBar represents the browser's URL bar with security and container
 // indicators. It is a pure UI component bound to a TabManager so it always
 // reflects the active tab's URL.
@@ -23,6 +29,14 @@ type AddressBar struct {
 	url           string
 	securityState string // "secure", "insecure", "mixed"
 	containerID   string
+
+	// Autocomplete state.
+	suggestions     []suggestion
+	selectedSugg    int
+	suggestionFrame *mustard.Frame // dropdown container for suggestions
+	suggestionOverlay *mustard.Overlay
+	suggestionsVisible bool
+	onSuggestionSelect func(suggestion) // optional callback when a suggestion is chosen
 }
 
 // NewAddressBar constructs an address bar bound to manager. The bar updates
@@ -91,6 +105,177 @@ func (ab *AddressBar) navigate(raw string) {
 		ab.input.SetValue(u.String())
 		ab.updateSecurity(u)
 		ab.updateContainer(tab)
+	}
+	ab.hideSuggestions()
+}
+
+// buildSuggestions gathers autocomplete suggestions from history and
+// bookmarks matching the current input text.
+func (ab *AddressBar) buildSuggestions(query string) {
+	ab.suggestions = nil
+	if query == "" {
+		ab.hideSuggestions()
+		return
+	}
+
+	q := strings.ToLower(query)
+
+	// History suggestions.
+	for _, entry := range ab.historyEntries() {
+		if strings.Contains(strings.ToLower(entry.Title), q) ||
+			strings.Contains(strings.ToLower(entry.URL), q) {
+			ab.suggestions = append(ab.suggestions, suggestion{Title: entry.Title, URL: entry.URL})
+		}
+	}
+
+	// Bookmark suggestions.
+	for _, b := range ab.bookmarks() {
+		if strings.Contains(strings.ToLower(b.Title), q) ||
+			strings.Contains(strings.ToLower(b.URL), q) {
+			ab.suggestions = append(ab.suggestions, suggestion{Title: b.Title, URL: b.URL})
+		}
+	}
+
+	// If the query looks like a URL, offer it directly.
+	if strings.Contains(query, ".") || strings.HasPrefix(query, "http") || strings.HasPrefix(query, "thdwb") {
+		ab.suggestions = append(ab.suggestions, suggestion{Title: "Go to " + query, URL: query})
+	}
+
+	ab.selectedSugg = 0
+	ab.showSuggestions()
+}
+
+// historyEntries returns all history entries.
+func (ab *AddressBar) historyEntries() []*HistoryEntry {
+	if ab.manager == nil {
+		return nil
+	}
+	// The shell owns the history manager; expose via a callback if set.
+	if ab.onHistory != nil {
+		return ab.onHistory()
+	}
+	return nil
+}
+
+// bookmarks returns all bookmarks.
+func (ab *AddressBar) bookmarks() []*Bookmark {
+	if ab.onBookmarks != nil {
+		return ab.onBookmarks()
+	}
+	return nil
+}
+
+// onHistory and onBookmarks are optional callbacks wired by the shell to
+// provide history and bookmark data for autocomplete.
+var (
+	onHistory func() []*HistoryEntry
+	onBookmarks func() []*Bookmark
+)
+
+// SetHistoryProvider sets the callback that supplies history entries for
+// autocomplete suggestions.
+func (ab *AddressBar) SetHistoryProvider(fn func() []*HistoryEntry) {
+	ab.onHistory = fn
+}
+
+// SetBookmarkProvider sets the callback that supplies bookmarks for
+// autocomplete suggestions.
+func (ab *AddressBar) SetBookmarkProvider(fn func() []*Bookmark) {
+	ab.onBookmarks = fn
+}
+
+// showSuggestions displays the autocomplete dropdown below the address bar.
+func (ab *AddressBar) showSuggestions() {
+	if len(ab.suggestions) == 0 {
+		ab.hideSuggestions()
+		return
+	}
+
+	// Build a vertical frame of suggestion labels.
+	frame := mustard.CreateFrame(mustard.VerticalFrame)
+	frame.SetBackgroundColor("#ffffff")
+
+	for i, s := range ab.suggestions {
+		label := mustard.CreateLabelWidget(s.Title + "  ·  " + s.URL)
+		label.SetFontSize(12)
+		label.SetFontColor("#333333")
+		if i == ab.selectedSugg {
+			label.SetBackgroundColor("#e3f2fd")
+		}
+		frame.AttachWidget(label)
+
+		// Capture the suggestion for the click callback.
+		sugg := s
+		ab.window.RegisterButton(mustard.CreateButtonWidget("", nil), func() {
+			ab.selectSuggestion(sugg)
+		})
+	}
+
+	// Remove any existing overlay.
+	ab.hideSuggestions()
+
+	// Position the dropdown just below the address bar.
+	overlay := mustard.CreateOverlay("addressbar-suggestions", nil, image.Point{})
+	ab.suggestionOverlay = overlay
+	ab.suggestionFrame = frame
+	ab.suggestionsVisible = true
+
+	ab.window.AddOverlay(overlay)
+}
+
+// hideSuggestions removes the autocomplete dropdown.
+func (ab *AddressBar) hideSuggestions() {
+	ab.suggestionsVisible = false
+	ab.suggestions = nil
+	ab.selectedSugg = 0
+	if ab.suggestionOverlay != nil {
+		ab.window.RemoveOverlay(ab.suggestionOverlay)
+		ab.suggestionOverlay = nil
+	}
+	ab.suggestionFrame = nil
+}
+
+// selectSuggestion navigates to the chosen suggestion and hides the dropdown.
+func (ab *AddressBar) selectSuggestion(s suggestion) {
+	ab.navigate(s.URL)
+	ab.hideSuggestions()
+}
+
+// selectNextSuggestion moves the selection down one entry in the dropdown.
+func (ab *AddressBar) selectNextSuggestion() {
+	if len(ab.suggestions) == 0 {
+		return
+	}
+	ab.selectedSugg = (ab.selectedSugg + 1) % len(ab.suggestions)
+	ab.refreshSuggestionStyles()
+}
+
+// selectPreviousSuggestion moves the selection up one entry in the dropdown.
+func (ab *AddressBar) selectPreviousSuggestion() {
+	if len(ab.suggestions) == 0 {
+		return
+	}
+	ab.selectedSugg--
+	if ab.selectedSugg < 0 {
+		ab.selectedSugg = len(ab.suggestions) - 1
+	}
+	ab.refreshSuggestionStyles()
+}
+
+// refreshSuggestionStyles updates the visual highlight of the selected
+// suggestion in the dropdown.
+func (ab *AddressBar) refreshSuggestionStyles() {
+	if ab.suggestionFrame == nil {
+		return
+	}
+	for i, w := range ab.suggestionFrame.Widgets() {
+		if lbl, ok := w.(*mustard.LabelWidget); ok {
+			if i == ab.selectedSugg {
+				lbl.SetBackgroundColor("#e3f2fd")
+			} else {
+				lbl.SetBackgroundColor("#ffffff")
+			}
+		}
 	}
 }
 

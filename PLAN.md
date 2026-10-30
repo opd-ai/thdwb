@@ -534,7 +534,7 @@ Prepare for public release and establish distribution channels.
 
 ### Phase E10: Manifest v3 and Advanced Sync Features
 - Full Manifest v3 support (Service Workers instead of background scripts)
-- `chrome.storage.sync` with actual cloud sync (Firebase or similar)
+- `chrome.storage.sync` with actual peer-to-peer sync via Syncthing (no hosted/cloud services)
 - WebDriver support for extension testing
 
 ### Phase E11: Performance and Scale
