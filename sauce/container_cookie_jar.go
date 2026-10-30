@@ -3,6 +3,7 @@ package sauce
 import (
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 )
@@ -130,6 +131,81 @@ func (jar *ContainerCookieJar) ClearContainer(containerID string) {
 		if len(key) > len(containerID) && key[:len(containerID)] == containerID && key[len(containerID)] == ':' {
 			delete(jar.cookies, key)
 		}
+	}
+}
+
+// TransferOrigin moves all cookies for the given origin from one container
+// to another. Cookies in the destination container are overwritten by cookies
+// from the source. The source cookies are removed.
+func (jar *ContainerCookieJar) TransferOrigin(fromContainer, toContainer string, u *url.URL) {
+	jar.mu.Lock()
+	defer jar.mu.Unlock()
+
+	fromKey := containerKey(fromContainer, u)
+	toKey := containerKey(toContainer, u)
+
+	fromCookies := jar.cookies[fromKey]
+	if len(fromCookies) == 0 {
+		return
+	}
+
+	toCookies := jar.cookies[toKey]
+	if toCookies == nil {
+		toCookies = make([]*http.Cookie, 0)
+	}
+	for _, cookie := range fromCookies {
+		found := false
+		for i, existing := range toCookies {
+			if cookieIdentity(existing, cookie) {
+				toCookies[i] = cookie
+				found = true
+				break
+			}
+		}
+		if !found {
+			toCookies = append(toCookies, cookie)
+		}
+	}
+	jar.cookies[toKey] = toCookies
+	delete(jar.cookies, fromKey)
+}
+
+// TransferContainer moves all cookies from one container to another across
+// all origins. Cookies in the destination container are overwritten by cookies
+// from the source. The source cookies are removed.
+func (jar *ContainerCookieJar) TransferContainer(fromContainer, toContainer string) {
+	jar.mu.Lock()
+	defer jar.mu.Unlock()
+
+	fromPrefix := fromContainer + "::"
+	toPrefix := toContainer + "::"
+
+	for key, cookies := range jar.cookies {
+		if !strings.HasPrefix(key, fromPrefix) {
+			continue
+		}
+		originKey := key[len(fromPrefix):]
+		toKey := toPrefix + originKey
+
+		toCookies := jar.cookies[toKey]
+		if toCookies == nil {
+			toCookies = make([]*http.Cookie, 0)
+		}
+		for _, cookie := range cookies {
+			found := false
+			for i, existing := range toCookies {
+				if cookieIdentity(existing, cookie) {
+					toCookies[i] = cookie
+					found = true
+					break
+				}
+			}
+			if !found {
+				toCookies = append(toCookies, cookie)
+			}
+		}
+		jar.cookies[toKey] = toCookies
+		delete(jar.cookies, key)
 	}
 }
 
