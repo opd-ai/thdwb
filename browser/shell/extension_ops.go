@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"time"
 
 	extensions "github.com/danfragoso/thdwb/browser/extensions"
 	sauce "github.com/danfragoso/thdwb/sauce"
@@ -565,6 +566,273 @@ func (eo *extensionOps) GetMessage(extID string, messageName string, substitutio
 func (eo *extensionOps) GetAcceptLanguages(extID string) ([]string, error) {
 	_ = extID
 	return []string{"en-US", "en"}, nil
+}
+
+// WebRequestOperations implementation.
+
+// webRequestListener tracks a registered webRequest listener for an extension.
+type webRequestListener struct {
+	extID       string
+	event       string
+	urlPatterns []string
+}
+
+// webRequestListeners holds all registered webRequest listeners keyed by event name.
+var webRequestListeners []webRequestListener
+var webRequestMu sync.Mutex
+
+// webRequestObserverRegistered tracks whether the global sauce observer has been registered.
+var webRequestObserverRegistered bool
+
+// ensureWebRequestObserver registers a single sauce observer that dispatches to
+// all extension webRequest listeners. It is idempotent.
+// Caller must NOT hold webRequestMu.
+func ensureWebRequestObserver(eo *extensionOps) {
+	webRequestMu.Lock()
+	defer webRequestMu.Unlock()
+	if webRequestObserverRegistered {
+		return
+	}
+	sauce.RegisterWebRequestObserver(func(details sauce.WebRequestDetails) (sauce.WebRequestDetails, error) {
+		webRequestMu.Lock()
+		listeners := make([]webRequestListener, len(webRequestListeners))
+		copy(listeners, webRequestListeners)
+		webRequestMu.Unlock()
+
+		for _, l := range listeners {
+			// Map sauce WebRequestDetails to extensions.WebRequestDetails.
+			ed := extensions.WebRequestDetails{
+				RequestID:    details.RequestID,
+				URL:          details.URL,
+				Method:       details.Method,
+				Headers:      details.Headers,
+				StatusCode:   details.StatusCode,
+				StatusLine:   details.StatusLine,
+				ResponseHeaders: details.ResponseHeaders,
+				Initiator:    details.Initiator,
+				TabID:        details.TabID,
+				Timestamp:    details.Timestamp,
+			}
+			eo.bs.extManager.FireWebRequestEvent(l.extID, l.event, ed)
+		}
+		return details, nil
+	})
+	webRequestObserverRegistered = true
+}
+
+// ensureWebRequestObserverLocked assumes the caller already holds webRequestMu.
+func ensureWebRequestObserverLocked(eo *extensionOps) {
+	if webRequestObserverRegistered {
+		return
+	}
+	sauce.RegisterWebRequestObserver(func(details sauce.WebRequestDetails) (sauce.WebRequestDetails, error) {
+		webRequestMu.Lock()
+		listeners := make([]webRequestListener, len(webRequestListeners))
+		copy(listeners, webRequestListeners)
+		webRequestMu.Unlock()
+
+		for _, l := range listeners {
+			// Map sauce WebRequestDetails to extensions.WebRequestDetails.
+			ed := extensions.WebRequestDetails{
+				RequestID:    details.RequestID,
+				URL:          details.URL,
+				Method:       details.Method,
+				Headers:      details.Headers,
+				StatusCode:   details.StatusCode,
+				StatusLine:   details.StatusLine,
+				ResponseHeaders: details.ResponseHeaders,
+				Initiator:    details.Initiator,
+				TabID:        details.TabID,
+				Timestamp:    details.Timestamp,
+			}
+			eo.bs.extManager.FireWebRequestEvent(l.extID, l.event, ed)
+		}
+		return details, nil
+	})
+	webRequestObserverRegistered = true
+}
+
+// AddListener registers a webRequest listener for the given extension and event.
+func (eo *extensionOps) AddListener(extID string, event string, details extensions.WebRequestDetails) error {
+	webRequestMu.Lock()
+	defer webRequestMu.Unlock()
+	webRequestListeners = append(webRequestListeners, webRequestListener{
+		extID:       extID,
+		event:       event,
+		urlPatterns: details.URLPatterns,
+	})
+	ensureWebRequestObserverLocked(eo)
+	return nil
+}
+
+// RemoveListener removes webRequest listeners for the given extension and event.
+func (eo *extensionOps) RemoveListener(extID string, event string) error {
+	webRequestMu.Lock()
+	defer webRequestMu.Unlock()
+	filtered := webRequestListeners[:0]
+	for _, l := range webRequestListeners {
+		if !(l.extID == extID && l.event == event) {
+			filtered = append(filtered, l)
+		}
+	}
+	webRequestListeners = filtered
+	return nil
+}
+
+// NotificationOperations implementation.
+
+// notifications holds notifications keyed by extension ID then notification ID.
+var notifications map[string]map[string]extensions.Notification
+var notificationsMu sync.Mutex
+
+func init() {
+	notifications = make(map[string]map[string]extensions.Notification)
+}
+
+// CreateNotification creates a desktop notification.
+func (eo *extensionOps) CreateNotification(extID string, id string, options extensions.NotificationOptions) (string, error) {
+	notificationsMu.Lock()
+	defer notificationsMu.Unlock()
+	if notifications[extID] == nil {
+		notifications[extID] = make(map[string]extensions.Notification)
+	}
+	n := extensions.Notification{
+		ID:        id,
+		Title:     options.Title,
+		Message:   options.Message,
+		IconURL:   options.IconURL,
+		Context:   options.Context,
+		Priority:  options.Priority,
+		Timestamp: options.Timestamp,
+	}
+	notifications[extID][id] = n
+	return id, nil
+}
+
+// ClearNotification dismisses a notification.
+func (eo *extensionOps) ClearNotification(extID string, id string) (bool, error) {
+	notificationsMu.Lock()
+	defer notificationsMu.Unlock()
+	if notifications[extID] != nil {
+		if _, ok := notifications[extID][id]; ok {
+			delete(notifications[extID], id)
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// GetAllNotifications returns all notifications for an extension.
+func (eo *extensionOps) GetAllNotifications(extID string) ([]extensions.Notification, error) {
+	notificationsMu.Lock()
+	defer notificationsMu.Unlock()
+	result := make([]extensions.Notification, 0, len(notifications[extID]))
+	for _, n := range notifications[extID] {
+		result = append(result, n)
+	}
+	return result, nil
+}
+
+// DownloadOperations implementation.
+
+// downloads holds download items keyed by download ID.
+var downloads map[int]extensions.DownloadItem
+var downloadsMu sync.Mutex
+var nextDownloadID int
+
+func init() {
+	downloads = make(map[int]extensions.DownloadItem)
+	nextDownloadID = 0
+}
+
+// downloadOps implements DownloadOperations for chrome.downloads API.
+type downloadOps struct {
+	bs *BrowserShell
+}
+
+// newDownloadOps creates a new downloadOps wired to the given browser shell.
+func newDownloadOps(bs *BrowserShell) *downloadOps {
+	return &downloadOps{bs: bs}
+}
+
+// Download starts a file download.
+func (do *downloadOps) Download(extID string, options extensions.DownloadOptions) (int, error) {
+	_ = extID
+	downloadsMu.Lock()
+	defer downloadsMu.Unlock()
+	nextDownloadID++
+	item := extensions.DownloadItem{
+		ID:         nextDownloadID,
+		URL:        options.URL,
+		Filename:   options.Filename,
+		State:      "in_progress",
+		StartTime:  float64(time.Now().UnixMilli()),
+	}
+	downloads[nextDownloadID] = item
+	return nextDownloadID, nil
+}
+
+// Cancel aborts a download.
+func (do *downloadOps) Cancel(downloadID int) error {
+	downloadsMu.Lock()
+	defer downloadsMu.Unlock()
+	if item, ok := downloads[downloadID]; ok {
+		item.State = "interrupted"
+		item.Error = "cancelled"
+		downloads[downloadID] = item
+	}
+	return nil
+}
+
+// Pause pauses a download.
+func (do *downloadOps) Pause(downloadID int) error {
+	downloadsMu.Lock()
+	defer downloadsMu.Unlock()
+	if item, ok := downloads[downloadID]; ok {
+		item.Paused = true
+		downloads[downloadID] = item
+	}
+	return nil
+}
+
+// Resume resumes a download.
+func (do *downloadOps) Resume(downloadID int) error {
+	downloadsMu.Lock()
+	defer downloadsMu.Unlock()
+	if item, ok := downloads[downloadID]; ok {
+		item.Paused = false
+		downloads[downloadID] = item
+	}
+	return nil
+}
+
+// Get returns a download item by ID.
+func (do *downloadOps) Get(downloadID int) (*extensions.DownloadItem, error) {
+	downloadsMu.Lock()
+	defer downloadsMu.Unlock()
+	if item, ok := downloads[downloadID]; ok {
+		return &item, nil
+	}
+	return nil, nil
+}
+
+// GetAll returns all download items.
+func (do *downloadOps) GetAll() ([]extensions.DownloadItem, error) {
+	downloadsMu.Lock()
+	defer downloadsMu.Unlock()
+	result := make([]extensions.DownloadItem, 0, len(downloads))
+	for _, item := range downloads {
+		result = append(result, item)
+	}
+	return result, nil
+}
+
+// Erase removes a download from history.
+func (do *downloadOps) Erase(downloadID int) error {
+	downloadsMu.Lock()
+	defer downloadsMu.Unlock()
+	delete(downloads, downloadID)
+	return nil
 }
 
 func sameSiteFromString(s string) http.SameSite {
