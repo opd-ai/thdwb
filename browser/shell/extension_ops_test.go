@@ -312,3 +312,109 @@ func TestExtensionOpsI18nOperations(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, langs)
 }
+
+func TestExtensionOpsWebRequestOperations(t *testing.T) {
+	bs := newTestShell()
+	eo := newExtensionOps(bs)
+
+	// Add a listener for onBeforeRequest.
+	err := eo.AddListener("ext1", "onBeforeRequest", extensions.WebRequestDetails{
+		URLPatterns: []string{"<all_urls>"},
+	})
+	require.NoError(t, err)
+
+	// Remove the listener.
+	err = eo.RemoveListener("ext1", "onBeforeRequest")
+	require.NoError(t, err)
+
+	// Removing a non-existent listener should not error.
+	err = eo.RemoveListener("ext2", "onCompleted")
+	require.NoError(t, err)
+}
+
+func TestExtensionOpsNotificationOperations(t *testing.T) {
+	bs := newTestShell()
+	eo := newExtensionOps(bs)
+
+	// Create a notification.
+	id, err := eo.CreateNotification("ext1", "n1", extensions.NotificationOptions{
+		Title:   "Test Notification",
+		Message: "Hello, world!",
+		IconURL: "https://example.com/icon.png",
+		Priority: 1,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "n1", id)
+
+	// Get all notifications.
+	notifs, err := eo.GetAllNotifications("ext1")
+	require.NoError(t, err)
+	require.Len(t, notifs, 1)
+	require.Equal(t, "Test Notification", notifs[0].Title)
+	require.Equal(t, "Hello, world!", notifs[0].Message)
+
+	// Clear the notification.
+	cleared, err := eo.ClearNotification("ext1", "n1")
+	require.NoError(t, err)
+	require.True(t, cleared)
+
+	// Verify it's gone.
+	notifs, err = eo.GetAllNotifications("ext1")
+	require.NoError(t, err)
+	require.Len(t, notifs, 0)
+
+	// Clearing a non-existent notification returns false.
+	cleared, err = eo.ClearNotification("ext1", "nonexistent")
+	require.NoError(t, err)
+	require.False(t, cleared)
+}
+
+func TestExtensionOpsDownloadOperations(t *testing.T) {
+	bs := newTestShell()
+	dlOps := newDownloadOps(bs)
+
+	// Start a download.
+	id, err := dlOps.Download("ext1", extensions.DownloadOptions{
+		URL:      "https://example.com/file.zip",
+		Filename: "file.zip",
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, id)
+
+	// Get the download.
+	item, err := dlOps.Get(id)
+	require.NoError(t, err)
+	require.NotNil(t, item)
+	require.Equal(t, "https://example.com/file.zip", item.URL)
+	require.Equal(t, "file.zip", item.Filename)
+	require.Equal(t, "in_progress", item.State)
+
+	// Get all downloads.
+	all, err := dlOps.GetAll()
+	require.NoError(t, err)
+	require.Len(t, all, 1)
+
+	// Pause and resume.
+	require.NoError(t, dlOps.Pause(id))
+	item, err = dlOps.Get(id)
+	require.NoError(t, err)
+	require.True(t, item.Paused)
+
+	require.NoError(t, dlOps.Resume(id))
+	item, err = dlOps.Get(id)
+	require.NoError(t, err)
+	require.False(t, item.Paused)
+
+	// Cancel.
+	require.NoError(t, dlOps.Cancel(id))
+	item, err = dlOps.Get(id)
+	require.NoError(t, err)
+	require.Equal(t, "interrupted", item.State)
+	require.Equal(t, "cancelled", item.Error)
+
+	// Erase.
+	require.NoError(t, dlOps.Erase(id))
+	all, err = dlOps.GetAll()
+	require.NoError(t, err)
+	require.Len(t, all, 0)
+}

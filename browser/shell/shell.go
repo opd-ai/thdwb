@@ -104,6 +104,10 @@ func (bs *BrowserShell) Init() error {
 	bs.extManager.SetPermissionOperations(eo)
 	bs.extManager.SetAlarmOperations(eo)
 	bs.extManager.SetI18nOperations(eo)
+	bs.extManager.SetWebRequestOperations(eo)
+	bs.extManager.SetNotificationOperations(eo)
+	dlOps := newDownloadOps(bs)
+	bs.extManager.SetDownloadOperations(dlOps)
 
 	bs.buildUI()
 
