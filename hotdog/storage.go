@@ -209,6 +209,65 @@ func (manager *OriginStorageManager) ClearContainer(containerID string) error {
 	return manager.persistLocked()
 }
 
+// TransferOrigin moves all localStorage entries for the given origin from
+// one container to another. Entries in the destination container are
+// overwritten by entries from the source. The source entries are removed.
+func (manager *OriginStorageManager) TransferOrigin(fromContainer, toContainer string, origin *url.URL) error {
+	manager.mu.Lock()
+	defer manager.mu.Unlock()
+
+	fromKey := storageKey(fromContainer, origin)
+	toKey := storageKey(toContainer, origin)
+
+	fromStorage := manager.storages[fromKey]
+	if len(fromStorage) == 0 {
+		return nil
+	}
+
+	toStorage := manager.storages[toKey]
+	if toStorage == nil {
+		toStorage = make(StorageMap)
+		manager.storages[toKey] = toStorage
+	}
+	for k, v := range fromStorage {
+		toStorage[k] = v
+	}
+	delete(manager.storages, fromKey)
+
+	return manager.persistLocked()
+}
+
+// TransferContainer moves all localStorage entries from one container to
+// another across all origins. Entries in the destination container are
+// overwritten by entries from the source. The source entries are removed.
+func (manager *OriginStorageManager) TransferContainer(fromContainer, toContainer string) error {
+	manager.mu.Lock()
+	defer manager.mu.Unlock()
+
+	fromPrefix := fromContainer + "::"
+	toPrefix := toContainer + "::"
+
+	for key, storage := range manager.storages {
+		if !strings.HasPrefix(key, fromPrefix) {
+			continue
+		}
+		originKey := key[len(fromPrefix):]
+		toKey := toPrefix + originKey
+
+		toStorage := manager.storages[toKey]
+		if toStorage == nil {
+			toStorage = make(StorageMap)
+			manager.storages[toKey] = toStorage
+		}
+		for k, v := range storage {
+			toStorage[k] = v
+		}
+		delete(manager.storages, key)
+	}
+
+	return manager.persistLocked()
+}
+
 func (manager *OriginStorageManager) storageLocked(containerID string, origin *url.URL) StorageMap {
 	key := storageKey(containerID, origin)
 	if manager.storages[key] == nil {
@@ -405,6 +464,61 @@ func (storage *SessionStorageManager) ClearContainer(containerID string) {
 		if strings.HasPrefix(key, prefix) {
 			delete(storage.storages, key)
 		}
+	}
+}
+
+// TransferOrigin moves all sessionStorage entries for the given origin from
+// one container to another. Entries in the destination container are
+// overwritten by entries from the source. The source entries are removed.
+func (storage *SessionStorageManager) TransferOrigin(fromContainer, toContainer string, origin *url.URL) {
+	storage.mu.Lock()
+	defer storage.mu.Unlock()
+
+	fromKey := storageKey(fromContainer, origin)
+	toKey := storageKey(toContainer, origin)
+
+	fromStorage := storage.storages[fromKey]
+	if len(fromStorage) == 0 {
+		return
+	}
+
+	toStorage := storage.storages[toKey]
+	if toStorage == nil {
+		toStorage = make(StorageMap)
+		storage.storages[toKey] = toStorage
+	}
+	for k, v := range fromStorage {
+		toStorage[k] = v
+	}
+	delete(storage.storages, fromKey)
+}
+
+// TransferContainer moves all sessionStorage entries from one container to
+// another across all origins. Entries in the destination container are
+// overwritten by entries from the source. The source entries are removed.
+func (storage *SessionStorageManager) TransferContainer(fromContainer, toContainer string) {
+	storage.mu.Lock()
+	defer storage.mu.Unlock()
+
+	fromPrefix := fromContainer + "::"
+	toPrefix := toContainer + "::"
+
+	for key, st := range storage.storages {
+		if !strings.HasPrefix(key, fromPrefix) {
+			continue
+		}
+		originKey := key[len(fromPrefix):]
+		toKey := toPrefix + originKey
+
+		toStorage := storage.storages[toKey]
+		if toStorage == nil {
+			toStorage = make(StorageMap)
+			storage.storages[toKey] = toStorage
+		}
+		for k, v := range st {
+			toStorage[k] = v
+		}
+		delete(storage.storages, key)
 	}
 }
 
