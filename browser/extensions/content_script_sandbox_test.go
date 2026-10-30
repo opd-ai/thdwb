@@ -127,3 +127,98 @@ func valToString(t *testing.T, s *ContentScriptSandbox, expr string) string {
 	require.NoError(t, err)
 	return val.String()
 }
+
+func TestContentScriptSandboxOnMessageProperty(t *testing.T) {
+	s := NewContentScriptSandbox("ext1")
+
+	// onMessage should be settable as a function.
+	_, err := s.Run(`chrome.runtime.onMessage = function(msg) { __received = msg; };`)
+	require.NoError(t, err)
+
+	// Post a message and verify it's received via the callback.
+	err = s.PostMessage(Message{Sender: "background", Type: "background", Payload: map[string]interface{}{"hello": "world"}})
+	require.NoError(t, err)
+
+	// Verify the onMessage callback was invoked with the message payload.
+	val, err := s.Run("__received")
+	require.NoError(t, err)
+	exported := val.Export().(map[string]interface{})
+	require.Equal(t, "world", exported["hello"])
+}
+
+func TestContentScriptSandboxFetchStub(t *testing.T) {
+	s := NewContentScriptSandbox("ext1")
+
+	// fetch should be callable without error.
+	_, err := s.Run(`fetch("https://example.com/api");`)
+	require.NoError(t, err)
+}
+
+func TestContentScriptSandboxXMLHttpRequestStub(t *testing.T) {
+	s := NewContentScriptSandbox("ext1")
+
+	// XMLHttpRequest should be constructable and callable.
+	_, err := s.Run(`
+		var xhr = new XMLHttpRequest();
+		xhr.open("GET", "https://example.com/api");
+		xhr.setRequestHeader("X-Test", "value");
+		xhr.send();
+	`)
+	require.NoError(t, err)
+}
+
+func TestContentScriptSandboxCannotAccessPageGlobals(t *testing.T) {
+	s := NewContentScriptSandbox("ext1")
+
+	// Content script VM should not have access to page-specific globals
+	// like 'window' or 'document' unless explicitly exposed.
+	_, err := s.Run("typeof window")
+	require.NoError(t, err)
+	result, err := s.Run("typeof window")
+	require.NoError(t, err)
+	// window is not defined in the isolated sandbox.
+	require.Equal(t, "undefined", result.String())
+}
+
+func TestContentScriptSandboxPageCannotAccessContentScriptVars(t *testing.T) {
+	s := NewContentScriptSandbox("ext1")
+
+	// Set a variable in the content script sandbox.
+	_, err := s.Run("var __contentScriptSecret = 42;")
+	require.NoError(t, err)
+
+	// Create a separate sandbox to simulate the page VM.
+	pageVM := NewContentScriptSandbox("page")
+
+	// The page VM should not see the content script's variables.
+	_, err = pageVM.Run("typeof __contentScriptSecret")
+	require.NoError(t, err)
+	result, err := pageVM.Run("typeof __contentScriptSecret")
+	require.NoError(t, err)
+	require.Equal(t, "undefined", result.String())
+}
+
+func TestContentScriptSandboxDangerousGlobals(t *testing.T) {
+	s := NewContentScriptSandbox("ext1")
+
+	// eval should be undefined.
+	_, err := s.Run("typeof eval")
+	require.NoError(t, err)
+	result, err := s.Run("typeof eval")
+	require.NoError(t, err)
+	require.Equal(t, "undefined", result.String())
+
+	// Function should be undefined.
+	_, err = s.Run("typeof Function")
+	require.NoError(t, err)
+	result, err = s.Run("typeof Function")
+	require.NoError(t, err)
+	require.Equal(t, "undefined", result.String())
+
+	// setTimeout should be undefined.
+	_, err = s.Run("typeof setTimeout")
+	require.NoError(t, err)
+	result, err = s.Run("typeof setTimeout")
+	require.NoError(t, err)
+	require.Equal(t, "undefined", result.String())
+}

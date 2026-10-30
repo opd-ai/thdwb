@@ -144,9 +144,40 @@ func (s *ContentScriptSandbox) initGlobals() error {
 		}
 		return goja.Undefined()
 	})
+	// onMessage is a settable property that content scripts can assign to
+	// receive messages from the background script.
+	_ = runtimeObj.Set("onMessage", goja.Undefined())
 	_ = runtimeObj.Set("id", s.extID)
 	_ = chrome.Set("runtime", runtimeObj)
 	_ = rt.Set("chrome", chrome)
+
+	// Expose fetch stub for content scripts.
+	_ = rt.Set("fetch", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			return goja.Undefined()
+		}
+		url := call.Argument(0).String()
+		fmt.Printf("[content-script:%s] fetch(%s)\n", s.extID, url)
+		return goja.Undefined()
+	})
+
+	// Expose XMLHttpRequest constructor stub.
+	_ = rt.Set("XMLHttpRequest", func(call goja.ConstructorCall) *goja.Object {
+		obj := call.This
+		_ = obj.Set("open", func(call goja.FunctionCall) goja.Value {
+			return goja.Undefined()
+		})
+		_ = obj.Set("send", func(call goja.FunctionCall) goja.Value {
+			return goja.Undefined()
+		})
+		_ = obj.Set("setRequestHeader", func(call goja.FunctionCall) goja.Value {
+			return goja.Undefined()
+		})
+		_ = obj.Set("addEventListener", func(call goja.FunctionCall) goja.Value {
+			return goja.Undefined()
+		})
+		return obj
+	})
 
 	s.globalsInit = true
 	return nil
