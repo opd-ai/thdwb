@@ -156,6 +156,11 @@ type WindowContext struct {
 	// Origin tracking for cookie partitioning and SOP
 	Origin *url.URL
 
+	// ContainerID identifies the container (origin isolation group) this
+	// window belongs to. An empty value means the default (non-container)
+	// context.
+	ContainerID string
+
 	// Layout cache and pending invalidations
 	layoutCache    map[string]interface{}
 	reflowMu       sync.Mutex
@@ -191,8 +196,8 @@ type WindowContext struct {
 	// Session storage manager (per-window, origin-partitioned)
 	sessionStorage *SessionStorageManager
 
-	// Cookie jar for this window (per-window cookie isolation)
-	cookieJar *sauce.OriginCookieJar
+	// Cookie jar for this window (per-container, per-origin cookie isolation)
+	cookieJar *sauce.ContainerCookieJar
 
 	// HTTP client for this window (with per-window cookie jar)
 	httpClient *http.Client
@@ -230,9 +235,9 @@ func NewWindowContext(settings *Settings, buildInfo *assets.BuildInfo, profiler 
 	wc.jsRuntime = goja.New()
 
 	// Initialize per-window cookie jar and HTTP client for cookie isolation
-	wc.cookieJar = sauce.NewOriginCookieJar()
+	wc.cookieJar = sauce.NewContainerCookieJar()
 	wc.httpClient = &http.Client{
-		Jar: wc.cookieJar,
+		Jar: sauce.NewDefaultContainerCookieJar(wc.cookieJar),
 	}
 
 	// Register this window for cross-window communication
@@ -328,6 +333,11 @@ func (wc *WindowContext) GetOrigin() *url.URL {
 		return &url.URL{}
 	}
 	return wc.Origin
+}
+
+// GetContainerID returns the container ID for this window context.
+func (wc *WindowContext) GetContainerID() string {
+	return wc.ContainerID
 }
 
 func functionKey(fn interface{}) uintptr {
@@ -868,7 +878,7 @@ func (wc *WindowContext) GetSessionStorageManager() *SessionStorageManager {
 }
 
 // GetCookieJar returns the cookie jar for this window context.
-func (wc *WindowContext) GetCookieJar() *sauce.OriginCookieJar {
+func (wc *WindowContext) GetCookieJar() *sauce.ContainerCookieJar {
 	return wc.cookieJar
 }
 

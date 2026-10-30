@@ -1247,14 +1247,15 @@ func (w *JSWindowWrapper) getStorage(storageType string) goja.Value {
 
 func (w *JSWindowWrapper) storageOperations(storageType string) storageOperations {
 	origin := w.windowCtx.GetOrigin()
+	containerID := w.windowCtx.GetContainerID()
 	if storageType != "localStorage" {
-		return sessionStorageOperations(w.windowCtx.GetSessionStorageManager(), origin)
+		return sessionStorageOperations(w.windowCtx.GetSessionStorageManager(), containerID, origin)
 	}
 	manager, err := getLocalStorageManager()
 	if err != nil {
 		panic(w.runtime.NewGoError(err))
 	}
-	return localStorageOperations(manager, origin)
+	return localStorageOperations(manager, containerID, origin)
 }
 
 func (w *JSWindowWrapper) buildStorageObject(storage storageOperations) goja.Value {

@@ -98,7 +98,7 @@ func TestHttpOnlyCookiesAreNotExposedToJavaScript(t *testing.T) {
 	if err := wc.InitJSRuntime(); err != nil {
 		t.Fatal(err)
 	}
-	wc.GetCookieJar().SetCookies(wc.GetOrigin(), []*http.Cookie{
+	wc.GetCookieJar().SetCookies(sauce.DefaultContainerID, wc.GetOrigin(), []*http.Cookie{
 		{Name: "session", Value: "secret", HttpOnly: true, Path: "/"},
 	})
 
@@ -123,15 +123,15 @@ func TestWindowContextCookieJarIsolation(t *testing.T) {
 		}
 	}
 
-	wc1.GetCookieJar().SetCookies(wc1.GetOrigin(), []*http.Cookie{
+	wc1.GetCookieJar().SetCookies(sauce.DefaultContainerID, wc1.GetOrigin(), []*http.Cookie{
 		{Name: "session", Value: "window-one", Path: "/"},
 	})
 
-	cookies := wc1.GetCookieJar().Cookies(wc1.GetOrigin())
+	cookies := wc1.GetCookieJar().Cookies(sauce.DefaultContainerID, wc1.GetOrigin())
 	if len(cookies) != 1 || cookies[0].Value != "window-one" {
 		t.Fatalf("expected cookie to remain available in wc1, got %#v", cookies)
 	}
-	if cookies := wc2.GetCookieJar().Cookies(wc2.GetOrigin()); len(cookies) != 0 {
+	if cookies := wc2.GetCookieJar().Cookies(sauce.DefaultContainerID, wc2.GetOrigin()); len(cookies) != 0 {
 		t.Fatalf("cookie set by wc1 leaked into wc2: %#v", cookies)
 	}
 }
