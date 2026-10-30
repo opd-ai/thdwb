@@ -33,6 +33,9 @@ type Manager struct {
 	permissionOps    PermissionOperations
 	alarmOps         AlarmOperations
 	i18nOps          I18nOperations
+	webRequestOps    WebRequestOperations
+	notificationOps  NotificationOperations
+	downloadOps      DownloadOperations
 }
 
 // NewManager creates a new extension manager.
@@ -377,6 +380,40 @@ func (m *Manager) SetI18nOperations(ops I18nOperations) {
 	m.i18nOps = ops
 }
 
+// SetWebRequestOperations sets the web request operations provider for chrome.webRequest API.
+func (m *Manager) SetWebRequestOperations(ops WebRequestOperations) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.webRequestOps = ops
+}
+
+// SetNotificationOperations sets the notification operations provider for chrome.notifications API.
+func (m *Manager) SetNotificationOperations(ops NotificationOperations) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.notificationOps = ops
+}
+
+// SetDownloadOperations sets the download operations provider for chrome.downloads API.
+func (m *Manager) SetDownloadOperations(ops DownloadOperations) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.downloadOps = ops
+}
+
+// FireWebRequestEvent fires a chrome.webRequest event to the extension's
+// registered JS listeners. Called by the shell when sauce notifies
+// WebRequest observers of network activity.
+func (m *Manager) FireWebRequestEvent(extID, event string, details WebRequestDetails) {
+	m.mu.Lock()
+	api, exists := m.chromeAPIs[extID]
+	m.mu.Unlock()
+	if !exists || api == nil {
+		return
+	}
+	api.FireWebRequestEvent(event, details)
+}
+
 // onExtensionStart initializes the Chrome API bindings and background VM
 // for an extension when it is enabled.
 func (m *Manager) onExtensionStart(ext *Extension) error {
@@ -399,6 +436,9 @@ func (m *Manager) onExtensionStart(ext *Extension) error {
 	api.SetPermissionOperations(m.permissionOps)
 	api.SetAlarmOperations(m.alarmOps)
 	api.SetI18nOperations(m.i18nOps)
+	api.SetWebRequestOperations(m.webRequestOps)
+	api.SetNotificationOperations(m.notificationOps)
+	api.SetDownloadOperations(m.downloadOps)
 
 	m.chromeAPIs[ext.ID] = api
 	m.mu.Unlock()
