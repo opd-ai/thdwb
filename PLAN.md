@@ -260,14 +260,14 @@ Enforce robust content script sandboxing and secure injection.
   - **MAIN world injections sandboxed; cannot call back into extension**
 
 ### Phase E5 Completion Checklist
-- [ ] Content scripts inject at correct timing (document_start, document_end, document_idle)
-- [ ] URL pattern matching works for matches, exclude_matches, globs
-- [ ] Content script VM cannot access page globals
-- [ ] Page cannot access content script variables
-- [ ] Message passing validated by extension ID
-- [ ] Dynamic script injection respects ISOLATED vs MAIN world separation
-- [ ] CSP violations block inline scripts and log
-- [ ] Cross-origin iframe mutations blocked
+- [x] Content scripts inject at correct timing (document_start, document_end, document_idle)
+- [x] URL pattern matching works for matches, exclude_matches, globs
+- [x] Content script VM cannot access page globals
+- [x] Page cannot access content script variables
+- [x] Message passing validated by extension ID
+- [x] Dynamic script injection respects ISOLATED vs MAIN world separation
+- [x] CSP violations block inline scripts and log
+- [x] Cross-origin iframe mutations blocked
 
 ---
 
