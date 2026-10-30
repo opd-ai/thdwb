@@ -13,7 +13,7 @@ func TestLocalStorageOperations(t *testing.T) {
 		t.Fatal(err)
 	}
 	origin, _ := url.Parse("https://local-operations.example")
-	ops := localStorageOperations(manager, origin)
+	ops := localStorageOperations(manager, DefaultContainerID, origin)
 	if err := ops.setItem("b", "two"); err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +41,7 @@ func TestLocalStorageOperations(t *testing.T) {
 func TestSessionStorageOperations(t *testing.T) {
 	manager := NewSessionStorageManager()
 	origin, _ := url.Parse("https://session-operations.example")
-	ops := sessionStorageOperations(manager, origin)
+	ops := sessionStorageOperations(manager, DefaultContainerID, origin)
 	if err := ops.setItem("key", "value"); err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +65,7 @@ func TestStorageRemovalAndClearRollbackOnPersistenceFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	origin, _ := url.Parse("https://rollback.example")
-	if err := manager.SetItem(origin, "key", "value"); err != nil {
+	if err := manager.SetItem(DefaultContainerID, origin, "key", "value"); err != nil {
 		t.Fatal(err)
 	}
 	blockedPath := filepath.Join(t.TempDir(), "not-a-file")
@@ -73,16 +73,16 @@ func TestStorageRemovalAndClearRollbackOnPersistenceFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	manager.path = blockedPath
-	if err := manager.RemoveItem(origin, "key"); err == nil {
+	if err := manager.RemoveItem(DefaultContainerID, origin, "key"); err == nil {
 		t.Fatal("RemoveItem() unexpectedly persisted through a directory path")
 	}
-	if value, ok := manager.GetItem(origin, "key"); !ok || value != "value" {
+	if value, ok := manager.GetItem(DefaultContainerID, origin, "key"); !ok || value != "value" {
 		t.Fatalf("failed RemoveItem() did not restore value: %q, %t", value, ok)
 	}
-	if err := manager.ClearOrigin(origin); err == nil {
+	if err := manager.ClearOrigin(DefaultContainerID, origin); err == nil {
 		t.Fatal("ClearOrigin() unexpectedly persisted through a directory path")
 	}
-	if value, ok := manager.GetItem(origin, "key"); !ok || value != "value" {
+	if value, ok := manager.GetItem(DefaultContainerID, origin, "key"); !ok || value != "value" {
 		t.Fatalf("failed ClearOrigin() did not restore value: %q, %t", value, ok)
 	}
 }
@@ -97,7 +97,7 @@ func TestLocalStorageCompatibilityHelpers(t *testing.T) {
 	if len(GetAllLocalStorageOrigins()) == 0 {
 		t.Fatal("GetAllLocalStorageOrigins() omitted stored origins")
 	}
-	if err := ClearLocalStorageWithError(origin); err != nil {
+	if err := ClearLocalStorageWithError(DefaultContainerID, origin); err != nil {
 		t.Fatal(err)
 	}
 	ClearLocalStorage(origin)

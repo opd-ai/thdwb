@@ -40,26 +40,26 @@ func TestOriginStorageManagerPersistsValuesPerOrigin(t *testing.T) {
 	secondOrigin, err := url.Parse("https://other.example")
 	require.NoError(t, err)
 
-	require.NoError(t, manager.SetItem(firstOrigin, "theme", "dark"))
-	require.NoError(t, manager.SetItem(secondOrigin, "theme", "light"))
-	require.NoError(t, manager.SetItem(firstOrigin, "language", "en"))
+	require.NoError(t, manager.SetItem(DefaultContainerID, firstOrigin, "theme", "dark"))
+	require.NoError(t, manager.SetItem(DefaultContainerID, secondOrigin, "theme", "light"))
+	require.NoError(t, manager.SetItem(DefaultContainerID, firstOrigin, "language", "en"))
 
 	reloaded, err := NewOriginStorageManager(path)
 	require.NoError(t, err)
-	require.Equal(t, 2, reloaded.length(firstOrigin))
-	value, exists := reloaded.GetItem(firstOrigin, "theme")
+	require.Equal(t, 2, reloaded.length(DefaultContainerID, firstOrigin))
+	value, exists := reloaded.GetItem(DefaultContainerID, firstOrigin, "theme")
 	require.True(t, exists)
 	require.Equal(t, "dark", value)
-	value, exists = reloaded.GetItem(secondOrigin, "theme")
+	value, exists = reloaded.GetItem(DefaultContainerID, secondOrigin, "theme")
 	require.True(t, exists)
 	require.Equal(t, "light", value)
 
-	require.NoError(t, reloaded.RemoveItem(firstOrigin, "language"))
-	require.NoError(t, reloaded.ClearOrigin(secondOrigin))
+	require.NoError(t, reloaded.RemoveItem(DefaultContainerID, firstOrigin, "language"))
+	require.NoError(t, reloaded.ClearOrigin(DefaultContainerID, secondOrigin))
 	afterClear, err := NewOriginStorageManager(path)
 	require.NoError(t, err)
-	require.Equal(t, 1, afterClear.length(firstOrigin))
-	require.Equal(t, 0, afterClear.length(secondOrigin))
+	require.Equal(t, 1, afterClear.length(DefaultContainerID, firstOrigin))
+	require.Equal(t, 0, afterClear.length(DefaultContainerID, secondOrigin))
 }
 
 func TestOriginStorageManagerWritesPrivateFile(t *testing.T) {
@@ -68,7 +68,7 @@ func TestOriginStorageManagerWritesPrivateFile(t *testing.T) {
 	require.NoError(t, err)
 	origin, err := url.Parse("https://example.com")
 	require.NoError(t, err)
-	require.NoError(t, manager.SetItem(origin, "key", "value"))
+	require.NoError(t, manager.SetItem(DefaultContainerID, origin, "key", "value"))
 	info, err := os.Stat(path)
 	require.NoError(t, err)
 	require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
@@ -93,15 +93,15 @@ func TestOriginStorageManagerSynchronizesConcurrentUpdates(t *testing.T) {
 			defer workers.Done()
 			key := strconv.Itoa(i)
 			for range 50 {
-				require.NoError(t, manager.SetItem(origin, key, "value"))
-				value, exists := manager.GetItem(origin, key)
+				require.NoError(t, manager.SetItem(DefaultContainerID, origin, key, "value"))
+				value, exists := manager.GetItem(DefaultContainerID, origin, key)
 				require.True(t, exists)
 				require.Equal(t, "value", value)
 			}
 		}(i)
 	}
 	workers.Wait()
-	require.Equal(t, 16, manager.length(origin))
+	require.Equal(t, 16, manager.length(DefaultContainerID, origin))
 }
 
 func TestOriginStorageManagerInMemoryDoesNotPersist(t *testing.T) {
@@ -109,8 +109,8 @@ func TestOriginStorageManagerInMemoryDoesNotPersist(t *testing.T) {
 	require.NoError(t, err)
 	origin, err := url.Parse("https://example.com")
 	require.NoError(t, err)
-	require.NoError(t, manager.SetItem(origin, "key", "value"))
-	value, exists := manager.GetItem(origin, "key")
+	require.NoError(t, manager.SetItem(DefaultContainerID, origin, "key", "value"))
+	value, exists := manager.GetItem(DefaultContainerID, origin, "key")
 	require.True(t, exists)
 	require.Equal(t, "value", value)
 }
@@ -124,8 +124,8 @@ func TestOriginStorageManagerRollsBackFailedPersistence(t *testing.T) {
 	require.NoError(t, os.Mkdir(blockedPath, 0o700))
 	manager.path = blockedPath
 
-	require.Error(t, manager.SetItem(origin, "key", "value"))
-	_, exists := manager.GetItem(origin, "key")
+	require.Error(t, manager.SetItem(DefaultContainerID, origin, "key", "value"))
+	_, exists := manager.GetItem(DefaultContainerID, origin, "key")
 	require.False(t, exists)
 }
 

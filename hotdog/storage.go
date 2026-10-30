@@ -36,6 +36,10 @@ func originKey(u *url.URL) string {
 	return scheme + "://" + host
 }
 
+// DefaultContainerID is the sentinel container ID used for the default
+// (non-container) browsing context.
+const DefaultContainerID = ""
+
 // StorageMap represents the underlying values for localStorage or sessionStorage.
 type StorageMap map[string]string
 
@@ -49,9 +53,11 @@ type storageOperations struct {
 }
 
 // OriginStorageManager manages localStorage per origin and persists it when path is non-empty.
+// Storage is partitioned by container ID + origin, enabling Firefox-style container
+// isolation where each container gets its own localStorage per origin.
 type OriginStorageManager struct {
 	mu       sync.Mutex
-	storages map[string]StorageMap
+	storages map[string]StorageMap // key: containerID + "::" + originKey
 	path     string
 }
 
@@ -65,6 +71,11 @@ func NewOriginStorageManager(path string) (*OriginStorageManager, error) {
 		}
 	}
 	return manager, nil
+}
+
+// storageKey returns the combined container+origin key used for partitioning.
+func storageKey(containerID string, origin *url.URL) string {
+	return containerID + "::" + originKey(origin)
 }
 
 var globalLocalStorageState struct {
@@ -88,21 +99,27 @@ func defaultOriginStorageManager() (*OriginStorageManager, error) {
 
 // GetLocalStorage returns the shared underlying map for legacy callers.
 // Mutations made directly to the map bypass persistent storage.
+// Deprecated: use GetLocalStorageForContainer with a container ID instead.
 func GetLocalStorage(origin *url.URL) StorageMap {
+	return GetLocalStorageForContainer(DefaultContainerID, origin)
+}
+
+// GetLocalStorageForContainer returns localStorage for the given container and origin.
+func GetLocalStorageForContainer(containerID string, origin *url.URL) StorageMap {
 	manager, err := defaultOriginStorageManager()
 	if err != nil {
 		log.Printf("initialize localStorage for %s: %v", originKey(origin), err)
 		return nil
 	}
-	return manager.getLocalStorage(origin)
+	return manager.getLocalStorage(containerID, origin)
 }
 
 func getLocalStorageManager() (*OriginStorageManager, error) {
 	return defaultOriginStorageManager()
 }
 
-func (manager *OriginStorageManager) getLocalStorage(origin *url.URL) StorageMap {
-	key := originKey(origin)
+func (manager *OriginStorageManager) getLocalStorage(containerID string, origin *url.URL) StorageMap {
+	key := storageKey(containerID, origin)
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
 	if manager.storages[key] == nil {
@@ -111,20 +128,20 @@ func (manager *OriginStorageManager) getLocalStorage(origin *url.URL) StorageMap
 	return manager.storages[key]
 }
 
-// GetItem reads one value from localStorage for the given origin.
-func (manager *OriginStorageManager) GetItem(origin *url.URL, itemKey string) (string, bool) {
+// GetItem reads one value from localStorage for the given container and origin.
+func (manager *OriginStorageManager) GetItem(containerID string, origin *url.URL, itemKey string) (string, bool) {
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
-	value, ok := manager.storageLocked(origin)[itemKey]
+	value, ok := manager.storageLocked(containerID, origin)[itemKey]
 	return value, ok
 }
 
-// SetItem stores a value in localStorage and persists it.
-func (manager *OriginStorageManager) SetItem(origin *url.URL, itemKey, value string) error {
+// SetItem stores a value in localStorage for the given container and origin.
+func (manager *OriginStorageManager) SetItem(containerID string, origin *url.URL, itemKey, value string) error {
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
-	key := originKey(origin)
-	storage := manager.storageLocked(origin)
+	key := storageKey(containerID, origin)
+	storage := manager.storageLocked(containerID, origin)
 	previous, existed := storage[itemKey]
 	storage[itemKey] = value
 	if err := manager.persistLocked(); err != nil {
@@ -141,12 +158,12 @@ func (manager *OriginStorageManager) SetItem(origin *url.URL, itemKey, value str
 	return nil
 }
 
-// RemoveItem deletes one key from localStorage and persists it.
-func (manager *OriginStorageManager) RemoveItem(origin *url.URL, itemKey string) error {
+// RemoveItem deletes one key from localStorage for the given container and origin.
+func (manager *OriginStorageManager) RemoveItem(containerID string, origin *url.URL, itemKey string) error {
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
-	key := originKey(origin)
-	storage := manager.storageLocked(origin)
+	key := storageKey(containerID, origin)
+	storage := manager.storageLocked(containerID, origin)
 	previous, existed := storage[itemKey]
 	if !existed {
 		return nil
@@ -163,11 +180,11 @@ func (manager *OriginStorageManager) RemoveItem(origin *url.URL, itemKey string)
 	return nil
 }
 
-// ClearOrigin clears localStorage for an origin and persists the change.
-func (manager *OriginStorageManager) ClearOrigin(origin *url.URL) error {
+// ClearOrigin clears localStorage for the given container and origin.
+func (manager *OriginStorageManager) ClearOrigin(containerID string, origin *url.URL) error {
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
-	key := originKey(origin)
+	key := storageKey(containerID, origin)
 	previous, existed := manager.storages[key]
 	delete(manager.storages, key)
 	if err := manager.persistLocked(); err != nil {
@@ -179,24 +196,37 @@ func (manager *OriginStorageManager) ClearOrigin(origin *url.URL) error {
 	return nil
 }
 
-func (manager *OriginStorageManager) storageLocked(origin *url.URL) StorageMap {
-	key := originKey(origin)
+// ClearContainer removes all localStorage for the given container across all origins.
+func (manager *OriginStorageManager) ClearContainer(containerID string) error {
+	manager.mu.Lock()
+	defer manager.mu.Unlock()
+	prefix := containerID + "::"
+	for key := range manager.storages {
+		if strings.HasPrefix(key, prefix) {
+			delete(manager.storages, key)
+		}
+	}
+	return manager.persistLocked()
+}
+
+func (manager *OriginStorageManager) storageLocked(containerID string, origin *url.URL) StorageMap {
+	key := storageKey(containerID, origin)
 	if manager.storages[key] == nil {
 		manager.storages[key] = make(StorageMap)
 	}
 	return manager.storages[key]
 }
 
-func (manager *OriginStorageManager) length(origin *url.URL) int {
+func (manager *OriginStorageManager) length(containerID string, origin *url.URL) int {
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
-	return len(manager.storages[originKey(origin)])
+	return len(manager.storages[storageKey(containerID, origin)])
 }
 
-func (manager *OriginStorageManager) keyAt(origin *url.URL, index int) (string, bool) {
+func (manager *OriginStorageManager) keyAt(containerID string, origin *url.URL, index int) (string, bool) {
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
-	storage := manager.storages[originKey(origin)]
+	storage := manager.storages[storageKey(containerID, origin)]
 	keys := make([]string, 0, len(storage))
 	for key := range storage {
 		keys = append(keys, key)
@@ -208,31 +238,31 @@ func (manager *OriginStorageManager) keyAt(origin *url.URL, index int) (string, 
 	return keys[index], true
 }
 
-func localStorageOperations(manager *OriginStorageManager, origin *url.URL) storageOperations {
+func localStorageOperations(manager *OriginStorageManager, containerID string, origin *url.URL) storageOperations {
 	return storageOperations{
-		length:  func() int { return manager.length(origin) },
-		keyAt:   func(index int) (string, bool) { return manager.keyAt(origin, index) },
-		getItem: func(key string) (string, bool) { return manager.GetItem(origin, key) },
-		setItem: func(key, value string) error { return manager.SetItem(origin, key, value) },
-		remove:  func(key string) error { return manager.RemoveItem(origin, key) },
-		clear:   func() error { return manager.ClearOrigin(origin) },
+		length:  func() int { return manager.length(containerID, origin) },
+		keyAt:   func(index int) (string, bool) { return manager.keyAt(containerID, origin, index) },
+		getItem: func(key string) (string, bool) { return manager.GetItem(containerID, origin, key) },
+		setItem: func(key, value string) error { return manager.SetItem(containerID, origin, key, value) },
+		remove:  func(key string) error { return manager.RemoveItem(containerID, origin, key) },
+		clear:   func() error { return manager.ClearOrigin(containerID, origin) },
 	}
 }
 
-// ClearLocalStorage clears localStorage for an origin.
+// ClearLocalStorage clears localStorage for an origin in the default container.
 func ClearLocalStorage(origin *url.URL) {
-	if err := ClearLocalStorageWithError(origin); err != nil {
+	if err := ClearLocalStorageWithError(DefaultContainerID, origin); err != nil {
 		log.Printf("clear localStorage for %s: %v", originKey(origin), err)
 	}
 }
 
 // ClearLocalStorageWithError clears localStorage and reports persistence failures.
-func ClearLocalStorageWithError(origin *url.URL) error {
+func ClearLocalStorageWithError(containerID string, origin *url.URL) error {
 	manager, err := defaultOriginStorageManager()
 	if err != nil {
 		return err
 	}
-	return manager.ClearOrigin(origin)
+	return manager.ClearOrigin(containerID, origin)
 }
 
 // GetAllLocalStorageOrigins returns origins that currently have localStorage data.
@@ -314,10 +344,11 @@ func writeLocalStorageFile(path string, data []byte) error {
 	return nil
 }
 
-// SessionStorageManager manages sessionStorage per window and per origin.
+// SessionStorageManager manages sessionStorage per window and per origin,
+// partitioned by container ID.
 type SessionStorageManager struct {
 	mu       sync.Mutex
-	storages map[string]StorageMap
+	storages map[string]StorageMap // key: containerID + "::" + originKey
 }
 
 // NewSessionStorageManager creates an empty per-window session storage manager.
@@ -325,9 +356,9 @@ func NewSessionStorageManager() *SessionStorageManager {
 	return &SessionStorageManager{storages: make(map[string]StorageMap)}
 }
 
-// GetSessionStorage returns the sessionStorage map for this window and origin.
-func (storage *SessionStorageManager) GetSessionStorage(origin *url.URL) StorageMap {
-	key := originKey(origin)
+// GetSessionStorage returns the sessionStorage map for this container and origin.
+func (storage *SessionStorageManager) GetSessionStorage(containerID string, origin *url.URL) StorageMap {
+	key := storageKey(containerID, origin)
 	storage.mu.Lock()
 	defer storage.mu.Unlock()
 	if storage.storages[key] == nil {
@@ -336,53 +367,65 @@ func (storage *SessionStorageManager) GetSessionStorage(origin *url.URL) Storage
 	return storage.storages[key]
 }
 
-// GetItem reads one value from this window's sessionStorage.
-func (storage *SessionStorageManager) GetItem(origin *url.URL, key string) (string, bool) {
+// GetItem reads one value from this container's sessionStorage.
+func (storage *SessionStorageManager) GetItem(containerID string, origin *url.URL, key string) (string, bool) {
 	storage.mu.Lock()
 	defer storage.mu.Unlock()
-	value, ok := storage.storageLocked(origin)[key]
+	value, ok := storage.storageLocked(containerID, origin)[key]
 	return value, ok
 }
 
-// SetItem stores a value in this window's sessionStorage.
-func (storage *SessionStorageManager) SetItem(origin *url.URL, key, value string) {
+// SetItem stores a value in this container's sessionStorage.
+func (storage *SessionStorageManager) SetItem(containerID string, origin *url.URL, key, value string) {
 	storage.mu.Lock()
 	defer storage.mu.Unlock()
-	storage.storageLocked(origin)[key] = value
+	storage.storageLocked(containerID, origin)[key] = value
 }
 
-// RemoveItem deletes a key from this window's sessionStorage.
-func (storage *SessionStorageManager) RemoveItem(origin *url.URL, key string) {
+// RemoveItem deletes a key from this container's sessionStorage.
+func (storage *SessionStorageManager) RemoveItem(containerID string, origin *url.URL, key string) {
 	storage.mu.Lock()
 	defer storage.mu.Unlock()
-	delete(storage.storages[originKey(origin)], key)
+	delete(storage.storages[storageKey(containerID, origin)], key)
 }
 
-// ClearOrigin clears sessionStorage for an origin within this window.
-func (storage *SessionStorageManager) ClearOrigin(origin *url.URL) {
+// ClearOrigin clears sessionStorage for a container and origin within this window.
+func (storage *SessionStorageManager) ClearOrigin(containerID string, origin *url.URL) {
 	storage.mu.Lock()
 	defer storage.mu.Unlock()
-	delete(storage.storages, originKey(origin))
+	delete(storage.storages, storageKey(containerID, origin))
 }
 
-func (storage *SessionStorageManager) storageLocked(origin *url.URL) StorageMap {
-	key := originKey(origin)
+// ClearContainer removes all sessionStorage for the given container across all origins.
+func (storage *SessionStorageManager) ClearContainer(containerID string) {
+	storage.mu.Lock()
+	defer storage.mu.Unlock()
+	prefix := containerID + "::"
+	for key := range storage.storages {
+		if strings.HasPrefix(key, prefix) {
+			delete(storage.storages, key)
+		}
+	}
+}
+
+func (storage *SessionStorageManager) storageLocked(containerID string, origin *url.URL) StorageMap {
+	key := storageKey(containerID, origin)
 	if storage.storages[key] == nil {
 		storage.storages[key] = make(StorageMap)
 	}
 	return storage.storages[key]
 }
 
-func (storage *SessionStorageManager) length(origin *url.URL) int {
+func (storage *SessionStorageManager) length(containerID string, origin *url.URL) int {
 	storage.mu.Lock()
 	defer storage.mu.Unlock()
-	return len(storage.storages[originKey(origin)])
+	return len(storage.storages[storageKey(containerID, origin)])
 }
 
-func (storage *SessionStorageManager) keyAt(origin *url.URL, index int) (string, bool) {
+func (storage *SessionStorageManager) keyAt(containerID string, origin *url.URL, index int) (string, bool) {
 	storage.mu.Lock()
 	defer storage.mu.Unlock()
-	values := storage.storages[originKey(origin)]
+	values := storage.storages[storageKey(containerID, origin)]
 	keys := make([]string, 0, len(values))
 	for key := range values {
 		keys = append(keys, key)
@@ -394,14 +437,23 @@ func (storage *SessionStorageManager) keyAt(origin *url.URL, index int) (string,
 	return keys[index], true
 }
 
-func sessionStorageOperations(manager *SessionStorageManager, origin *url.URL) storageOperations {
+func sessionStorageOperations(manager *SessionStorageManager, containerID string, origin *url.URL) storageOperations {
 	return storageOperations{
-		length:  func() int { return manager.length(origin) },
-		keyAt:   func(index int) (string, bool) { return manager.keyAt(origin, index) },
-		getItem: func(key string) (string, bool) { return manager.GetItem(origin, key) },
-		setItem: func(key, value string) error { manager.SetItem(origin, key, value); return nil },
-		remove:  func(key string) error { manager.RemoveItem(origin, key); return nil },
-		clear:   func() error { manager.ClearOrigin(origin); return nil },
+		length:  func() int { return manager.length(containerID, origin) },
+		keyAt:   func(index int) (string, bool) { return manager.keyAt(containerID, origin, index) },
+		getItem: func(key string) (string, bool) { return manager.GetItem(containerID, origin, key) },
+		setItem: func(key, value string) error {
+			manager.SetItem(containerID, origin, key, value)
+			return nil
+		},
+		remove: func(key string) error {
+			manager.RemoveItem(containerID, origin, key)
+			return nil
+		},
+		clear: func() error {
+			manager.ClearOrigin(containerID, origin)
+			return nil
+		},
 	}
 }
 
