@@ -168,6 +168,43 @@ func (l *ContentScriptLoader) RemoveForExtension(extID string) {
 	l.scripts = remaining
 }
 
+// RemoveScript removes the content script with the given ID.
+func (l *ContentScriptLoader) RemoveScript(id string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	var extID string
+	for i, s := range l.scripts {
+		if s.ID == id {
+			extID = s.ExtID
+			l.scripts = append(l.scripts[:i], l.scripts[i+1:]...)
+			break
+		}
+	}
+
+	if extID == "" {
+		return
+	}
+
+	scripts, ok := l.byExtID[extID]
+	if !ok {
+		return
+	}
+
+	var remaining []ContentScript
+	for _, s := range scripts {
+		if s.ID != id {
+			remaining = append(remaining, s)
+		}
+	}
+
+	if len(remaining) == 0 {
+		delete(l.byExtID, extID)
+	} else {
+		l.byExtID[extID] = remaining
+	}
+}
+
 // matchesURL checks whether a content script matches the given URL.
 func (l *ContentScriptLoader) matchesURL(s ContentScript, u *url.URL) bool {
 	for _, m := range s.Matches {

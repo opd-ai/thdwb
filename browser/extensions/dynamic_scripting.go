@@ -24,14 +24,16 @@ type DynamicScripting struct {
 	loader   *ContentScriptLoader
 	sandboxes map[string]*ContentScriptSandbox
 	router   *MessageRouter
+	injectedCSS map[string][]string // extID -> list of injected CSS script IDs
 }
 
 // NewDynamicScripting creates a new dynamic scripting manager.
 func NewDynamicScripting(loader *ContentScriptLoader, router *MessageRouter) *DynamicScripting {
 	return &DynamicScripting{
-		loader:    loader,
-		sandboxes: make(map[string]*ContentScriptSandbox),
-		router:    router,
+		loader:       loader,
+		sandboxes:    make(map[string]*ContentScriptSandbox),
+		router:       router,
+		injectedCSS:  make(map[string][]string),
 	}
 }
 
@@ -96,12 +98,17 @@ func (d *DynamicScripting) InjectCSS(extID, css string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	// CSS injection is handled by the content script loader and applied
-	// during page load. For dynamic injection, we register a synthetic
-	// content script that matches all URLs.
-	_ = extID
-	_ = css
-	return fmt.Errorf("CSS injection not yet implemented")
+	id := extID + ":css:" + cssHash(css)
+	script := ContentScript{
+		ID:      id,
+		ExtID:   extID,
+		Matches: []string{"<all_urls>"},
+		CSS:     []string{css},
+		RunAt:   string(RunAtDocumentStart),
+	}
+	d.loader.Register(script)
+	d.injectedCSS[extID] = append(d.injectedCSS[extID], id)
+	return nil
 }
 
 // RemoveCSS removes previously injected CSS for the given extension.
@@ -109,8 +116,26 @@ func (d *DynamicScripting) RemoveCSS(extID string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	_ = extID
-	return fmt.Errorf("CSS removal not yet implemented")
+	ids, ok := d.injectedCSS[extID]
+	if !ok {
+		return nil
+	}
+
+	for _, id := range ids {
+		d.loader.RemoveScript(id)
+	}
+
+	delete(d.injectedCSS, extID)
+	return nil
+}
+
+// cssHash returns a short hash of the CSS content for use as a script ID.
+func cssHash(css string) string {
+	var h uint64
+	for i := 0; i < len(css); i++ {
+		h = h*31 + uint64(css[i])
+	}
+	return fmt.Sprintf("%x", h)
 }
 
 // ExecuteScriptTab executes a script in a specific tab. TabID is reserved

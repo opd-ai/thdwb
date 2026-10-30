@@ -116,24 +116,37 @@ func TestDynamicScriptingExecuteScriptTab(t *testing.T) {
 	}
 }
 
-func TestDynamicScriptingInjectCSSNotImplemented(t *testing.T) {
+func TestDynamicScriptingInjectCSS(t *testing.T) {
 	loader := NewContentScriptLoader()
 	router := NewMessageRouter()
 	d := NewDynamicScripting(loader, router)
 
 	err := d.InjectCSS("ext1", "body { color: red }")
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "not yet implemented")
+	require.NoError(t, err)
+	require.Equal(t, 1, loader.CountForExtension("ext1"))
 }
 
-func TestDynamicScriptingRemoveCSSNotImplemented(t *testing.T) {
+func TestDynamicScriptingRemoveCSS(t *testing.T) {
 	loader := NewContentScriptLoader()
 	router := NewMessageRouter()
 	d := NewDynamicScripting(loader, router)
 
+	require.NoError(t, d.InjectCSS("ext1", "body { color: red }"))
+	require.Equal(t, 1, loader.CountForExtension("ext1"))
+
 	err := d.RemoveCSS("ext1")
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "not yet implemented")
+	require.NoError(t, err)
+	require.Equal(t, 0, loader.CountForExtension("ext1"))
+}
+
+func TestDynamicScriptingRemoveCSSNoInjected(t *testing.T) {
+	loader := NewContentScriptLoader()
+	router := NewMessageRouter()
+	d := NewDynamicScripting(loader, router)
+
+	// Removing CSS for an extension with no injected CSS should be a no-op.
+	err := d.RemoveCSS("ext1")
+	require.NoError(t, err)
 }
 
 func writeFile(t *testing.T, dir, name, content string) {
