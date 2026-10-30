@@ -886,3 +886,39 @@ func (wc *WindowContext) GetCookieJar() *sauce.ContainerCookieJar {
 func (wc *WindowContext) GetHTTPClient() *http.Client {
 	return wc.httpClient
 }
+
+// TransferStorage moves all storage (cookies, localStorage, sessionStorage)
+// for the given origin from one container to another. This is used when a tab
+// is moved to a different container.
+func (wc *WindowContext) TransferStorage(fromContainer, toContainer string, origin *url.URL) error {
+	if wc.cookieJar != nil {
+		wc.cookieJar.TransferOrigin(fromContainer, toContainer, origin)
+	}
+	manager, err := getLocalStorageManager()
+	if err != nil {
+		return err
+	}
+	if err := manager.TransferOrigin(fromContainer, toContainer, origin); err != nil {
+		return err
+	}
+	wc.sessionStorage.TransferOrigin(fromContainer, toContainer, origin)
+	return nil
+}
+
+// TransferAllStorage moves all storage (cookies, localStorage, sessionStorage)
+// from one container to another across all origins. This is used when a
+// container is removed and its data needs to be migrated.
+func (wc *WindowContext) TransferAllStorage(fromContainer, toContainer string) error {
+	if wc.cookieJar != nil {
+		wc.cookieJar.TransferContainer(fromContainer, toContainer)
+	}
+	manager, err := getLocalStorageManager()
+	if err != nil {
+		return err
+	}
+	if err := manager.TransferContainer(fromContainer, toContainer); err != nil {
+		return err
+	}
+	wc.sessionStorage.TransferContainer(fromContainer, toContainer)
+	return nil
+}
