@@ -94,6 +94,17 @@ func (bs *BrowserShell) Init() error {
 	// Wire container operations to the extension manager for chrome.contextualIdentities.
 	bs.extManager.SetContainerOperations(bs)
 
+	// Wire all WebExtensions operations interfaces to the shell.
+	eo := newExtensionOps(bs)
+	bs.extManager.SetTabOperations(eo)
+	bs.extManager.SetWindowOperations(eo)
+	bs.extManager.SetCookieOperations(eo)
+	bs.extManager.SetScriptingOperations(eo)
+	bs.extManager.SetContextMenuOperations(eo)
+	bs.extManager.SetPermissionOperations(eo)
+	bs.extManager.SetAlarmOperations(eo)
+	bs.extManager.SetI18nOperations(eo)
+
 	bs.buildUI()
 
 	// Register the window with the app so widgets resolve their window and

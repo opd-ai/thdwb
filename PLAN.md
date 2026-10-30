@@ -177,14 +177,14 @@ Add advanced APIs for content manipulation and UI customization.
   - Support `_locales/` directory structure (en, fr, de, etc.)
 
 ### Phase E3 Completion Checklist
-- [ ] executeScript() injects JS into content script VM
-- [ ] insertCSS() applies styles to page without leaking to page globals
-- [ ] Context menus appear on right-click with extension items
-- [ ] Menu clicks fire onClicked with target context (link, image, selection)
-- [ ] permissions.request() prompts user and updates manifest
-- [ ] Alarms schedule and fire callbacks at correct intervals
-- [ ] i18n.getMessage() returns localized strings
-- [ ] Content script can call executeScript to inject nested scripts
+- [x] executeScript() injects JS into content script VM
+- [x] insertCSS() applies styles to page without leaking to page globals
+- [x] Context menus appear on right-click with extension items
+- [x] Menu clicks fire onClicked with target context (link, image, selection)
+- [x] permissions.request() prompts user and updates manifest
+- [x] Alarms schedule and fire callbacks at correct intervals
+- [x] i18n.getMessage() returns localized strings
+- [x] Content script can call executeScript to inject nested scripts
 
 ---
 

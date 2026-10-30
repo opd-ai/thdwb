@@ -18,11 +18,12 @@ type Manager struct {
 	lifecycle        *LifecycleManager
 	extensions       map[string]*Extension
 	storageDir       string
-	contentReg       *ContentScriptRegistry
-	contentLoader    *ContentScriptLoader
-	sandboxes        map[string]*ContentScriptSandbox
-	messageRouter    *MessageRouter
-	chromeAPIs       map[string]*ChromeAPI
+	contentReg           *ContentScriptRegistry
+	contentLoader        *ContentScriptLoader
+	dynamicScripting     *DynamicScripting
+	sandboxes            map[string]*ContentScriptSandbox
+	messageRouter        *MessageRouter
+	chromeAPIs           map[string]*ChromeAPI
 	tabOps           TabOperations
 	winOps           WindowOperations
 	containerOps     ContainerOperations
@@ -37,15 +38,16 @@ type Manager struct {
 // NewManager creates a new extension manager.
 func NewManager(storageDir string) *Manager {
 	m := &Manager{
-		discovery:     NewDiscovery(),
-		lifecycle:     NewLifecycleManager(),
-		extensions:    make(map[string]*Extension),
-		storageDir:    storageDir,
-		contentReg:    NewContentScriptRegistry(),
-		contentLoader: NewContentScriptLoader(),
-		sandboxes:     make(map[string]*ContentScriptSandbox),
-		messageRouter: NewMessageRouter(),
-		chromeAPIs:    make(map[string]*ChromeAPI),
+		discovery:         NewDiscovery(),
+		lifecycle:         NewLifecycleManager(),
+		extensions:        make(map[string]*Extension),
+		storageDir:        storageDir,
+		contentReg:        NewContentScriptRegistry(),
+		contentLoader:     NewContentScriptLoader(),
+		dynamicScripting:  NewDynamicScripting(NewContentScriptLoader(), NewMessageRouter()),
+		sandboxes:         make(map[string]*ContentScriptSandbox),
+		messageRouter:     NewMessageRouter(),
+		chromeAPIs:        make(map[string]*ChromeAPI),
 	}
 
 	// Wire lifecycle hooks to initialize Chrome API bindings on start and
@@ -274,6 +276,11 @@ func (m *Manager) ContentLoader() *ContentScriptLoader {
 	return m.contentLoader
 }
 
+// DynamicScripting returns the dynamic scripting manager for chrome.scripting API.
+func (m *Manager) DynamicScripting() *DynamicScripting {
+	return m.dynamicScripting
+}
+
 // MessageRouter returns the message router used for extension messaging.
 func (m *Manager) MessageRouter() *MessageRouter {
 	return m.messageRouter
@@ -400,9 +407,11 @@ func (m *Manager) onExtensionStart(ext *Extension) error {
 		return fmt.Errorf("bind chrome APIs for %s: %w", ext.ID, err)
 	}
 
-	// Register the extension's sandbox with the message router.
+	// Register the extension's sandbox with the message router and dynamic
+	// scripting manager.
 	sandbox := m.SandboxFor(ext.ID)
 	m.messageRouter.RegisterSandbox(ext.ID, sandbox)
+	m.dynamicScripting.RegisterSandbox(ext.ID, sandbox)
 
 	// Run the background script if one is declared in the manifest.
 	if ext.Manifest.Background != nil {
