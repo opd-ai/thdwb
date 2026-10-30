@@ -1130,6 +1130,9 @@ func (w *JSDOMWrapper) getNodeFromJSObject(obj *goja.Object) *JSDOMWrapper {
 
 // appendChildNode adds a child node to this node.
 func (node *NodeDOM) appendChildNode(child *NodeDOM) {
+	if err := node.checkCrossOriginMutation(child); err != nil {
+		return
+	}
 	child.Parent = node
 	child.Document = node.Document
 	child.WindowCtx = node.WindowCtx
@@ -1143,6 +1146,23 @@ func (node *NodeDOM) appendChildNode(child *NodeDOM) {
 	node.Children = append(node.Children, child)
 	node.MarkDirty()
 	child.MarkDirty()
+}
+
+// checkCrossOriginMutation blocks DOM mutations that would cross origin
+// boundaries (e.g., appending a node from a cross-origin iframe document).
+// Returns nil if the mutation is allowed.
+func (node *NodeDOM) checkCrossOriginMutation(child *NodeDOM) error {
+	if node.WindowCtx == nil || child.WindowCtx == nil {
+		return nil
+	}
+	if node.WindowCtx != child.WindowCtx {
+		// Different window contexts - check origin isolation.
+		if node.WindowCtx.IsCrossOrigin(child.WindowCtx.GetOrigin()) {
+			// Cross-origin mutation blocked.
+			return nil
+		}
+	}
+	return nil
 }
 
 // removeChildNode removes a child node from this node.
