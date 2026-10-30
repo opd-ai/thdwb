@@ -202,6 +202,12 @@ type WindowContext struct {
 	// HTTP client for this window (with per-window cookie jar)
 	httpClient *http.Client
 
+	// contentScriptInjector is an optional callback invoked after JS runtime
+	// initialization to inject content scripts into the page. It receives the
+	// page URL and should return the JS and CSS to inject. Set by the browser
+	// shell which coordinates with the extension manager.
+	contentScriptInjector func(urlStr string) (js string, css string, err error)
+
 	// Debug state
 	DebugFlag   bool
 	DebugWindow *mustard.WindowBase
@@ -299,6 +305,19 @@ func (wc *WindowContext) LoadHTML(html, baseURL string) error {
 	// Initialize the JS runtime with the window object
 	if err := wc.InitJSRuntime(); err != nil {
 		return fmt.Errorf("init JS runtime: %w", err)
+	}
+
+	// Inject content scripts for this page URL after JS runtime initialization.
+	if wc.contentScriptInjector != nil {
+		js, _, err := wc.contentScriptInjector(doc.URL.String())
+		if err != nil {
+			return fmt.Errorf("content script injection: %w", err)
+		}
+		if js != "" {
+			if _, err := wc.RunJS(js); err != nil {
+				return fmt.Errorf("execute content script: %w", err)
+			}
+		}
 	}
 
 	return nil
@@ -675,6 +694,28 @@ func (wc *WindowContext) RunJS(script string) (goja.Value, error) {
 		return nil, fmt.Errorf("no JavaScript runtime available")
 	}
 	return wc.jsRuntime.RunString(script)
+}
+
+// InjectContentScript executes a JavaScript snippet in this window's JS
+// runtime. It is used to inject content scripts into pages at the
+// appropriate run_at timing. The script runs in the page's JS world.
+func (wc *WindowContext) InjectContentScript(js string) (goja.Value, error) {
+	return wc.RunJS(js)
+}
+
+// IsCrossOrigin reports whether the given URL is cross-origin relative to
+// this window context's origin.
+func (wc *WindowContext) IsCrossOrigin(u *url.URL) bool {
+	if wc.Origin == nil || u == nil {
+		return true
+	}
+	return wc.Origin.Scheme != u.Scheme || wc.Origin.Host != u.Host
+}
+
+// CanMutateDOM reports whether this window context is allowed to mutate the
+// DOM of the given URL. Cross-origin mutations are blocked to enforce SOP.
+func (wc *WindowContext) CanMutateDOM(u *url.URL) bool {
+	return !wc.IsCrossOrigin(u)
 }
 
 // BindWindowInput routes pointer clicks from a mustard window to this window context.

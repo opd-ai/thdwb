@@ -10,10 +10,11 @@ import (
 
 	"github.com/danfragoso/thdwb/assets"
 	"github.com/danfragoso/thdwb/mustard"
+	profiler "github.com/danfragoso/thdwb/profiler"
 	sauce "github.com/danfragoso/thdwb/sauce"
 	"golang.org/x/net/html"
 
-	profiler "github.com/danfragoso/thdwb/profiler"
+	"github.com/stretchr/testify/require"
 	"github.com/dop251/goja"
 )
 
@@ -1931,4 +1932,94 @@ func TestCORSHelperFunctions(t *testing.T) {
 			t.Error("Should fail when header not allowed")
 		}
 	})
+}
+
+func TestWindowContextContentScriptInjection(t *testing.T) {
+	settings := &Settings{}
+	buildInfo := &assets.BuildInfo{}
+	prof := profiler.CreateProfiler()
+	wc := NewWindowContext(settings, buildInfo, prof)
+	defer wc.Destroy()
+
+	injected := false
+	wc.contentScriptInjector = func(urlStr string) (string, string, error) {
+		injected = true
+		return `window.__injected = true;`, "", nil
+	}
+
+	err := wc.LoadHTML("<html><body>test</body></html>", "https://example.com/")
+	require.NoError(t, err)
+	require.True(t, injected)
+
+	// Verify the injected JS ran.
+	val, err := wc.RunJS("window.__injected")
+	require.NoError(t, err)
+	require.True(t, val.ToBoolean())
+}
+
+func TestWindowContextContentScriptInjectionNoInjector(t *testing.T) {
+	settings := &Settings{}
+	buildInfo := &assets.BuildInfo{}
+	prof := profiler.CreateProfiler()
+	wc := NewWindowContext(settings, buildInfo, prof)
+	defer wc.Destroy()
+
+	// No injector set - should load normally.
+	err := wc.LoadHTML("<html><body>test</body></html>", "https://example.com/")
+	require.NoError(t, err)
+	require.NotNil(t, wc.ActiveDocument)
+}
+
+func TestWindowContextIsCrossOrigin(t *testing.T) {
+	settings := &Settings{}
+	buildInfo := &assets.BuildInfo{}
+	prof := profiler.CreateProfiler()
+	wc := NewWindowContext(settings, buildInfo, prof)
+	defer wc.Destroy()
+
+	// No origin set - everything is cross-origin.
+	u, _ := url.Parse("https://example.com/")
+	require.True(t, wc.IsCrossOrigin(u))
+
+	// Set origin.
+	require.NoError(t, wc.SetOrigin("https://example.com/"))
+
+	// Same origin.
+	u1, _ := url.Parse("https://example.com/page")
+	require.False(t, wc.IsCrossOrigin(u1))
+
+	// Different host.
+	u2, _ := url.Parse("https://evil.com/page")
+	require.True(t, wc.IsCrossOrigin(u2))
+
+	// Different scheme.
+	u3, _ := url.Parse("http://example.com/page")
+	require.True(t, wc.IsCrossOrigin(u3))
+
+	// Different port.
+	u4, _ := url.Parse("https://example.com:8080/page")
+	require.True(t, wc.IsCrossOrigin(u4))
+}
+
+func TestWindowContextCanMutateDOM(t *testing.T) {
+	settings := &Settings{}
+	buildInfo := &assets.BuildInfo{}
+	prof := profiler.CreateProfiler()
+	wc := NewWindowContext(settings, buildInfo, prof)
+	defer wc.Destroy()
+
+	// No origin set - cannot mutate.
+	u, _ := url.Parse("https://example.com/")
+	require.False(t, wc.CanMutateDOM(u))
+
+	// Set origin.
+	require.NoError(t, wc.SetOrigin("https://example.com/"))
+
+	// Same origin - can mutate.
+	u1, _ := url.Parse("https://example.com/page")
+	require.True(t, wc.CanMutateDOM(u1))
+
+	// Cross-origin - cannot mutate.
+	u2, _ := url.Parse("https://evil.com/page")
+	require.False(t, wc.CanMutateDOM(u2))
 }
