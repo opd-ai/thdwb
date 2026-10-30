@@ -1,7 +1,11 @@
 package extensions
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sync"
 )
 
@@ -39,6 +43,7 @@ type ContainerManager struct {
 	mu        sync.Mutex
 	containers map[string]*Container
 	nextID    int
+	path      string // persistence path; empty means in-memory only
 }
 
 // NewContainerManager creates an empty ContainerManager with the default
@@ -48,6 +53,104 @@ func NewContainerManager() *ContainerManager {
 		containers: make(map[string]*Container),
 		nextID:     1,
 	}
+}
+
+// NewContainerManagerWithPath creates a ContainerManager that persists
+// containers to the given JSON file path. If the file exists, containers are
+// loaded on creation.
+func NewContainerManagerWithPath(path string) (*ContainerManager, error) {
+	m := &ContainerManager{
+		containers: make(map[string]*Container),
+		nextID:     1,
+		path:       path,
+	}
+	if path != "" {
+		if err := m.load(); err != nil {
+			return nil, err
+		}
+		// Compute nextID from existing containers.
+		for _, c := range m.containers {
+			var n int
+			_, err := fmt.Sscanf(c.ID, "c%d", &n)
+			if err == nil && n >= m.nextID {
+				m.nextID = n + 1
+			}
+		}
+	}
+	return m, nil
+}
+
+// Save persists all containers to the configured path. It is a no-op if no
+// path was configured.
+func (m *ContainerManager) Save() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.saveLocked()
+}
+
+func (m *ContainerManager) saveLocked() error {
+	if m.path == "" {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(m.path), 0o700); err != nil {
+		return fmt.Errorf("create container directory: %w", err)
+	}
+	data, err := json.MarshalIndent(m.containers, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode containers: %w", err)
+	}
+	return writeContainerFile(m.path, data)
+}
+
+func writeContainerFile(path string, data []byte) error {
+	temporary, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return fmt.Errorf("create container temporary file: %w", err)
+	}
+	name := temporary.Name()
+	defer func() { _ = os.Remove(name) }()
+	if err := temporary.Chmod(0o600); err != nil {
+		_ = temporary.Close()
+		return fmt.Errorf("secure container temporary file: %w", err)
+	}
+	if _, err := temporary.Write(data); err != nil {
+		_ = temporary.Close()
+		return fmt.Errorf("write containers: %w", err)
+	}
+	if err := temporary.Sync(); err != nil {
+		_ = temporary.Close()
+		return fmt.Errorf("sync containers: %w", err)
+	}
+	if err := temporary.Close(); err != nil {
+		return fmt.Errorf("close containers: %w", err)
+	}
+	if err := os.Rename(name, path); err != nil {
+		return fmt.Errorf("replace containers: %w", err)
+	}
+	return nil
+}
+
+func (m *ContainerManager) load() error {
+	data, err := os.ReadFile(m.path)
+	if errors.Is(err, os.ErrNotExist) {
+		if err := os.MkdirAll(filepath.Dir(m.path), 0o700); err != nil {
+			return fmt.Errorf("create container directory: %w", err)
+		}
+		return m.saveLocked()
+	}
+	if err != nil {
+		return fmt.Errorf("read containers: %w", err)
+	}
+	if err := os.Chmod(m.path, 0o600); err != nil {
+		return fmt.Errorf("secure container permissions: %w", err)
+	}
+	if err := json.Unmarshal(data, &m.containers); err != nil {
+		return fmt.Errorf("decode containers: %w", err)
+	}
+	if m.containers == nil {
+		m.containers = make(map[string]*Container)
+	}
+	return nil
 }
 
 // Create adds a new container with the given name and color. It returns the
@@ -67,6 +170,9 @@ func (m *ContainerManager) Create(name, color string) (*Container, error) {
 	m.nextID++
 	c := NewContainer(id, name, color)
 	m.containers[id] = c
+	if err := m.saveLocked(); err != nil {
+		return nil, err
+	}
 	return c, nil
 }
 
@@ -106,6 +212,9 @@ func (m *ContainerManager) Update(id, name, color string) (*Container, error) {
 	if color != "" {
 		c.Color = color
 	}
+	if err := m.saveLocked(); err != nil {
+		return nil, err
+	}
 	return c, nil
 }
 
@@ -119,6 +228,9 @@ func (m *ContainerManager) Remove(id string) bool {
 		return false
 	}
 	delete(m.containers, id)
+	if err := m.saveLocked(); err != nil {
+		return false
+	}
 	return true
 }
 

@@ -1,7 +1,10 @@
 package extensions
 
 import (
+	"path/filepath"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestContainerManagerCreateAndGet(t *testing.T) {
@@ -153,4 +156,69 @@ func TestDefaultContainerID(t *testing.T) {
 	if DefaultContainerID != "" {
 		t.Fatalf("DefaultContainerID = %q, want empty string", DefaultContainerID)
 	}
+}
+
+func TestContainerManagerPersistence(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "containers.json")
+	m, err := NewContainerManagerWithPath(path)
+	require.NoError(t, err)
+
+	c, err := m.Create("Work", "#ff0000")
+	require.NoError(t, err)
+	require.NotEmpty(t, c.ID)
+
+	// Reload from disk
+	m2, err := NewContainerManagerWithPath(path)
+	require.NoError(t, err)
+	require.Equal(t, 1, m2.Count())
+	loaded := m2.Get(c.ID)
+	require.NotNil(t, loaded)
+	require.Equal(t, "Work", loaded.Name)
+	require.Equal(t, "#ff0000", loaded.Color)
+}
+
+func TestContainerManagerPersistenceUpdate(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "containers.json")
+	m, err := NewContainerManagerWithPath(path)
+	require.NoError(t, err)
+
+	c, err := m.Create("Work", "#ff0000")
+	require.NoError(t, err)
+
+	updated, err := m.Update(c.ID, "Work2", "#00ff00")
+	require.NoError(t, err)
+	require.Equal(t, "Work2", updated.Name)
+	require.Equal(t, "#00ff00", updated.Color)
+
+	// Reload from disk
+	m2, err := NewContainerManagerWithPath(path)
+	require.NoError(t, err)
+	loaded := m2.Get(c.ID)
+	require.NotNil(t, loaded)
+	require.Equal(t, "Work2", loaded.Name)
+	require.Equal(t, "#00ff00", loaded.Color)
+}
+
+func TestContainerManagerPersistenceRemove(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "containers.json")
+	m, err := NewContainerManagerWithPath(path)
+	require.NoError(t, err)
+
+	c, err := m.Create("Work", "#ff0000")
+	require.NoError(t, err)
+	require.True(t, m.Remove(c.ID))
+
+	// Reload from disk
+	m2, err := NewContainerManagerWithPath(path)
+	require.NoError(t, err)
+	require.Equal(t, 0, m2.Count())
+	require.Nil(t, m2.Get(c.ID))
+}
+
+func TestContainerManagerPersistenceInMemoryNoPath(t *testing.T) {
+	m := NewContainerManager()
+	c, err := m.Create("Work", "#ff0000")
+	require.NoError(t, err)
+	require.NotEmpty(t, c.ID)
+	require.Equal(t, 1, m.Count())
 }
