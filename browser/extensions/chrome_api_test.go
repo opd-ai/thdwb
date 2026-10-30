@@ -17,6 +17,7 @@ type mockTabOps struct {
 	updateErr error
 	createErr error
 	removeErr error
+	activateErr error
 }
 
 func (m *mockTabOps) QueryTabs() []TabInfo {
@@ -79,6 +80,18 @@ func (m *mockTabOps) RemoveTab(tabID int) error {
 		}
 	}
 	return nil
+}
+
+func (m *mockTabOps) ActivateTab(tabID int) (*TabInfo, error) {
+	if m.activateErr != nil {
+		return nil, m.activateErr
+	}
+	for _, t := range m.tabs {
+		if t.ID == tabID {
+			return &t, nil
+		}
+	}
+	return nil, nil
 }
 
 // mockWinOps implements WindowOperations for testing.
@@ -351,7 +364,7 @@ func TestChromeAPIRuntimeSendMessage(t *testing.T) {
 	require.NoError(t, api.Bind())
 
 	var received []Message
-	router.RegisterHandler("ext2", func(msg Message) error {
+	router.RegisterHandler(ext.ID, func(msg Message) error {
 		received = append(received, msg)
 		return nil
 	})
@@ -359,7 +372,7 @@ func TestChromeAPIRuntimeSendMessage(t *testing.T) {
 	runJS(t, vm, `chrome.runtime.sendMessage({hello: "world"});`)
 
 	require.Len(t, received, 1)
-	require.Equal(t, "ext1", received[0].Sender)
+	require.Equal(t, ext.ID, received[0].Sender)
 	require.Equal(t, "world", received[0].Payload.(map[string]interface{})["hello"])
 }
 
@@ -372,17 +385,17 @@ func TestChromeAPIRuntimeOnMessage(t *testing.T) {
 
 	require.NoError(t, api.Bind())
 
-	// Register onMessage listener at the Go level.
+	// Register onMessage listener at the Go level for this extension.
 	var received []interface{}
 	router.RegisterHandler(ext.ID, func(msg Message) error {
 		received = append(received, msg.Payload)
 		return nil
 	})
 
-	// Route a message to this extension.
+	// Route a message from this extension to itself (same extension).
 	err := router.Route(Message{
-		Sender:  "ext2",
-		Target:  "ext1",
+		Sender:  ext.ID,
+		Target:  ext.ID,
 		Type:    "background",
 		Payload: map[string]interface{}{"msg": "hi"},
 	})
@@ -390,6 +403,17 @@ func TestChromeAPIRuntimeOnMessage(t *testing.T) {
 
 	require.Len(t, received, 1)
 	require.Equal(t, "hi", received[0].(map[string]interface{})["msg"])
+
+	// Cross-extension messaging is blocked.
+	err = router.Route(Message{
+		Sender:  "ext2",
+		Target:  ext.ID,
+		Type:    "background",
+		Payload: map[string]interface{}{"msg": "blocked"},
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "cross-extension messaging blocked")
+	require.Len(t, received, 1) // no additional delivery
 }
 
 func TestChromeAPIStorageLocal(t *testing.T) {
@@ -657,23 +681,37 @@ func TestChromeAPIManagerMessageRouting(t *testing.T) {
 	ext1 := m.Get("ext-msg1")
 	ext2 := m.Get("ext-msg2")
 
-	// Send a message from ext1's VM to ext2's VM.
+	// Send a message from ext1's VM to ext1's own handlers (same extension).
 	vm1 := ext1.BackgroundVM
-	_ = ext2.BackgroundVM
 
-	// Register onMessage listener in ext2 at the Go level.
-	var received []interface{}
+	// Register onMessage listener in ext1 at the Go level.
+	var received1 []interface{}
 	router := m.MessageRouter()
-	router.RegisterHandler(ext2.ID, func(msg Message) error {
-		received = append(received, msg.Payload)
+	router.RegisterHandler(ext1.ID, func(msg Message) error {
+		received1 = append(received1, msg.Payload)
 		return nil
 	})
 
-	// Send a message from ext1's VM.
+	// Register onMessage listener in ext2 at the Go level.
+	var received2 []interface{}
+	router.RegisterHandler(ext2.ID, func(msg Message) error {
+		received2 = append(received2, msg.Payload)
+		return nil
+	})
+
+	// Send a message from ext1's VM (broadcast within ext1).
 	runJS(t, vm1, `chrome.runtime.sendMessage({hello: "world"});`)
 
-	require.Len(t, received, 1)
-	require.Equal(t, "world", received[0].(map[string]interface{})["hello"])
+	require.Len(t, received1, 1)
+	require.Equal(t, "world", received1[0].(map[string]interface{})["hello"])
+	require.Empty(t, received2) // ext2 should not receive ext1's messages
+
+	// Send another message from ext1's VM.
+	runJS(t, vm1, `chrome.runtime.sendMessage({hello: "cross"});`)
+
+	require.Len(t, received1, 2)
+	require.Equal(t, "cross", received1[1].(map[string]interface{})["hello"])
+	require.Empty(t, received2) // ext2 still receives nothing
 }
 
 func TestChromeAPIContextualIdentitiesQuery(t *testing.T) {
@@ -1238,4 +1276,154 @@ func TestChromeAPICookiesGetAllCookieStores(t *testing.T) {
 	require.Equal(t, "c1", stores.Get("0").ToObject(vm).Get("id").String())
 	require.Equal(t, "c2", stores.Get("1").ToObject(vm).Get("id").String())
 	require.True(t, stores.Get("1").ToObject(vm).Get("incognito").ToBoolean())
+}
+
+func TestChromeAPITabsOnCreated(t *testing.T) {
+	m := &Manifest{ManifestVersion: ManifestV3, Name: "Test", Version: "1.0"}
+	ext := NewExtension("ext1", "/p", m)
+	tabOps := &mockTabOps{}
+	vm := goja.New()
+	api := NewChromeAPI(ext, vm, NewMessageRouter())
+	api.SetTabOperations(tabOps)
+
+	require.NoError(t, api.Bind())
+
+	// Register onCreated listener.
+	runJS(t, vm, `
+		chrome.tabs.onCreated.addListener(function(tab) {
+			__createdTab = tab;
+		});
+	`)
+
+	// Create a tab.
+	tab, err := tabOps.CreateTab(TabCreate{URL: "https://example.com", Title: "Example"})
+	require.NoError(t, err)
+	require.NotNil(t, tab)
+
+	// Fire the event manually (as the shell would).
+	api.FireTabCreated(tab)
+
+	createdTabVal := getGlobal(t, vm, "__createdTab")
+	require.NotNil(t, createdTabVal)
+	require.NotEqual(t, goja.Undefined(), createdTabVal)
+	createdTab := createdTabVal.ToObject(vm)
+	require.NotNil(t, createdTab)
+	require.Equal(t, float64(tab.ID), createdTab.Get("id").ToFloat())
+	require.Equal(t, "https://example.com", createdTab.Get("url").String())
+	require.Equal(t, "Example", createdTab.Get("title").String())
+}
+
+func TestChromeAPITabsOnRemoved(t *testing.T) {
+	m := &Manifest{ManifestVersion: ManifestV3, Name: "Test", Version: "1.0"}
+	ext := NewExtension("ext1", "/p", m)
+	tabOps := &mockTabOps{
+		tabs: []TabInfo{{ID: 1, Title: "Tab 1", URL: "https://example.com"}},
+	}
+	vm := goja.New()
+	api := NewChromeAPI(ext, vm, NewMessageRouter())
+	api.SetTabOperations(tabOps)
+
+	require.NoError(t, api.Bind())
+
+	// Register onRemoved listener.
+	runJS(t, vm, `
+		chrome.tabs.onRemoved.addListener(function(tabId) {
+			__removedTabId = tabId;
+		});
+	`)
+
+	// Remove a tab.
+	require.NoError(t, tabOps.RemoveTab(1))
+
+	// Fire the event manually (as the shell would).
+	api.FireTabRemoved(1)
+
+	removedIDVal := getGlobal(t, vm, "__removedTabId")
+	require.NotNil(t, removedIDVal)
+	require.NotEqual(t, goja.Undefined(), removedIDVal)
+	removedID := removedIDVal.ToInteger()
+	require.Equal(t, int64(1), removedID)
+}
+
+func TestChromeAPITabsOnActivated(t *testing.T) {
+	m := &Manifest{ManifestVersion: ManifestV3, Name: "Test", Version: "1.0"}
+	ext := NewExtension("ext1", "/p", m)
+	tabOps := &mockTabOps{
+		tabs: []TabInfo{{ID: 1, Title: "Tab 1", URL: "https://example.com"}},
+	}
+	vm := goja.New()
+	api := NewChromeAPI(ext, vm, NewMessageRouter())
+	api.SetTabOperations(tabOps)
+
+	require.NoError(t, api.Bind())
+
+	// Register onActivated listener.
+	runJS(t, vm, `
+		chrome.tabs.onActivated.addListener(function(info) {
+			__activatedTabId = info.tabId;
+		});
+	`)
+
+	// Activate a tab.
+	_, err := tabOps.ActivateTab(1)
+	require.NoError(t, err)
+
+	// Fire the event manually (as the shell would).
+	api.FireTabActivated(1)
+
+	activatedIDVal := getGlobal(t, vm, "__activatedTabId")
+	require.NotNil(t, activatedIDVal)
+	require.NotEqual(t, goja.Undefined(), activatedIDVal)
+	activatedID := activatedIDVal.ToInteger()
+	require.Equal(t, int64(1), activatedID)
+}
+
+func TestChromeAPIRuntimeOnInstalled(t *testing.T) {
+	m := &Manifest{ManifestVersion: ManifestV3, Name: "Test", Version: "1.0"}
+	ext := NewExtension("ext1", "/p", m)
+	vm := goja.New()
+	api := NewChromeAPI(ext, vm, NewMessageRouter())
+
+	require.NoError(t, api.Bind())
+
+	// Register onInstalled listener.
+	runJS(t, vm, `
+		chrome.runtime.onInstalled.addListener(function(details) {
+			__installReason = details.reason;
+		});
+	`)
+
+	// Fire the event manually (as the shell would).
+	api.FireRuntimeInstalled("install")
+
+	reasonVal := getGlobal(t, vm, "__installReason")
+	require.NotNil(t, reasonVal)
+	require.NotEqual(t, goja.Undefined(), reasonVal)
+	reason := reasonVal.String()
+	require.Equal(t, "install", reason)
+}
+
+func TestChromeAPIRuntimeOnStartup(t *testing.T) {
+	m := &Manifest{ManifestVersion: ManifestV3, Name: "Test", Version: "1.0"}
+	ext := NewExtension("ext1", "/p", m)
+	vm := goja.New()
+	api := NewChromeAPI(ext, vm, NewMessageRouter())
+
+	require.NoError(t, api.Bind())
+
+	// Register onStartup listener.
+	runJS(t, vm, `
+		chrome.runtime.onStartup.addListener(function() {
+			__startupFired = true;
+		});
+	`)
+
+	// Fire the event manually (as the shell would).
+	api.FireRuntimeStartup()
+
+	startedVal := getGlobal(t, vm, "__startupFired")
+	require.NotNil(t, startedVal)
+	require.NotEqual(t, goja.Undefined(), startedVal)
+	started := startedVal.ToBoolean()
+	require.True(t, started)
 }

@@ -76,17 +76,17 @@ Implement the foundational APIs that most extensions rely on.
   - `chrome.runtime.onStartup` event
 
 ### Phase E1 Completion Checklist
-- [ ] Content script → background message passing works
-- [ ] Background → content script message passing works
-- [ ] Cross-extension messaging blocked
-- [ ] Storage API reads/writes persist across sessions
-- [ ] Storage isolated by extension ID
-- [ ] tabs.query() returns correct tab list
-- [ ] tabs.create() spawns new window instance via thdwb
-- [ ] tabs.remove() closes window and cleans up state
-- [ ] Tab events fire on create/remove/update/activate
-- [ ] Extension can read its manifest
-- [ ] runtime events fire at startup and on install
+- [x] Content script → background message passing works
+- [x] Background → content script message passing works
+- [x] Cross-extension messaging blocked
+- [x] Storage API reads/writes persist across sessions
+- [x] Storage isolated by extension ID
+- [x] tabs.query() returns correct tab list
+- [x] tabs.create() spawns new window instance via thdwb
+- [x] tabs.remove() closes window and cleans up state
+- [x] Tab events fire on create/remove/update/activate
+- [x] Extension can read its manifest
+- [x] runtime events fire at startup and on install
 
 ---
 

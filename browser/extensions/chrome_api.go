@@ -58,6 +58,7 @@ type TabOperations interface {
 	UpdateTab(tabID int, updates TabUpdate) (*TabInfo, error)
 	CreateTab(tab TabCreate) (*TabInfo, error)
 	RemoveTab(tabID int) error
+	ActivateTab(tabID int) (*TabInfo, error)
 }
 
 // WindowOperations is implemented by the browser shell to provide window
@@ -319,6 +320,11 @@ type ChromeAPI struct {
 	notificationOps NotificationOperations
 	downloadOps DownloadOperations
 	platform      PlatformInfo
+
+	// tabEventListeners holds listeners for tab events keyed by event name.
+	tabEventListeners map[string][]goja.Callable
+	// runtimeEventListeners holds listeners for runtime events keyed by event name.
+	runtimeEventListeners map[string][]goja.Callable
 }
 
 // NewChromeAPI creates a ChromeAPI binding for the given extension and VM.
@@ -333,6 +339,8 @@ func NewChromeAPI(ext *Extension, vm *goja.Runtime, router *MessageRouter) *Chro
 			Platform:     runtime.GOOS + "/" + runtime.GOARCH,
 			BrowserVersion: "thdwb dev",
 		},
+		tabEventListeners:    make(map[string][]goja.Callable),
+		runtimeEventListeners: make(map[string][]goja.Callable),
 	}
 }
 
@@ -632,8 +640,66 @@ func (c *ChromeAPI) bindRuntime(vm *goja.Runtime, ext *Extension, router *Messag
 	})
 	_ = runtimeObj.Set("onMessage", onMessageObj)
 
+	// chrome.runtime.onInstalled event
+	onInstalledObj := vm.NewObject()
+	_ = onInstalledObj.Set("addListener", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) > 0 {
+			if cb, ok := goja.AssertFunction(call.Argument(0)); ok {
+				c.mu.Lock()
+				c.runtimeEventListeners["onInstalled"] = append(c.runtimeEventListeners["onInstalled"], cb)
+				c.mu.Unlock()
+			}
+		}
+		return goja.Undefined()
+	})
+	_ = runtimeObj.Set("onInstalled", onInstalledObj)
+
+	// chrome.runtime.onStartup event
+	onStartupObj := vm.NewObject()
+	_ = onStartupObj.Set("addListener", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) > 0 {
+			if cb, ok := goja.AssertFunction(call.Argument(0)); ok {
+				c.mu.Lock()
+				c.runtimeEventListeners["onStartup"] = append(c.runtimeEventListeners["onStartup"], cb)
+				c.mu.Unlock()
+			}
+		}
+		return goja.Undefined()
+	})
+	_ = runtimeObj.Set("onStartup", onStartupObj)
+
 	_ = chromeObj.Set("runtime", runtimeObj)
 	return nil
+}
+
+// FireRuntimeInstalled fires the chrome.runtime.onInstalled event to all
+// registered listeners for this extension.
+func (c *ChromeAPI) FireRuntimeInstalled(reason string) {
+	c.mu.Lock()
+	listeners := make([]goja.Callable, len(c.runtimeEventListeners["onInstalled"]))
+	copy(listeners, c.runtimeEventListeners["onInstalled"])
+	c.mu.Unlock()
+
+	for _, cb := range listeners {
+		_, _ = cb(goja.Undefined(), c.vm.ToValue(map[string]interface{}{
+			"reason": reason,
+		}))
+	}
+}
+
+// FireRuntimeStartup fires the chrome.runtime.onStartup event to all
+// registered listeners for this extension.
+func (c *ChromeAPI) FireRuntimeStartup() {
+	c.mu.Lock()
+	listeners := make([]goja.Callable, len(c.runtimeEventListeners["onStartup"]))
+	copy(listeners, c.runtimeEventListeners["onStartup"])
+	c.mu.Unlock()
+
+	for _, cb := range listeners {
+		_, _ = cb(goja.Undefined(), c.vm.ToValue(map[string]interface{}{
+			"reason": "startup",
+		}))
+	}
 }
 
 // bindStorage installs chrome.storage into the VM.
@@ -852,6 +918,10 @@ func (c *ChromeAPI) bindTabs(vm *goja.Runtime, ext *Extension, router *MessageRo
 			}
 			return goja.Undefined()
 		}
+		// Fire onActivated if the tab was activated.
+		if updates.Active != nil && *updates.Active {
+			c.FireTabActivated(tabID)
+		}
 		if callback != nil {
 			_, _ = callback(vm.ToValue(map[string]interface{}{
 				"id":             t.ID,
@@ -862,7 +932,7 @@ func (c *ChromeAPI) bindTabs(vm *goja.Runtime, ext *Extension, router *MessageRo
 			}))
 		}
 		return goja.Undefined()
-	})
+		})
 
 	// chrome.tabs.create
 	_ = tabsObj.Set("create", func(call goja.FunctionCall) goja.Value {
@@ -899,6 +969,8 @@ func (c *ChromeAPI) bindTabs(vm *goja.Runtime, ext *Extension, router *MessageRo
 			}
 			return goja.Undefined()
 		}
+		// Fire onCreated event.
+		c.FireTabCreated(t)
 		if callback != nil {
 			_, _ = callback(vm.ToValue(map[string]interface{}{
 				"id":             t.ID,
@@ -919,6 +991,8 @@ func (c *ChromeAPI) bindTabs(vm *goja.Runtime, ext *Extension, router *MessageRo
 		tabID := int(call.Argument(0).ToInteger())
 		callback, _ := goja.AssertFunction(call.Argument(1))
 		_ = tabOps.RemoveTab(tabID)
+		// Fire onRemoved event.
+		c.FireTabRemoved(tabID)
 		if callback != nil {
 			_, _ = callback(goja.Undefined())
 		}
@@ -929,13 +1003,129 @@ func (c *ChromeAPI) bindTabs(vm *goja.Runtime, ext *Extension, router *MessageRo
 	onUpdatedObj := vm.NewObject()
 	_ = onUpdatedObj.Set("addListener", func(call goja.FunctionCall) goja.Value {
 		// Store listener for tab update notifications (wired by shell).
-		_ = call
+		if len(call.Arguments) > 0 {
+			if cb, ok := goja.AssertFunction(call.Argument(0)); ok {
+				c.mu.Lock()
+				c.tabEventListeners["onUpdated"] = append(c.tabEventListeners["onUpdated"], cb)
+				c.mu.Unlock()
+			}
+		}
 		return goja.Undefined()
 	})
 	_ = tabsObj.Set("onUpdated", onUpdatedObj)
 
+	// chrome.tabs.onCreated event
+	onCreatedObj := vm.NewObject()
+	_ = onCreatedObj.Set("addListener", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) > 0 {
+			if cb, ok := goja.AssertFunction(call.Argument(0)); ok {
+				c.mu.Lock()
+				c.tabEventListeners["onCreated"] = append(c.tabEventListeners["onCreated"], cb)
+				c.mu.Unlock()
+			}
+		}
+		return goja.Undefined()
+	})
+	_ = tabsObj.Set("onCreated", onCreatedObj)
+
+	// chrome.tabs.onRemoved event
+	onRemovedObj := vm.NewObject()
+	_ = onRemovedObj.Set("addListener", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) > 0 {
+			if cb, ok := goja.AssertFunction(call.Argument(0)); ok {
+				c.mu.Lock()
+				c.tabEventListeners["onRemoved"] = append(c.tabEventListeners["onRemoved"], cb)
+				c.mu.Unlock()
+			}
+		}
+		return goja.Undefined()
+	})
+	_ = tabsObj.Set("onRemoved", onRemovedObj)
+
+	// chrome.tabs.onActivated event
+	onActivatedObj := vm.NewObject()
+	_ = onActivatedObj.Set("addListener", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) > 0 {
+			if cb, ok := goja.AssertFunction(call.Argument(0)); ok {
+				c.mu.Lock()
+				c.tabEventListeners["onActivated"] = append(c.tabEventListeners["onActivated"], cb)
+				c.mu.Unlock()
+			}
+		}
+		return goja.Undefined()
+	})
+	_ = tabsObj.Set("onActivated", onActivatedObj)
+
 	_ = chromeObj.Set("tabs", tabsObj)
 	return nil
+}
+
+// FireTabCreated fires the chrome.tabs.onCreated event to all registered
+// listeners for this extension.
+func (c *ChromeAPI) FireTabCreated(tab *TabInfo) {
+	c.mu.Lock()
+	listeners := make([]goja.Callable, len(c.tabEventListeners["onCreated"]))
+	copy(listeners, c.tabEventListeners["onCreated"])
+	c.mu.Unlock()
+
+	for _, cb := range listeners {
+		_, _ = cb(goja.Undefined(), c.vm.ToValue(map[string]interface{}{
+			"id":             tab.ID,
+			"title":          tab.Title,
+			"url":            tab.URL,
+			"favicon":        tab.Favicon,
+			"containerId":    tab.ContainerID,
+			"containerName":  tab.ContainerName,
+			"containerColor": tab.ContainerColor,
+			"active":         tab.IsActive,
+			"windowId":       tab.WindowID,
+		}))
+	}
+}
+
+// FireTabRemoved fires the chrome.tabs.onRemoved event to all registered
+// listeners for this extension.
+func (c *ChromeAPI) FireTabRemoved(tabID int) {
+	c.mu.Lock()
+	listeners := make([]goja.Callable, len(c.tabEventListeners["onRemoved"]))
+	copy(listeners, c.tabEventListeners["onRemoved"])
+	c.mu.Unlock()
+
+	for _, cb := range listeners {
+		_, _ = cb(goja.Undefined(), c.vm.ToValue(float64(tabID)))
+	}
+}
+
+// FireTabActivated fires the chrome.tabs.onActivated event to all registered
+// listeners for this extension.
+func (c *ChromeAPI) FireTabActivated(tabID int) {
+	c.mu.Lock()
+	listeners := make([]goja.Callable, len(c.tabEventListeners["onActivated"]))
+	copy(listeners, c.tabEventListeners["onActivated"])
+	c.mu.Unlock()
+
+	for _, cb := range listeners {
+		_, _ = cb(goja.Undefined(), c.vm.ToValue(map[string]interface{}{
+			"tabId": float64(tabID),
+		}))
+	}
+}
+
+// FireTabUpdated fires the chrome.tabs.onUpdated event to all registered
+// listeners for this extension.
+func (c *ChromeAPI) FireTabUpdated(tabID int, changes map[string]interface{}) {
+	c.mu.Lock()
+	listeners := make([]goja.Callable, len(c.tabEventListeners["onUpdated"]))
+	copy(listeners, c.tabEventListeners["onUpdated"])
+	c.mu.Unlock()
+
+	for _, cb := range listeners {
+		_, _ = cb(goja.Undefined(), c.vm.ToValue(map[string]interface{}{
+			"tabId":      tabID,
+			"changes":    changes,
+			"status":     "complete",
+		}))
+	}
 }
 
 // bindWindows installs chrome.windows into the VM.
