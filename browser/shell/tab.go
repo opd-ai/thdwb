@@ -203,6 +203,22 @@ func (m *TabManager) MoveTab(from, to int) {
 	m.notify()
 }
 
+// MoveTabToContainer moves the tab with the given ID to a different
+// container. It updates the tab's container fields and returns the tab, or
+// nil if the tab is unknown. Storage transfer (cookies, localStorage,
+// sessionStorage) between containers is the caller's responsibility.
+func (m *TabManager) MoveTabToContainer(tabID int, containerID, containerName, containerColor string) *Tab {
+	t := m.GetTab(tabID)
+	if t == nil {
+		return nil
+	}
+	t.ContainerID = containerID
+	t.ContainerName = containerName
+	t.ContainerColor = containerColor
+	m.notify()
+	return t
+}
+
 // GetTab returns the tab with the given ID, or nil.
 func (m *TabManager) GetTab(tabID int) *Tab {
 	for _, t := range m.tabs {

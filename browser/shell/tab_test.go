@@ -1,6 +1,10 @@
 package shell
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
 
 func TestTabManagerAddAssignsUniqueIDsAndActivates(t *testing.T) {
 	m := NewTabManager()
@@ -110,6 +114,36 @@ func TestTabManagerMoveTab(t *testing.T) {
 	if got := len(m.Tabs()); got != 3 {
 		t.Fatalf("Count after invalid moves = %d, want 3", got)
 	}
+}
+
+func TestTabManagerMoveTabToContainer(t *testing.T) {
+	m := NewTabManager()
+	a := m.Add("A", "u1", "c1", "Work", "#ff0000")
+	b := m.Add("B", "u2", "", "", "")
+
+	// Move tab A to a different container
+	moved := m.MoveTabToContainer(a.ID, "c2", "Personal", "#00ff00")
+	require.NotNil(t, moved)
+	require.Equal(t, "c2", moved.ContainerID)
+	require.Equal(t, "Personal", moved.ContainerName)
+	require.Equal(t, "#00ff00", moved.ContainerColor)
+
+	// Verify tab B is unaffected
+	require.Equal(t, "", b.ContainerID)
+
+	// Unknown ID is a no-op
+	require.Nil(t, m.MoveTabToContainer(999, "c2", "Personal", "#00ff00"))
+}
+
+func TestTabManagerMoveTabToDefaultContainer(t *testing.T) {
+	m := NewTabManager()
+	a := m.Add("A", "u1", "c1", "Work", "#ff0000")
+
+	// Move tab to default (non-container) context
+	moved := m.MoveTabToContainer(a.ID, "", "", "")
+	require.NotNil(t, moved)
+	require.Equal(t, "", moved.ContainerID)
+	require.False(t, moved.IsContainerTab())
 }
 
 func TestTabManagerSetTitleAndURL(t *testing.T) {
