@@ -15,6 +15,8 @@
 // All state managers are intended to be driven from the UI loop's goroutine.
 package shell
 
+import "time"
+
 // Tab is a single browser tab: its identity, display state, and container
 // association. A tab is the unit of navigation in the shell.
 type Tab struct {
@@ -38,6 +40,14 @@ type Tab struct {
 
 	// IsActive reports whether this is the currently active (visible) tab.
 	IsActive bool
+
+	// Suspended reports whether the tab has been suspended to save memory.
+	// Suspended tabs have their page resources released but retain their URL,
+	// title, and container association for restoration.
+	Suspended bool
+
+	// SuspendedAt records when the tab was suspended, if Suspended is true.
+	SuspendedAt *time.Time
 }
 
 // IsContainerTab reports whether the tab is associated with a container.
