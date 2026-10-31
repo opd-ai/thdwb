@@ -455,17 +455,17 @@ Ensure the browser is robust, performant, and thoroughly tested.
   - Implement request prioritization (interactive requests before background prefetch)
 
 ### Phase E8 Completion Checklist
-- [ ] Test suite covers all major WebExtensions APIs
-- [ ] Container isolation tests pass with zero leaks
-- [ ] Content script security tests verify sandbox enforcement
-- [ ] Memory profiling identifies and eliminates leaks
-- [ ] Page load metrics logged and accessible
-- [ ] Extension inspector shows logs, storage, manifest
-- [ ] Browser recovers from crashes and restores session
-- [ ] Error logging captures all exceptions with stack traces
-- [ ] Rendering optimized; paint frequency <60fps variance
-- [ ] Network optimized; connection reuse measured
-- [ ] All major websites render without regressions
+- [x] Test suite covers all major WebExtensions APIs
+- [x] Container isolation tests pass with zero leaks
+- [x] Content script security tests verify sandbox enforcement
+- [x] Memory profiling identifies and eliminates leaks
+- [x] Page load metrics logged and accessible
+- [x] Extension inspector shows logs, storage, manifest
+- [x] Browser recovers from crashes and restores session
+- [x] Error logging captures all exceptions with stack traces
+- [x] Rendering optimized; paint frequency <60fps variance
+- [x] Network optimized; connection reuse measured
+- [x] All major websites render without regressions
 
 ---
 
