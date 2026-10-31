@@ -27,6 +27,7 @@ type BrowserShell struct {
 	extensionManager *ExtensionManager
 	extManager       *extensions.Manager
 	containerManager *extensions.ContainerManager
+	browserSettings  *BrowserSettings
 
 	addressBar       *AddressBar
 	navigation       *NavigationControls
@@ -34,6 +35,7 @@ type BrowserShell struct {
 	extensionToolbar *ExtensionToolbar
 	bookmarksSidebar *BookmarksSidebar
 	historySidebar   *HistorySidebar
+	settingsPage     *SettingsPage
 }
 
 // NewBrowserShell creates a browser shell with the given settings and build
@@ -65,6 +67,7 @@ func NewBrowserShell(settings *hotdog.Settings, buildInfo *assets.BuildInfo) *Br
 		extensionManager: NewExtensionManager(),
 		extManager:       extensions.NewManager(""),
 		containerManager: extensions.NewContainerManager(),
+		browserSettings:  NewBrowserSettings(),
 	}
 }
 
@@ -178,6 +181,11 @@ func (bs *BrowserShell) buildUI() {
 	bs.historySidebar.SetVisible(false)
 	rootFrame.AttachWidget(bs.historySidebar.Frame)
 
+	// Settings page (hidden by default; toggled via Ctrl+,).
+	bs.settingsPage = NewSettingsPage(bs.windowBase, bs.browserSettings)
+	bs.settingsPage.SetVisible(false)
+	rootFrame.AttachWidget(bs.settingsPage.Frame)
+
 	// Content area (placeholder for web content)
 	contentArea := mustard.CreateFrame(mustard.VerticalFrame)
 	contentArea.SetBackgroundColor("#ffffff")
@@ -228,6 +236,8 @@ func (bs *BrowserShell) handleKeyboardInput(input mustard.KeyboardInput) {
 			bs.bookmarksSidebar.Toggle()
 		case "h":
 			bs.historySidebar.Toggle()
+		case "s":
+			bs.settingsPage.Toggle()
 		}
 	}
 }
@@ -377,6 +387,11 @@ func (bs *BrowserShell) RemoveContainer(id string) error {
 // Settings returns the shell's settings.
 func (bs *BrowserShell) Settings() *hotdog.Settings {
 	return bs.settings
+}
+
+// BrowserSettings returns the shell's browser preferences settings.
+func (bs *BrowserShell) BrowserSettings() *BrowserSettings {
+	return bs.browserSettings
 }
 
 // Window returns the shell's mustard window base.
