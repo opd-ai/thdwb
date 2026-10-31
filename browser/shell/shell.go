@@ -318,7 +318,20 @@ func (bs *BrowserShell) buildUI() {
 	bs.windowBase.SetRootFrame(rootFrame)
 
 	// Record web (http/https) navigations in the history manager.
-	bs.tabManager.OnNavigated(func(tab *Tab) { bs.recordHistory(tab) })
+	bs.tabManager.OnNavigated(func(tab *Tab) {
+		bs.recordHistory(tab)
+
+		// Record memory snapshots on navigation for per-tab profiling.
+		if tab != nil {
+			bs.memoryProfiler.Record("tab:" + tab.URL)
+		}
+
+		// Record page load metrics for web navigations.
+		if tab != nil && (strings.HasPrefix(tab.URL, "http://") || strings.HasPrefix(tab.URL, "https://")) {
+			m := bs.pageLoadTracker.StartLoad(tab.URL)
+			_ = m // Mark as started; completed when page finishes loading.
+		}
+	})
 
 	// Open a default tab only if no tabs were restored from session.
 	if bs.tabManager.Count() == 0 {
