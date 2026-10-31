@@ -46,6 +46,10 @@ type Manager struct {
 	alarmTimers   map[string]*time.Timer // key: extID + ":" + alarmName
 	alarmStop     chan struct{}
 	alarmStopped  bool
+
+	// serviceWorkers holds Manifest v3 service workers keyed by extension ID.
+	serviceWorkers map[string]*ServiceWorker
+	swMu           sync.Mutex
 }
 
 // NewManager creates a new extension manager.
@@ -63,6 +67,7 @@ func NewManager(storageDir string) *Manager {
 		chromeAPIs:       make(map[string]*ChromeAPI),
 		alarmTimers:      make(map[string]*time.Timer),
 		alarmStop:        make(chan struct{}),
+		serviceWorkers:   make(map[string]*ServiceWorker),
 	}
 
 	// Wire lifecycle hooks to initialize Chrome API bindings on start and
@@ -622,8 +627,14 @@ func (m *Manager) onExtensionStart(ext *Extension) error {
 			}
 		}
 		if ext.Manifest.Background.ServiceWorker != "" {
-			if err := runScriptInVM(vm, ext.ResolvePath(ext.Manifest.Background.ServiceWorker)); err != nil {
-				return fmt.Errorf("run service worker %s: %w", ext.Manifest.Background.ServiceWorker, err)
+			// Manifest v3: use the service worker lifecycle instead of
+			// running the script as a persistent background page.
+			sw := NewServiceWorker(ext.ID, ext.ResolvePath(ext.Manifest.Background.ServiceWorker))
+			m.swMu.Lock()
+			m.serviceWorkers[ext.ID] = sw
+			m.swMu.Unlock()
+			if err := sw.Start(vm); err != nil {
+				return fmt.Errorf("start service worker %s: %w", ext.Manifest.Background.ServiceWorker, err)
 			}
 		}
 	}
@@ -655,6 +666,19 @@ func (m *Manager) onExtensionStop(ext *Extension) error {
 	}
 	m.messageRouter.UnregisterSandbox(ext.ID)
 	m.mu.Unlock()
+
+	// Stop the service worker if one is running.
+	m.swMu.Lock()
+	sw, hasSW := m.serviceWorkers[ext.ID]
+	if hasSW {
+		delete(m.serviceWorkers, ext.ID)
+	}
+	m.swMu.Unlock()
+	if hasSW {
+		if err := sw.Stop(); err != nil {
+			return fmt.Errorf("stop service worker %s: %w", ext.ID, err)
+		}
+	}
 
 	if exists {
 		_ = api.vm.Get("chrome") // release reference
