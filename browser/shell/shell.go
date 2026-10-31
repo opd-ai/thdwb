@@ -9,6 +9,11 @@ import (
 	extensions "github.com/danfragoso/thdwb/browser/extensions"
 	hotdog "github.com/danfragoso/thdwb/hotdog"
 	mustard "github.com/danfragoso/thdwb/mustard"
+	profiler "github.com/danfragoso/thdwb/profiler"
+	debug "github.com/danfragoso/thdwb/browser/debug"
+	errors "github.com/danfragoso/thdwb/browser/errors"
+	telemetry "github.com/danfragoso/thdwb/browser/telemetry"
+	crash "github.com/danfragoso/thdwb/browser/extensions/crash"
 )
 
 // BrowserShell is the top-level browser UI. It owns the mustard window and
@@ -38,6 +43,16 @@ type BrowserShell struct {
 	settingsPage     *SettingsPage
 	newTabPage       *NewTabPage
 	menuBar          *MenuBar
+
+	sessionManager   *SessionManager
+	memoryProfiler   *profiler.MemoryProfiler
+	pageLoadTracker  *profiler.PageLoadTracker
+	inspector        *debug.Inspector
+	errorLogger      *errors.Logger
+	consoleCollector *debug.ConsoleCollector
+	networkMonitor   *debug.NetworkMonitor
+	recoveryManager  *crash.RecoveryManager
+	telemetry        *telemetry.Telemetry
 }
 
 // NewBrowserShell creates a browser shell with the given settings and build
@@ -70,11 +85,21 @@ func NewBrowserShell(settings *hotdog.Settings, buildInfo *assets.BuildInfo) *Br
 		extManager:       extensions.NewManager(""),
 		containerManager: extensions.NewContainerManager(),
 		browserSettings:  NewBrowserSettings(),
+
+		sessionManager:   NewSessionManager(""),
+		memoryProfiler:   profiler.NewMemoryProfiler(),
+		pageLoadTracker:  profiler.NewPageLoadTracker(),
+		inspector:        debug.NewInspector(),
+		errorLogger:      errors.NewLogger(1000),
+		consoleCollector: debug.NewConsoleCollector(1000),
+		networkMonitor:   debug.NewNetworkMonitor(1000),
+		recoveryManager:  crash.NewRecoveryManager(100),
+		telemetry:        telemetry.MustNew(telemetry.DefaultConfig(), ""),
 	}
 }
 
 // NewBrowserShellWithConfigDir creates a BrowserShell that persists containers
-// to the given config directory.
+// and sessions to the given config directory.
 func NewBrowserShellWithConfigDir(settings *hotdog.Settings, buildInfo *assets.BuildInfo, configDir string) (*BrowserShell, error) {
 	bs := NewBrowserShell(settings, buildInfo)
 	if configDir != "" {
@@ -84,13 +109,76 @@ func NewBrowserShellWithConfigDir(settings *hotdog.Settings, buildInfo *assets.B
 			return nil, err
 		}
 		bs.containerManager = cm
+
+		sessionPath := filepath.Join(configDir, "session.json")
+		bs.sessionManager = NewSessionManager(sessionPath)
 	}
 	return bs, nil
 }
 
+// SessionManager returns the shell's session manager.
+func (bs *BrowserShell) SessionManager() *SessionManager {
+	return bs.sessionManager
+}
+
+// MemoryProfiler returns the shell's memory profiler.
+func (bs *BrowserShell) MemoryProfiler() *profiler.MemoryProfiler {
+	return bs.memoryProfiler
+}
+
+// PageLoadTracker returns the shell's page load tracker.
+func (bs *BrowserShell) PageLoadTracker() *profiler.PageLoadTracker {
+	return bs.pageLoadTracker
+}
+
+// Inspector returns the shell's extension inspector.
+func (bs *BrowserShell) Inspector() *debug.Inspector {
+	return bs.inspector
+}
+
+// ErrorLogger returns the shell's error logger.
+func (bs *BrowserShell) ErrorLogger() *errors.Logger {
+	return bs.errorLogger
+}
+
+// ConsoleCollector returns the shell's console collector.
+func (bs *BrowserShell) ConsoleCollector() *debug.ConsoleCollector {
+	return bs.consoleCollector
+}
+
+// NetworkMonitor returns the shell's network monitor.
+func (bs *BrowserShell) NetworkMonitor() *debug.NetworkMonitor {
+	return bs.networkMonitor
+}
+
+// RecoveryManager returns the shell's crash recovery manager.
+func (bs *BrowserShell) RecoveryManager() *crash.RecoveryManager {
+	return bs.recoveryManager
+}
+
+// Telemetry returns the shell's telemetry instance.
+func (bs *BrowserShell) Telemetry() *telemetry.Telemetry {
+	return bs.telemetry
+}
+
+// mustTelemetry creates a Telemetry instance, panicking on error.
+func mustTelemetry(config *telemetry.Config, storeDir string) *telemetry.Telemetry {
+	t, err := telemetry.New(config, storeDir)
+	if err != nil {
+		panic(err)
+	}
+	return t
+}
+
 // Init creates the mustard app and window and builds the full UI.
+// If a session file exists, it restores tabs and window size from it.
 func (bs *BrowserShell) Init() error {
 	bs.app = mustard.CreateNewApp(nil, "thdwb")
+
+	// Restore session before creating the window so window size is applied.
+	if err := bs.sessionManager.Restore(bs); err != nil {
+		return fmt.Errorf("restore session: %w", err)
+	}
 
 	window, err := mustard.CreateNewWindow(nil, "thdwb", bs.settings.WindowWidth, bs.settings.WindowHeight, bs.settings.HiDPI)
 	if err != nil {
@@ -232,8 +320,10 @@ func (bs *BrowserShell) buildUI() {
 	// Record web (http/https) navigations in the history manager.
 	bs.tabManager.OnNavigated(func(tab *Tab) { bs.recordHistory(tab) })
 
-	// Open a default tab.
-	bs.tabManager.Add("New Tab", bs.settings.Homepage, "", "", "")
+	// Open a default tab only if no tabs were restored from session.
+	if bs.tabManager.Count() == 0 {
+		bs.tabManager.Add("New Tab", bs.settings.Homepage, "", "", "")
+	}
 
 	// Wire global keyboard shortcuts.
 	bs.windowBase.AttachKeyboardInputEventListener(bs.handleKeyboardInput)
@@ -287,8 +377,11 @@ func (bs *BrowserShell) Run() {
 	bs.app.Run(func() {})
 }
 
-// Close destroys the browser shell's window and app.
+// Close destroys the browser shell's window and app, saving the session
+// first if a session path is configured.
 func (bs *BrowserShell) Close() {
+	_ = bs.sessionManager.Save(bs)
+
 	if bs.app != nil && bs.windowBase != nil {
 		bs.app.DestroyWindow(bs.windowBase)
 	}

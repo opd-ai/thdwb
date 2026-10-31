@@ -121,6 +121,15 @@ func New(config *Config, storeDir string) (*Telemetry, error) {
 	return t, nil
 }
 
+// MustNew creates a new Telemetry instance, panicking on error.
+func MustNew(config *Config, storeDir string) *Telemetry {
+	t, err := New(config, storeDir)
+	if err != nil {
+		panic(err)
+	}
+	return t
+}
+
 // IsEnabled reports whether telemetry is currently enabled (opted in).
 func (t *Telemetry) IsEnabled() bool {
 	t.mu.Lock()
