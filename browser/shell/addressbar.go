@@ -195,18 +195,21 @@ func (ab *AddressBar) showSuggestions() {
 		frame.AttachWidget(label)
 	}
 
-	// Remove any existing overlay.
-	ab.hideSuggestions()
-
 	ab.suggestionFrame = frame
 	ab.suggestionsVisible = true
 }
 
-// hideSuggestions removes the autocomplete dropdown.
+// hideSuggestions removes the autocomplete dropdown and clears suggestions.
 func (ab *AddressBar) hideSuggestions() {
 	ab.suggestionsVisible = false
 	ab.suggestions = nil
 	ab.selectedSugg = 0
+	ab.suggestionFrame = nil
+}
+
+// clearOverlay removes any existing suggestion overlay without clearing
+// the suggestion list. Used before rebuilding the dropdown.
+func (ab *AddressBar) clearOverlay() {
 	ab.suggestionFrame = nil
 }
 
