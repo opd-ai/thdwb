@@ -538,15 +538,15 @@ Prepare for public release and establish distribution channels.
 - WebDriver support for extension testing
 
 ### Phase E10 Completion Checklist
-- [ ] Service worker lifecycle: install, activate, fetch events implemented
-- [ ] Manifest v3 extensions run service workers (not persistent background scripts)
-- [ ] `chrome.storage.sync` syncs via Syncthing peer-to-peer
-- [ ] Sync respects extension ID and container isolation
-- [ ] WebDriver endpoint for extension testing automation
-- [ ] WebDriver session management (create, navigate, quit)
-- [ ] Unit tests for service worker lifecycle
-- [ ] Unit tests for storage sync
-- [ ] Unit tests for WebDriver endpoints
+- [x] Service worker lifecycle: install, activate, fetch events implemented
+- [x] Manifest v3 extensions run service workers (not persistent background scripts)
+- [x] `chrome.storage.sync` syncs via Syncthing peer-to-peer
+- [x] Sync respects extension ID and container isolation
+- [x] WebDriver endpoint for extension testing automation
+- [x] WebDriver session management (create, navigate, quit)
+- [x] Unit tests for service worker lifecycle
+- [x] Unit tests for storage sync
+- [x] Unit tests for WebDriver endpoints
 
 ### Phase E11: Performance and Scale
 - Multi-process architecture (extension processes separate from renderer)
