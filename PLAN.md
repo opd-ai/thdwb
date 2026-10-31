@@ -395,10 +395,7 @@ Build the browser shell UI, tab management, and extension integration into brows
 - [x] Extension icons display in toolbar with enable/disable/uninstall
 - [x] New tab page is functional with container selector
 - [x] Menu bar (File, Edit, View, etc.) standard items work
-- [x] Keyboard shortcuts work (Ctrl+L, Ctrl+T, Ctrl+W, Ctrl+B, etc.)play; popups open on click
-- [ ] New tab page is functional with container selector
-- [ ] Menu bar (File, Edit, View, etc.) standard items work
-- [ ] Keyboard shortcuts work (Ctrl+L, Ctrl+T, Ctrl+W, Ctrl+B, etc.)
+- [x] Keyboard shortcuts work (Ctrl+L, Ctrl+T, Ctrl+W, Ctrl+B, etc.)
 
 ---
 
