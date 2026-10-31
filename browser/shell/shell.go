@@ -15,6 +15,7 @@ import (
 	render "github.com/danfragoso/thdwb/browser/render"
 	telemetry "github.com/danfragoso/thdwb/browser/telemetry"
 	crash "github.com/danfragoso/thdwb/browser/extensions/crash"
+	optimize "github.com/danfragoso/thdwb/sauce/optimize"
 )
 
 // BrowserShell is the top-level browser UI. It owns the mustard window and
@@ -55,6 +56,7 @@ type BrowserShell struct {
 	recoveryManager  *crash.RecoveryManager
 	telemetry        *telemetry.Telemetry
 	renderer         *render.Renderer
+	networkOptimizer *optimize.NetworkOptimizer
 }
 
 // NewBrowserShell creates a browser shell with the given settings and build
@@ -98,6 +100,7 @@ func NewBrowserShell(settings *hotdog.Settings, buildInfo *assets.BuildInfo) *Br
 		recoveryManager:  crash.NewRecoveryManager(100),
 		telemetry:        telemetry.MustNew(telemetry.DefaultConfig(), ""),
 		renderer:         render.NewRenderer(nil),
+		networkOptimizer: optimize.NewNetworkOptimizer(),
 	}
 }
 
@@ -168,6 +171,12 @@ func (bs *BrowserShell) Telemetry() *telemetry.Telemetry {
 // layer cache).
 func (bs *BrowserShell) Renderer() *render.Renderer {
 	return bs.renderer
+}
+
+// NetworkOptimizer returns the shell's network optimizer (DNS cache, TLS
+// session reuse, connection pooling).
+func (bs *BrowserShell) NetworkOptimizer() *optimize.NetworkOptimizer {
+	return bs.networkOptimizer
 }
 
 // mustTelemetry creates a Telemetry instance, panicking on error.
