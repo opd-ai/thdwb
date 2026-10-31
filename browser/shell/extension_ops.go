@@ -550,7 +550,11 @@ func (eo *extensionOps) CreateAlarm(extID string, name string, alarm extensions.
 	extAlarms[name] = &alarm
 
 	// Schedule the alarm to fire at the specified time.
-	when := alarm.Scheduled
+	// Priority: when (absolute epoch ms) > delayInMinutes > periodInMinutes.
+	when := alarm.When
+	if when == 0 && alarm.Scheduled > 0 {
+		when = alarm.Scheduled
+	}
 	if when == 0 && alarm.PeriodInMinutes > 0 {
 		when = float64(time.Now().UnixMilli()) + alarm.PeriodInMinutes*60000
 	}

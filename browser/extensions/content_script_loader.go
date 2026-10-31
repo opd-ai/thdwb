@@ -70,6 +70,8 @@ func (l *ContentScriptLoader) RegisterFromManifest(extID string, manifest *Manif
 			ExtID:          extID,
 			Matches:        cs.Matches,
 			ExcludeMatches: cs.ExcludeMatches,
+			IncludeGlobs:   cs.IncludeGlobs,
+			ExcludeGlobs:   cs.ExcludeGlobs,
 			JS:             cs.JS,
 			CSS:            cs.CSS,
 			RunAt:          string(runAt),
@@ -206,16 +208,44 @@ func (l *ContentScriptLoader) RemoveScript(id string) {
 }
 
 // matchesURL checks whether a content script matches the given URL.
+// It evaluates matches, exclude_matches, include_globs, and exclude_globs.
 func (l *ContentScriptLoader) matchesURL(s ContentScript, u *url.URL) bool {
+	urlStr := u.String()
+
+	// Check include_globs if present; if globs are specified, the URL must
+	// match at least one glob pattern.
+	if len(s.IncludeGlobs) > 0 {
+		globMatched := false
+		for _, g := range s.IncludeGlobs {
+			ok, err := MatchPattern(g, urlStr)
+			if err == nil && ok {
+				globMatched = true
+				break
+			}
+		}
+		if !globMatched {
+			return false
+		}
+	}
+
+	// Check exclude_globs; if the URL matches any exclude glob, it's excluded.
+	for _, g := range s.ExcludeGlobs {
+		ok, err := MatchPattern(g, urlStr)
+		if err == nil && ok {
+			return false
+		}
+	}
+
+	// Check matches patterns.
 	for _, m := range s.Matches {
-		ok, err := MatchPattern(m, u.String())
+		ok, err := MatchPattern(m, urlStr)
 		if err != nil || !ok {
 			continue
 		}
 		// Check exclude patterns.
 		excluded := false
 		for _, em := range s.ExcludeMatches {
-			ok, err := MatchPattern(em, u.String())
+			ok, err := MatchPattern(em, urlStr)
 			if err == nil && ok {
 				excluded = true
 				break

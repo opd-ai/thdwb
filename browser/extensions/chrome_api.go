@@ -2376,6 +2376,7 @@ func (c *ChromeAPI) bindAlarms(vm *goja.Runtime, ext *Extension, ops AlarmOperat
 			_, _ = callback(vm.ToValue(map[string]interface{}{
 				"name":             alarm.Name,
 				"scheduled":        alarm.Scheduled,
+				"when":             alarm.When,
 				"periodInMinutes":  alarm.PeriodInMinutes,
 			}))
 		}
@@ -2397,6 +2398,7 @@ func (c *ChromeAPI) bindAlarms(vm *goja.Runtime, ext *Extension, ops AlarmOperat
 			result = append(result, map[string]interface{}{
 				"name":             a.Name,
 				"scheduled":        a.Scheduled,
+				"when":             a.When,
 				"periodInMinutes":  a.PeriodInMinutes,
 			})
 		}

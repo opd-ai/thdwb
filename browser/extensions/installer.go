@@ -194,11 +194,6 @@ func (i *Installer) Install(req *InstallRequest) (*InstallResult, error) {
 		return nil, fmt.Errorf("installer: register extension: %w", err)
 	}
 
-	// Fire chrome.runtime.onInstalled event.
-	if api, ok := i.manager.ChromeAPIFor(extID); ok {
-		api.FireRuntimeInstalled("install")
-	}
-
 	// Set enabled state per the request. Extensions are registered enabled
 	// by default; disable if requested.
 	if !req.Enabled {
@@ -209,6 +204,12 @@ func (i *Installer) Install(req *InstallRequest) (*InstallResult, error) {
 		if err := i.manager.Enable(extID); err != nil {
 			return nil, fmt.Errorf("installer: enable extension: %w", err)
 		}
+	}
+
+	// Fire chrome.runtime.onInstalled event after the extension is enabled
+	// so the ChromeAPI binding exists to deliver the event.
+	if api, ok := i.manager.ChromeAPIFor(extID); ok {
+		api.FireRuntimeInstalled("install")
 	}
 
 	return &InstallResult{
@@ -273,6 +274,8 @@ func (m *Manager) registerExtension(ext *Extension) error {
 				ExtID:          ext.ID,
 				Matches:        cs.Matches,
 				ExcludeMatches: cs.ExcludeMatches,
+				IncludeGlobs:   cs.IncludeGlobs,
+				ExcludeGlobs:   cs.ExcludeGlobs,
 				JS:             cs.JS,
 				CSS:            cs.CSS,
 				RunAt:          cs.RunAt,

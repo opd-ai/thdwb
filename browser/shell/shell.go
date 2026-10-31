@@ -57,6 +57,10 @@ type BrowserShell struct {
 	telemetry        *telemetry.Telemetry
 	renderer         *render.Renderer
 	networkOptimizer *optimize.NetworkOptimizer
+
+	// injectedScripts tracks which content scripts have been injected into
+	// which tab (tabID -> scriptID -> true) to prevent duplicate injection.
+	injectedScripts map[int]map[string]bool
 }
 
 // NewBrowserShell creates a browser shell with the given settings and build
@@ -89,6 +93,7 @@ func NewBrowserShell(settings *hotdog.Settings, buildInfo *assets.BuildInfo) *Br
 		extManager:       extensions.NewManager(""),
 		containerManager: extensions.NewContainerManager(),
 		browserSettings:  NewBrowserSettings(),
+		injectedScripts:  make(map[int]map[string]bool),
 
 		sessionManager:   NewSessionManager(""),
 		memoryProfiler:   profiler.NewMemoryProfiler(),
@@ -374,6 +379,19 @@ func (bs *BrowserShell) buildUI() {
 		}
 	})
 
+	// Clean up injected script tracking when tabs are closed.
+	bs.tabManager.OnChanged(func() {
+		activeIDs := make(map[int]bool)
+		for _, t := range bs.tabManager.Tabs() {
+			activeIDs[t.ID] = true
+		}
+		for id := range bs.injectedScripts {
+			if !activeIDs[id] {
+				delete(bs.injectedScripts, id)
+			}
+		}
+	})
+
 	// Open a default tab only if no tabs were restored from session.
 	if bs.tabManager.Count() == 0 {
 		bs.tabManager.Add("New Tab", bs.settings.Homepage, "", "", "")
@@ -472,11 +490,21 @@ func (bs *BrowserShell) recordHistory(tab *Tab) {
 
 // injectContentScripts injects matching content scripts into the given tab
 // for all enabled extensions. Scripts are executed in isolated sandboxes.
+// Each script is injected only once per tab to prevent duplicate execution.
 func (bs *BrowserShell) injectContentScripts(tab *Tab) error {
+	if bs.injectedScripts[tab.ID] == nil {
+		bs.injectedScripts[tab.ID] = make(map[string]bool)
+	}
+
 	exts := bs.extManager.GetEnabled()
 	for _, ext := range exts {
 		scripts := bs.extManager.ContentLoader().MatchingForExtension(ext.ID, tab.URL)
 		for _, script := range scripts {
+			// Skip if this script was already injected into this tab.
+			if bs.injectedScripts[tab.ID][script.ID] {
+				continue
+			}
+
 			// Check CSP if the manifest defines a content security policy.
 			if ext.Manifest.ContentSecurityPolicy != "" {
 				csp := extensions.NewContentScriptCSP(ext.Manifest.ContentSecurityPolicy)
@@ -496,6 +524,8 @@ func (bs *BrowserShell) injectContentScripts(tab *Tab) error {
 					return fmt.Errorf("load content script %s: %w", js, err)
 				}
 			}
+
+			bs.injectedScripts[tab.ID][script.ID] = true
 		}
 	}
 	return nil

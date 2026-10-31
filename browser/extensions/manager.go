@@ -221,6 +221,8 @@ func (m *Manager) Scan() ([]*Extension, error) {
 				ExtID:          ext.ID,
 				Matches:        cs.Matches,
 				ExcludeMatches: cs.ExcludeMatches,
+				IncludeGlobs:   cs.IncludeGlobs,
+				ExcludeGlobs:   cs.ExcludeGlobs,
 				JS:             cs.JS,
 				CSS:            cs.CSS,
 				RunAt:          cs.RunAt,
