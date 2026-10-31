@@ -554,6 +554,12 @@ Prepare for public release and establish distribution channels.
 - Lazy-load extensions (don't start all background scripts on startup)
 - Extension marketplace with ratings/reviews and automatic security scanning
 
+### Phase E11 Completion Checklist
+- [x] Multi-process architecture: isolated extension processes with IPC communication
+- [x] Tab suspension: unload inactive tabs to save memory with restore on reactivation
+- [x] Lazy-load extensions: defer background script startup until first use
+- [x] Extension marketplace security scanning: vulnerability scanning for gallery extensions
+
 ### Phase E12: Developer Experience
 - Extension debugging protocol (remote debugging)
 - Hot reload for extension development

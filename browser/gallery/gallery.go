@@ -4,9 +4,11 @@
 package gallery
 
 import (
+	"archive/zip"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -15,6 +17,7 @@ import (
 	"sync"
 
 	extensions "github.com/danfragoso/thdwb/browser/extensions"
+	security "github.com/danfragoso/thdwb/browser/gallery/security"
 )
 
 // Category is a gallery category for organizing extensions.
@@ -81,6 +84,7 @@ type Catalog struct {
 	mu         sync.RWMutex
 	listings   map[string]*ExtensionListing
 	categories map[Category][]*ExtensionListing
+	scanner    *security.Scanner
 }
 
 // NewCatalog creates an empty gallery catalog.
@@ -88,6 +92,7 @@ func NewCatalog() *Catalog {
 	return &Catalog{
 		listings:   make(map[string]*ExtensionListing),
 		categories: make(map[Category][]*ExtensionListing),
+		scanner:    security.NewScanner(),
 	}
 }
 
@@ -193,6 +198,28 @@ func (c *Catalog) Count() int {
 	return len(c.listings)
 }
 
+// Scanner returns the security scanner used by this catalog.
+func (c *Catalog) Scanner() *security.Scanner {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.scanner
+}
+
+// ScanListing scans the extension directory for the given listing ID and
+// returns the security scan result. The extDir should point to the extracted
+// extension package.
+func (c *Catalog) ScanListing(listingID, extDir string) (*security.ScanResult, error) {
+	c.mu.RLock()
+	listing := c.listings[listingID]
+	c.mu.RUnlock()
+
+	if listing == nil {
+		return nil, fmt.Errorf("listing %q not found in gallery", listingID)
+	}
+
+	return c.scanner.Scan(listing.ID, listing.Version, extDir)
+}
+
 // Installer installs extensions from the gallery via the extensions.Installer.
 type Installer struct {
 	catalog      *Catalog
@@ -230,6 +257,22 @@ func (gi *Installer) InstallFromGallery(listingID string, permissions []string) 
 		}
 	}
 
+	// Security scan the extension package before installation.
+	extractDir := filepath.Join(gi.downloadDir, "scan-"+listingID)
+	if err := os.MkdirAll(extractDir, 0o755); err != nil {
+		return nil, fmt.Errorf("create scan dir: %w", err)
+	}
+	if err := extractXPI(pkgPath, extractDir); err != nil {
+		return nil, fmt.Errorf("extract package for scanning: %w", err)
+	}
+	scanResult, err := gi.catalog.ScanListing(listingID, extractDir)
+	if err != nil {
+		return nil, fmt.Errorf("security scan %s: %w", listing.Name, err)
+	}
+	if !scanResult.Safe {
+		return nil, fmt.Errorf("extension %s failed security scan: %d findings", listing.Name, len(scanResult.Findings))
+	}
+
 	// Install via the extension installer.
 	result, err := gi.extInstaller.Install(&extensions.InstallRequest{
 		PackagePath:  pkgPath,
@@ -241,6 +284,39 @@ func (gi *Installer) InstallFromGallery(listingID string, permissions []string) 
 	}
 
 	return result, nil
+}
+
+// extractXPI extracts a .xpi (ZIP) package to the given directory.
+func extractXPI(xpiPath, destDir string) error {
+	reader, err := zip.OpenReader(xpiPath)
+	if err != nil {
+		return fmt.Errorf("open xpi: %w", err)
+	}
+	defer reader.Close()
+
+	for _, file := range reader.File {
+		filePath := filepath.Join(destDir, file.Name)
+		if err := os.MkdirAll(filepath.Dir(filePath), 0o755); err != nil {
+			return err
+		}
+		outFile, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, file.Mode())
+		if err != nil {
+			return err
+		}
+		rc, err := file.Open()
+		if err != nil {
+			outFile.Close()
+			return err
+		}
+		if _, err := io.Copy(outFile, rc); err != nil {
+			outFile.Close()
+			rc.Close()
+			return err
+		}
+		outFile.Close()
+		rc.Close()
+	}
+	return nil
 }
 
 // verifyChecksum checks that the SHA-256 of the file matches the expected value.
