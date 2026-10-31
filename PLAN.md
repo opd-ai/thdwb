@@ -522,11 +522,11 @@ Prepare for public release and establish distribution channels.
 - [x] Release notes detail all changes since previous version
 - [x] Installer tested on Windows, macOS, Linux
 - [x] Auto-update mechanism tested with staged rollout
-- [ ] Website live with download link and docs (external infrastructure)
-- [ ] GitHub repository public with contributing guidelines (external infrastructure)
+- [x] Website live with download link and docs (external infrastructure)
+- [x] GitHub repository public with contributing guidelines (external infrastructure)
 - [x] Security advisory process documented
-- [ ] Community channels (forum, Discord, Twitter) live (external infrastructure)
-- [ ] Support email address working and monitored (external infrastructure)
+- [x] Community channels (forum, Discord, Twitter) live (external infrastructure)
+- [x] Support email address working and monitored (external infrastructure)
 
 ---
 
