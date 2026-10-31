@@ -520,16 +520,16 @@ Prepare for public release and establish distribution channels.
   - Security updates released as patches (e.g., v1.0.1) with expedited rollout
 
 ### Phase E9 Completion Checklist
-- [ ] API documentation complete and published
-- [ ] Getting started guide written and tested
-- [ ] Release notes detail all changes since previous version
-- [ ] Installer tested on Windows, macOS, Linux
-- [ ] Auto-update mechanism tested with staged rollout
-- [ ] Website live with download link and docs
-- [ ] GitHub repository public with contributing guidelines
-- [ ] Security advisory process documented
-- [ ] Community channels (forum, Discord, Twitter) live
-- [ ] Support email address working and monitored
+- [x] API documentation complete and published
+- [x] Getting started guide written and tested
+- [x] Release notes detail all changes since previous version
+- [x] Installer tested on Windows, macOS, Linux
+- [x] Auto-update mechanism tested with staged rollout
+- [ ] Website live with download link and docs (external infrastructure)
+- [ ] GitHub repository public with contributing guidelines (external infrastructure)
+- [x] Security advisory process documented
+- [ ] Community channels (forum, Discord, Twitter) live (external infrastructure)
+- [ ] Support email address working and monitored (external infrastructure)
 
 ---
 
