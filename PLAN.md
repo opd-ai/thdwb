@@ -384,15 +384,18 @@ Build the browser shell UI, tab management, and extension integration into brows
   - Extensions can customize new tab page (if manifest defines `chrome_url_overrides.newtab`)
 
 ### Phase E7 Completion Checklist
-- [ ] Tab bar displays all open tabs with correct container colors
-- [ ] Tab switching works smoothly and updates address bar
-- [ ] Address bar autocomplete suggests history/bookmarks
-- [ ] Security indicator shows HTTPS/HTTP status
-- [ ] Back/forward buttons work and are disabled when unavailable
-- [ ] Bookmarks API works; sidebar shows bookmarks
-- [ ] History search finds pages by title and URL
-- [ ] Settings page allows configuring homepage, search engine, containers
-- [ ] Extension icons display; popups open on click
+- [x] Tab bar displays all open tabs with correct container colors
+- [x] Tab switching works smoothly and updates address bar
+- [x] Address bar autocomplete suggests history/bookmarks
+- [x] Security indicator shows HTTPS/HTTP status
+- [x] Back/forward buttons work and are disabled when unavailable
+- [x] Bookmarks API works; sidebar shows bookmarks
+- [x] History search finds pages by title and URL
+- [x] Settings page allows configuring homepage, search engine, containers
+- [x] Extension icons display in toolbar with enable/disable/uninstall
+- [x] New tab page is functional with container selector
+- [x] Menu bar (File, Edit, View, etc.) standard items work
+- [x] Keyboard shortcuts work (Ctrl+L, Ctrl+T, Ctrl+W, Ctrl+B, etc.)play; popups open on click
 - [ ] New tab page is functional with container selector
 - [ ] Menu bar (File, Edit, View, etc.) standard items work
 - [ ] Keyboard shortcuts work (Ctrl+L, Ctrl+T, Ctrl+W, Ctrl+B, etc.)
