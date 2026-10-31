@@ -50,6 +50,9 @@ type Manager struct {
 	// serviceWorkers holds Manifest v3 service workers keyed by extension ID.
 	serviceWorkers map[string]*ServiceWorker
 	swMu           sync.Mutex
+
+	// lazyLoader manages deferred startup of extensions.
+	lazyLoader *LazyLoader
 }
 
 // NewManager creates a new extension manager.
@@ -69,6 +72,10 @@ func NewManager(storageDir string) *Manager {
 		alarmStop:        make(chan struct{}),
 		serviceWorkers:   make(map[string]*ServiceWorker),
 	}
+
+	// Create the lazy loader after the manager is initialized so the
+	// callback can reference the manager.
+	m.lazyLoader = NewLazyLoader(m.loadExtensionLazy)
 
 	// Wire lifecycle hooks to initialize Chrome API bindings on start and
 	// clean up on stop.
@@ -448,6 +455,45 @@ func (m *Manager) RemoveSandbox(extID string) {
 // SetLifecycleHooks registers start/stop/reload hooks for background scripts.
 func (m *Manager) SetLifecycleHooks(onStart, onStop, onReload func(ext *Extension) error) {
 	m.lifecycle.SetHooks(onStart, onStop, onReload)
+}
+
+// loadExtensionLazy loads an extension's background script on demand. It is
+// called by the lazy loader when an extension is first accessed.
+func (m *Manager) loadExtensionLazy(extID string) error {
+	m.mu.Lock()
+	ext := m.extensions[extID]
+	m.mu.Unlock()
+	if ext == nil {
+		return fmt.Errorf("extension not found: %s", extID)
+	}
+	return m.lifecycle.Enable(ext)
+}
+
+// LazyLoader returns the lazy loader used for deferred extension startup.
+func (m *Manager) LazyLoader() *LazyLoader {
+	return m.lazyLoader
+}
+
+// EnableLazy enables an extension using lazy loading: the extension is marked
+// as enabled but its background script is not started until first accessed.
+func (m *Manager) EnableLazy(id string) error {
+	m.mu.Lock()
+	ext := m.extensions[id]
+	m.mu.Unlock()
+	if ext == nil {
+		return fmt.Errorf("extension not found: %s", id)
+	}
+
+	// Mark as enabled in lifecycle but don't start the background script yet.
+	m.mu.Lock()
+	m.lifecycle.enabled[id] = true
+	m.lifecycle.states[id] = LifecycleEnabled
+	ext.SetEnabled(true)
+	m.mu.Unlock()
+
+	// Register with the lazy loader so the background script starts on demand.
+	m.lazyLoader.Register(id)
+	return nil
 }
 
 // SetTabOperations sets the tab operations provider for chrome.tabs API.
