@@ -12,6 +12,7 @@ import (
 	profiler "github.com/danfragoso/thdwb/profiler"
 	debug "github.com/danfragoso/thdwb/browser/debug"
 	errors "github.com/danfragoso/thdwb/browser/errors"
+	render "github.com/danfragoso/thdwb/browser/render"
 	telemetry "github.com/danfragoso/thdwb/browser/telemetry"
 	crash "github.com/danfragoso/thdwb/browser/extensions/crash"
 )
@@ -53,6 +54,7 @@ type BrowserShell struct {
 	networkMonitor   *debug.NetworkMonitor
 	recoveryManager  *crash.RecoveryManager
 	telemetry        *telemetry.Telemetry
+	renderer         *render.Renderer
 }
 
 // NewBrowserShell creates a browser shell with the given settings and build
@@ -95,6 +97,7 @@ func NewBrowserShell(settings *hotdog.Settings, buildInfo *assets.BuildInfo) *Br
 		networkMonitor:   debug.NewNetworkMonitor(1000),
 		recoveryManager:  crash.NewRecoveryManager(100),
 		telemetry:        telemetry.MustNew(telemetry.DefaultConfig(), ""),
+		renderer:         render.NewRenderer(nil),
 	}
 }
 
@@ -159,6 +162,12 @@ func (bs *BrowserShell) RecoveryManager() *crash.RecoveryManager {
 // Telemetry returns the shell's telemetry instance.
 func (bs *BrowserShell) Telemetry() *telemetry.Telemetry {
 	return bs.telemetry
+}
+
+// Renderer returns the shell's rendering optimizer (batch, dirty tracker,
+// layer cache).
+func (bs *BrowserShell) Renderer() *render.Renderer {
+	return bs.renderer
 }
 
 // mustTelemetry creates a Telemetry instance, panicking on error.
