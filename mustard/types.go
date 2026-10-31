@@ -276,6 +276,13 @@ type TreeWidgetNode struct {
 	Parent   *TreeWidgetNode
 	Children []*TreeWidgetNode
 
+	// ID is an optional identifier for the node (e.g. bookmark or folder ID).
+	ID int
+	// IsFolder marks this node as a folder (non-selectable category).
+	IsFolder bool
+	// IsBookmark marks this node as a bookmark (selectable leaf).
+	IsBookmark bool
+
 	isOpen     bool
 	isSelected bool
 	index      int

@@ -59,6 +59,18 @@ func (input *InputWidget) SetChangeCallback(changeCallback func(string)) {
 	input.changeCallback = changeCallback
 }
 
+// SetFocused sets the input's focused/active state.
+func (input *InputWidget) SetFocused(focused bool) {
+	input.active = focused
+	input.selected = focused
+	input.needsRepaint = true
+}
+
+// IsFocused reports whether the input is currently focused.
+func (input *InputWidget) IsFocused() bool {
+	return input.active
+}
+
 // SetFontColor - Sets the input font color
 func (input *InputWidget) SetFontColor(fontColor string) {
 	if len(fontColor) > 0 && string(fontColor[0]) == "#" {

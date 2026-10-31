@@ -32,6 +32,7 @@ type BrowserShell struct {
 	navigation       *NavigationControls
 	tabBarUI         *TabBarUI
 	extensionToolbar *ExtensionToolbar
+	bookmarksSidebar *BookmarksSidebar
 }
 
 // NewBrowserShell creates a browser shell with the given settings and build
@@ -154,6 +155,17 @@ func (bs *BrowserShell) buildUI() {
 	extFrame.AttachWidget(bs.extensionToolbar.Frame)
 	rootFrame.AttachWidget(extFrame)
 
+	// Bookmarks sidebar (hidden by default; toggled via Ctrl+B).
+	bs.bookmarksSidebar = NewBookmarksSidebar(bs.windowBase, bs.bookmarkManager)
+	bs.bookmarksSidebar.SetSelectCallback(func(b *Bookmark) {
+		tab := bs.tabManager.ActiveTab()
+		if tab != nil {
+			bs.tabManager.Navigate(tab.ID, b.URL)
+		}
+	})
+	bs.bookmarksSidebar.SetVisible(false)
+	rootFrame.AttachWidget(bs.bookmarksSidebar.Frame)
+
 	// Content area (placeholder for web content)
 	contentArea := mustard.CreateFrame(mustard.VerticalFrame)
 	contentArea.SetBackgroundColor("#ffffff")
@@ -173,6 +185,37 @@ func (bs *BrowserShell) buildUI() {
 
 	// Open a default tab.
 	bs.tabManager.Add("New Tab", bs.settings.Homepage, "", "", "")
+
+	// Wire global keyboard shortcuts.
+	bs.windowBase.AttachKeyboardInputEventListener(bs.handleKeyboardInput)
+}
+
+// handleKeyboardInput processes global keyboard shortcuts:
+//   - Ctrl+L: focus the address bar
+//   - Ctrl+T: open a new tab
+//   - Ctrl+W: close the active tab
+//   - Ctrl+B: toggle the bookmarks sidebar
+func (bs *BrowserShell) handleKeyboardInput(input mustard.KeyboardInput) {
+	if input.Action != mustard.KeyboardPress {
+		return
+	}
+
+	if input.Control {
+		switch input.Key {
+		case "l":
+			// Focus address bar (select all text).
+			ab := bs.addressBar
+			if ab != nil && ab.input != nil {
+				ab.input.SetFocused(true)
+			}
+		case "t":
+			bs.tabManager.Add("New Tab", bs.settings.Homepage, "", "", "")
+		case "w":
+			bs.tabManager.CloseActive()
+		case "b":
+			bs.bookmarksSidebar.Toggle()
+		}
+	}
 }
 
 // Show makes the window visible.
