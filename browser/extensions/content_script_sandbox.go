@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	goja "github.com/dop251/goja"
 )
@@ -54,6 +55,7 @@ type ContentScriptSandbox struct {
 	mode        SandboxMode
 	messages    chan Message
 	globalsInit bool
+	closed      atomic.Bool
 }
 
 // NewContentScriptSandbox creates a new isolated sandbox for the given
@@ -131,6 +133,9 @@ func (s *ContentScriptSandbox) initGlobals() error {
 	_ = runtimeObj.Set("sendMessage", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) < 1 {
 			panic(rt.NewGoError(fmt.Errorf("sendMessage requires a message argument")))
+		}
+		if s.closed.Load() {
+			return goja.Undefined()
 		}
 		msg := Message{
 			Sender: s.extID,
@@ -277,6 +282,10 @@ func (s *ContentScriptSandbox) Run(script string) (goja.Value, error) {
 func (s *ContentScriptSandbox) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.closed.Load() {
+		return nil
+	}
+	s.closed.Store(true)
 	close(s.messages)
 	return nil
 }
