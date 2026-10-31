@@ -33,6 +33,7 @@ type BrowserShell struct {
 	tabBarUI         *TabBarUI
 	extensionToolbar *ExtensionToolbar
 	bookmarksSidebar *BookmarksSidebar
+	historySidebar   *HistorySidebar
 }
 
 // NewBrowserShell creates a browser shell with the given settings and build
@@ -166,6 +167,17 @@ func (bs *BrowserShell) buildUI() {
 	bs.bookmarksSidebar.SetVisible(false)
 	rootFrame.AttachWidget(bs.bookmarksSidebar.Frame)
 
+	// History sidebar (hidden by default; toggled via Ctrl+H).
+	bs.historySidebar = NewHistorySidebar(bs.windowBase, bs.historyManager)
+	bs.historySidebar.SetSelectCallback(func(entry *HistoryEntry) {
+		tab := bs.tabManager.ActiveTab()
+		if tab != nil {
+			bs.tabManager.Navigate(tab.ID, entry.URL)
+		}
+	})
+	bs.historySidebar.SetVisible(false)
+	rootFrame.AttachWidget(bs.historySidebar.Frame)
+
 	// Content area (placeholder for web content)
 	contentArea := mustard.CreateFrame(mustard.VerticalFrame)
 	contentArea.SetBackgroundColor("#ffffff")
@@ -214,6 +226,8 @@ func (bs *BrowserShell) handleKeyboardInput(input mustard.KeyboardInput) {
 			bs.tabManager.CloseActive()
 		case "b":
 			bs.bookmarksSidebar.Toggle()
+		case "h":
+			bs.historySidebar.Toggle()
 		}
 	}
 }
