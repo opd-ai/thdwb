@@ -37,6 +37,7 @@ type BrowserShell struct {
 	historySidebar   *HistorySidebar
 	settingsPage     *SettingsPage
 	newTabPage       *NewTabPage
+	menuBar          *MenuBar
 }
 
 // NewBrowserShell creates a browser shell with the given settings and build
@@ -126,6 +127,25 @@ func (bs *BrowserShell) Init() error {
 // buildUI constructs the complete browser shell UI.
 func (bs *BrowserShell) buildUI() {
 	rootFrame := mustard.CreateFrame(mustard.VerticalFrame)
+
+	// Menu bar.
+	bs.menuBar = NewMenuBar(bs.windowBase)
+	bs.menuBar.SetNewTabCallback(func() {
+		bs.tabManager.Add("New Tab", bs.settings.Homepage, "", "", "")
+	})
+	bs.menuBar.SetShowHistoryCallback(func() {
+		bs.historySidebar.Toggle()
+	})
+	bs.menuBar.SetShowBookmarksCallback(func() {
+		bs.bookmarksSidebar.Toggle()
+	})
+	bs.menuBar.SetShowSettingsCallback(func() {
+		bs.settingsPage.Toggle()
+	})
+	bs.menuBar.SetShowExtensionsCallback(func() {
+		bs.extensionToolbar.Frame.SetVisible(!bs.extensionToolbar.Frame.GetVisible())
+	})
+	rootFrame.AttachWidget(bs.menuBar.Frame)
 
 	// Tab bar
 	bs.tabBarUI = BuildTabBar(bs.windowBase, bs.tabManager)
