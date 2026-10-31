@@ -36,6 +36,7 @@ type BrowserShell struct {
 	bookmarksSidebar *BookmarksSidebar
 	historySidebar   *HistorySidebar
 	settingsPage     *SettingsPage
+	newTabPage       *NewTabPage
 }
 
 // NewBrowserShell creates a browser shell with the given settings and build
@@ -185,6 +186,14 @@ func (bs *BrowserShell) buildUI() {
 	bs.settingsPage = NewSettingsPage(bs.windowBase, bs.browserSettings)
 	bs.settingsPage.SetVisible(false)
 	rootFrame.AttachWidget(bs.settingsPage.Frame)
+
+	// New tab page (shown on new tabs; toggled via Ctrl+T when no URL).
+	bs.newTabPage = NewNewTabPage(bs.windowBase, bs.tabManager, bs.containerManager)
+	bs.newTabPage.SetNewTabCallback(func(url, containerID string) {
+		bs.tabManager.Add("New Tab", url, containerID, "", "")
+	})
+	bs.newTabPage.SetVisible(false)
+	rootFrame.AttachWidget(bs.newTabPage.Frame)
 
 	// Content area (placeholder for web content)
 	contentArea := mustard.CreateFrame(mustard.VerticalFrame)
