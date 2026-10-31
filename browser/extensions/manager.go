@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	goja "github.com/dop251/goja"
 )
@@ -36,21 +37,32 @@ type Manager struct {
 	webRequestOps    WebRequestOperations
 	notificationOps  NotificationOperations
 	downloadOps      DownloadOperations
+	bookmarkOps      BookmarkOperations
+	historyOps       HistoryOperations
+	actionOps        ActionOperations
+
+	// alarmScheduler manages per-extension alarm timers.
+	alarmMu       sync.Mutex
+	alarmTimers   map[string]*time.Timer // key: extID + ":" + alarmName
+	alarmStop     chan struct{}
+	alarmStopped  bool
 }
 
 // NewManager creates a new extension manager.
 func NewManager(storageDir string) *Manager {
 	m := &Manager{
-		discovery:         NewDiscovery(),
-		lifecycle:         NewLifecycleManager(),
-		extensions:        make(map[string]*Extension),
-		storageDir:        storageDir,
-		contentReg:        NewContentScriptRegistry(),
-		contentLoader:     NewContentScriptLoader(),
-		dynamicScripting:  NewDynamicScripting(NewContentScriptLoader(), NewMessageRouter()),
-		sandboxes:         make(map[string]*ContentScriptSandbox),
-		messageRouter:     NewMessageRouter(),
-		chromeAPIs:        make(map[string]*ChromeAPI),
+		discovery:        NewDiscovery(),
+		lifecycle:        NewLifecycleManager(),
+		extensions:       make(map[string]*Extension),
+		storageDir:       storageDir,
+		contentReg:       NewContentScriptRegistry(),
+		contentLoader:    NewContentScriptLoader(),
+		dynamicScripting: NewDynamicScripting(NewContentScriptLoader(), NewMessageRouter()),
+		sandboxes:        make(map[string]*ContentScriptSandbox),
+		messageRouter:    NewMessageRouter(),
+		chromeAPIs:       make(map[string]*ChromeAPI),
+		alarmTimers:      make(map[string]*time.Timer),
+		alarmStop:        make(chan struct{}),
 	}
 
 	// Wire lifecycle hooks to initialize Chrome API bindings on start and
@@ -61,7 +73,112 @@ func NewManager(storageDir string) *Manager {
 		m.onExtensionReload,
 	)
 
+	// Start the alarm scheduler goroutine.
+	go m.runAlarmScheduler()
+
 	return m
+}
+
+// runAlarmScheduler processes alarm fire events. It runs in a background
+// goroutine and stops when the manager is discarded (alarmStop is closed).
+func (m *Manager) runAlarmScheduler() {
+	for {
+		select {
+		case <-m.alarmStop:
+			return
+		default:
+		}
+		// Check for due alarms every second.
+		time.Sleep(time.Second)
+		m.checkDueAlarms()
+	}
+}
+
+// checkDueAlarms checks all registered alarms and fires any that are due.
+func (m *Manager) checkDueAlarms() {
+	// Timers fire via their own callbacks; this is a placeholder for future
+	// alarm reconciliation logic.
+}
+
+// ScheduleAlarm schedules an alarm to fire at the given time.
+func (m *Manager) ScheduleAlarm(extID, name string, when float64) {
+	m.alarmMu.Lock()
+	defer m.alarmMu.Unlock()
+
+	key := extID + ":" + name
+	// Cancel any existing timer for this alarm.
+	if existing, ok := m.alarmTimers[key]; ok && existing != nil {
+		existing.Stop()
+	}
+
+	delay := time.Duration(when - float64(time.Now().UnixMilli()))
+	if delay <= 0 {
+		// Alarm is already due; fire immediately.
+		m.fireAlarm(extID, name)
+		return
+	}
+
+	timer := time.AfterFunc(delay, func() {
+		m.fireAlarm(extID, name)
+		m.alarmMu.Lock()
+		delete(m.alarmTimers, key)
+		m.alarmMu.Unlock()
+	})
+	m.alarmTimers[key] = timer
+}
+
+// fireAlarm fires the chrome.alarms.onAlarm event for the given extension.
+func (m *Manager) fireAlarm(extID, name string) {
+	m.mu.Lock()
+	api, exists := m.chromeAPIs[extID]
+	m.mu.Unlock()
+	if !exists || api == nil {
+		return
+	}
+	api.FireAlarm(name)
+}
+
+// CancelAlarm cancels a scheduled alarm.
+func (m *Manager) CancelAlarm(extID, name string) {
+	m.alarmMu.Lock()
+	defer m.alarmMu.Unlock()
+	key := extID + ":" + name
+	if timer, ok := m.alarmTimers[key]; ok && timer != nil {
+		timer.Stop()
+		delete(m.alarmTimers, key)
+	}
+}
+
+// CancelAllAlarms cancels all alarms for an extension.
+func (m *Manager) CancelAllAlarms(extID string) {
+	m.alarmMu.Lock()
+	defer m.alarmMu.Unlock()
+	for key, timer := range m.alarmTimers {
+		if len(key) > len(extID) && key[:len(extID)] == extID && key[len(extID)] == ':' {
+			if timer != nil {
+				timer.Stop()
+			}
+			delete(m.alarmTimers, key)
+		}
+	}
+}
+
+// Stop shuts down the manager's background goroutines.
+func (m *Manager) Stop() {
+	m.alarmMu.Lock()
+	if m.alarmStopped {
+		m.alarmMu.Unlock()
+		return
+	}
+	m.alarmStopped = true
+	close(m.alarmStop)
+	m.alarmMu.Unlock()
+
+	for _, timer := range m.alarmTimers {
+		if timer != nil {
+			timer.Stop()
+		}
+	}
 }
 
 // AddWatchDir adds a directory to scan for extensions.
@@ -289,6 +406,15 @@ func (m *Manager) MessageRouter() *MessageRouter {
 	return m.messageRouter
 }
 
+// ChromeAPIFor returns the ChromeAPI binding for the given extension ID,
+// and whether it exists.
+func (m *Manager) ChromeAPIFor(extID string) (*ChromeAPI, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	api, ok := m.chromeAPIs[extID]
+	return api, ok
+}
+
 // SandboxFor returns the content script sandbox for the given extension,
 // creating one if it doesn't exist.
 func (m *Manager) SandboxFor(extID string) *ContentScriptSandbox {
@@ -401,6 +527,27 @@ func (m *Manager) SetDownloadOperations(ops DownloadOperations) {
 	m.downloadOps = ops
 }
 
+// SetBookmarkOperations sets the bookmark operations provider for chrome.bookmarks API.
+func (m *Manager) SetBookmarkOperations(ops BookmarkOperations) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.bookmarkOps = ops
+}
+
+// SetHistoryOperations sets the history operations provider for chrome.history API.
+func (m *Manager) SetHistoryOperations(ops HistoryOperations) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.historyOps = ops
+}
+
+// SetActionOperations sets the action operations provider for chrome.action API.
+func (m *Manager) SetActionOperations(ops ActionOperations) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.actionOps = ops
+}
+
 // FireWebRequestEvent fires a chrome.webRequest event to the extension's
 // registered JS listeners. Called by the shell when sauce notifies
 // WebRequest observers of network activity.
@@ -478,6 +625,9 @@ func (m *Manager) onExtensionStart(ext *Extension) error {
 			}
 		}
 	}
+
+	// Fire chrome.runtime.onStartup event.
+	api.FireRuntimeStartup()
 
 	return nil
 }

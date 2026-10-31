@@ -194,6 +194,11 @@ func (i *Installer) Install(req *InstallRequest) (*InstallResult, error) {
 		return nil, fmt.Errorf("installer: register extension: %w", err)
 	}
 
+	// Fire chrome.runtime.onInstalled event.
+	if api, ok := i.manager.ChromeAPIFor(extID); ok {
+		api.FireRuntimeInstalled("install")
+	}
+
 	// Set enabled state per the request. Extensions are registered enabled
 	// by default; disable if requested.
 	if !req.Enabled {

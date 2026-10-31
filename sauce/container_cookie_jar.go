@@ -123,6 +123,28 @@ func (jar *ContainerCookieJar) upsertCookie(key string, cookie *http.Cookie) {
 	jar.cookies[key] = append(jar.cookies[key], cookie)
 }
 
+// RemoveCookie removes a single cookie matching name, domain, and path from
+// the container+origin store. The URL is used to determine the origin key.
+func (jar *ContainerCookieJar) RemoveCookie(containerID string, u *url.URL, name string) {
+	if u == nil {
+		return
+	}
+	key := containerKey(containerID, u)
+	if key == "" {
+		return
+	}
+	jar.mu.Lock()
+	defer jar.mu.Unlock()
+	kept := jar.cookies[key][:0]
+	for _, existing := range jar.cookies[key] {
+		if existing.Name == name && cookieIdentity(existing, &http.Cookie{Name: name, Domain: existing.Domain, Path: existing.Path}) {
+			continue // skip this cookie (remove it)
+		}
+		kept = append(kept, existing)
+	}
+	jar.cookies[key] = kept
+}
+
 // ClearContainer removes all cookies for the given container.
 func (jar *ContainerCookieJar) ClearContainer(containerID string) {
 	jar.mu.Lock()
@@ -207,6 +229,22 @@ func (jar *ContainerCookieJar) TransferContainer(fromContainer, toContainer stri
 		jar.cookies[toKey] = toCookies
 		delete(jar.cookies, key)
 	}
+}
+
+// AllCookies returns all cookies for the given container across all origins.
+func (jar *ContainerCookieJar) AllCookies(containerID string) []*http.Cookie {
+	jar.mu.RLock()
+	defer jar.mu.RUnlock()
+	prefix := containerID + "::"
+	var result []*http.Cookie
+	for key, cookies := range jar.cookies {
+		if strings.HasPrefix(key, prefix) {
+			for _, c := range cookies {
+				result = append(result, cloneCookie(c))
+			}
+		}
+	}
+	return result
 }
 
 // ContainerCount returns the number of distinct containers with cookies.

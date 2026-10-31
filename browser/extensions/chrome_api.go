@@ -256,6 +256,61 @@ type NotificationOperations interface {
 	GetAllNotifications(extID string) ([]Notification, error)
 }
 
+// Bookmark describes a bookmark as exposed to extension APIs.
+type Bookmark struct {
+	ID      string `json:"id"`
+	Title   string `json:"title"`
+	URL     string `json:"url"`
+	ParentID string `json:"parentId,omitempty"`
+	Index   int    `json:"index,omitempty"`
+}
+
+// BookmarkOperations is implemented by the browser shell to provide
+// bookmark management operations to extension APIs.
+type BookmarkOperations interface {
+	CreateBookmark(bookmark Bookmark) (*Bookmark, error)
+	GetBookmark(id string) (*Bookmark, error)
+	GetChildren(parentID string) ([]Bookmark, error)
+	MoveBookmark(id, parentID string, index int) (*Bookmark, error)
+	RemoveBookmark(id string) error
+	UpdateBookmark(id string, updates Bookmark) (*Bookmark, error)
+}
+
+// HistoryEntry describes a history entry as exposed to extension APIs.
+type HistoryEntry struct {
+	ID        int     `json:"id"`
+	URL       string  `json:"url"`
+	Title     string  `json:"title"`
+	VisitTime float64 `json:"visitTime"`
+	Typed     bool    `json:"typed"`
+}
+
+// HistoryOperations is implemented by the browser shell to provide
+// history operations to extension APIs.
+type HistoryOperations interface {
+	AddUrl(url, title string) error
+	DeleteUrl(url string) error
+	Search(query string, maxResults int) ([]HistoryEntry, error)
+	GetAllHistory() ([]HistoryEntry, error)
+}
+
+// ActionBadge describes badge text for chrome.action.
+type ActionBadge struct {
+	Text    string `json:"text,omitempty"`
+	Color   string `json:"color,omitempty"`
+	TabID   int    `json:"tabId,omitempty"`
+}
+
+// ActionOperations is implemented by the browser shell to provide
+// chrome.action operations to extension APIs.
+type ActionOperations interface {
+	SetBadgeText(extID string, text string, tabID int) error
+	SetBadgeColor(extID string, color string, tabID int) error
+	SetIcon(extID string, path string, tabID int) error
+	SetPopup(extID string, popup string, tabID int) error
+	GetPopup(extID string, tabID int) (string, error)
+}
+
 // DownloadItem describes a download as exposed to extension APIs.
 type DownloadItem struct {
 	ID           int     `json:"id"`
@@ -319,6 +374,9 @@ type ChromeAPI struct {
 	webRequestOps WebRequestOperations
 	notificationOps NotificationOperations
 	downloadOps DownloadOperations
+	bookmarkOps BookmarkOperations
+	historyOps HistoryOperations
+	actionOps ActionOperations
 	platform      PlatformInfo
 
 	// tabEventListeners holds listeners for tab events keyed by event name.
@@ -329,6 +387,10 @@ type ChromeAPI struct {
 	webRequestEventListeners map[string][]goja.Callable
 	// downloadEventListeners holds listeners for download events keyed by event name.
 	downloadEventListeners map[string][]goja.Callable
+	// cookieEventListeners holds listeners for cookies.onChanged events.
+	cookieEventListeners []goja.Callable
+	// alarmEventListeners holds listeners for alarms.onAlarm events keyed by alarm name.
+	alarmEventListeners map[string][]goja.Callable
 }
 
 // NewChromeAPI creates a ChromeAPI binding for the given extension and VM.
@@ -347,6 +409,8 @@ func NewChromeAPI(ext *Extension, vm *goja.Runtime, router *MessageRouter) *Chro
 		runtimeEventListeners: make(map[string][]goja.Callable),
 		webRequestEventListeners: make(map[string][]goja.Callable),
 		downloadEventListeners: make(map[string][]goja.Callable),
+		cookieEventListeners:   make([]goja.Callable, 0),
+		alarmEventListeners:    make(map[string][]goja.Callable),
 	}
 }
 
@@ -434,6 +498,27 @@ func (c *ChromeAPI) SetDownloadOperations(ops DownloadOperations) {
 	c.downloadOps = ops
 }
 
+// SetBookmarkOperations sets the bookmark operations provider (called by the shell).
+func (c *ChromeAPI) SetBookmarkOperations(ops BookmarkOperations) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.bookmarkOps = ops
+}
+
+// SetHistoryOperations sets the history operations provider (called by the shell).
+func (c *ChromeAPI) SetHistoryOperations(ops HistoryOperations) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.historyOps = ops
+}
+
+// SetActionOperations sets the action operations provider (called by the shell).
+func (c *ChromeAPI) SetActionOperations(ops ActionOperations) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.actionOps = ops
+}
+
 // Bind installs all chrome.* APIs into the extension's background VM.
 func (c *ChromeAPI) Bind() error {
 	c.mu.Lock()
@@ -452,6 +537,9 @@ func (c *ChromeAPI) Bind() error {
 	webRequestOps := c.webRequestOps
 	notificationOps := c.notificationOps
 	downloadOps := c.downloadOps
+	bookmarkOps := c.bookmarkOps
+	historyOps := c.historyOps
+	actionOps := c.actionOps
 	c.mu.Unlock()
 
 	if vm == nil {
@@ -552,6 +640,27 @@ func (c *ChromeAPI) Bind() error {
 		}
 	}
 
+	// Bind chrome.bookmarks (requires bookmarkOps).
+	if bookmarkOps != nil {
+		if err := c.bindBookmarks(vm, ext, bookmarkOps); err != nil {
+			return fmt.Errorf("bind chrome.bookmarks: %w", err)
+		}
+	}
+
+	// Bind chrome.history (requires historyOps).
+	if historyOps != nil {
+		if err := c.bindHistory(vm, ext, historyOps); err != nil {
+			return fmt.Errorf("bind chrome.history: %w", err)
+		}
+	}
+
+	// Bind chrome.action (requires actionOps).
+	if actionOps != nil {
+		if err := c.bindAction(vm, ext, actionOps); err != nil {
+			return fmt.Errorf("bind chrome.action: %w", err)
+		}
+	}
+
 	return nil
 }
 
@@ -624,6 +733,10 @@ func (c *ChromeAPI) bindRuntime(vm *goja.Runtime, ext *Extension, router *Messag
 		}
 		if err := router.Route(msg); err != nil {
 			panic(vm.NewGoError(fmt.Errorf("sendMessage: %w", err)))
+		}
+		// Deliver to content script sandboxes for this extension.
+		if err := router.DeliverToSandbox(ext.ID, msg); err != nil {
+			// No sandbox registered; message is still routed to background handlers.
 		}
 		return goja.Undefined()
 	})
@@ -816,6 +929,50 @@ func (c *ChromeAPI) bindStorage(vm *goja.Runtime, ext *Extension) error {
 			return goja.Undefined()
 		})
 
+		_ = areaObj.Set("getBytesInUse", func(call goja.FunctionCall) goja.Value {
+			var keys interface{}
+			var callback goja.Callable
+
+			switch len(call.Arguments) {
+			case 0:
+				// getBytesInUse() - return total for all keys.
+			case 1:
+				if cb, ok := goja.AssertFunction(call.Argument(0)); ok {
+					callback = cb
+				} else {
+					keys = call.Argument(0).Export()
+				}
+			default:
+				keys = call.Argument(0).Export()
+				callback, _ = goja.AssertFunction(call.Argument(1))
+			}
+
+			total := 0
+			switch k := keys.(type) {
+			case string:
+				if v, ok := sp.Get(area, k); ok {
+					total += len(k) + len(v)
+				}
+			case []interface{}:
+				for _, key := range k {
+					keyStr, _ := key.(string)
+					if v, ok := sp.Get(area, keyStr); ok {
+						total += len(keyStr) + len(v)
+					}
+				}
+			case nil:
+				for k, v := range sp.GetAll(area) {
+					total += len(k) + len(v)
+				}
+			}
+
+			if callback != nil {
+				_, _ = callback(vm.ToValue(float64(total)))
+				return goja.Undefined()
+			}
+			return vm.ToValue(float64(total))
+		})
+
 		return areaObj
 	}
 
@@ -1005,6 +1162,29 @@ func (c *ChromeAPI) bindTabs(vm *goja.Runtime, ext *Extension, router *MessageRo
 		return goja.Undefined()
 	})
 
+	// chrome.tabs.sendMessage - send a message to the content script in a specific tab.
+	_ = tabsObj.Set("sendMessage", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 2 {
+			panic(vm.NewGoError(fmt.Errorf("sendMessage requires tabId and message arguments")))
+		}
+		tabID := int(call.Argument(0).ToInteger())
+		msg := Message{
+			Sender:  ext.ID,
+			Target:  ext.ID,
+			Type:    "background",
+			Payload: call.Argument(1).Export(),
+			TabID:   tabID,
+		}
+		if err := router.Route(msg); err != nil {
+			panic(vm.NewGoError(fmt.Errorf("tabs.sendMessage: %w", err)))
+		}
+		// Deliver to content script sandbox for this extension.
+		if err := router.DeliverToSandbox(ext.ID, msg); err != nil {
+			// No sandbox registered; message is still routed to background handlers.
+		}
+		return goja.Undefined()
+	})
+
 	// chrome.tabs.onUpdated event
 	onUpdatedObj := vm.NewObject()
 	_ = onUpdatedObj.Set("addListener", func(call goja.FunctionCall) goja.Value {
@@ -1187,6 +1367,41 @@ func (c *ChromeAPI) FireDownloadEvent(event string, item DownloadItem) {
 			"error":        item.Error,
 		}))
 	}
+}
+
+// FireCookieChanged fires the chrome.cookies.onChanged event to all
+// registered listeners for this extension.
+func (c *ChromeAPI) FireCookieChanged(change CookieChange) {
+	c.mu.Lock()
+	listeners := make([]goja.Callable, len(c.cookieEventListeners))
+	copy(listeners, c.cookieEventListeners)
+	c.mu.Unlock()
+
+	for _, cb := range listeners {
+		_, _ = cb(goja.Undefined(), c.vm.ToValue(map[string]interface{}{
+			"cookie": map[string]interface{}{
+				"name":       change.Cookie.Name,
+				"value":      change.Cookie.Value,
+				"domain":     change.Cookie.Domain,
+				"path":       change.Cookie.Path,
+				"secure":     change.Cookie.Secure,
+				"httpOnly":   change.Cookie.HttpOnly,
+				"sameSite":   change.Cookie.SameSite,
+				"session":    change.Cookie.Session,
+				"expiration": change.Cookie.Expiration,
+				"storeId":    change.Cookie.StoreID,
+			},
+			"cause":     change.Cause,
+			"removed":   change.Removed,
+		}))
+	}
+}
+
+// CookieChange describes a cookie change event.
+type CookieChange struct {
+	Cookie Cookie
+	Cause  string // "expired", "explicit", "overwrite"
+	Removed bool
 }
 
 // bindWindows installs chrome.windows into the VM.
@@ -1716,6 +1931,20 @@ func (c *ChromeAPI) bindCookies(vm *goja.Runtime, ext *Extension, cookieOps Cook
 		return vm.ToValue(result)
 	})
 
+	// chrome.cookies.onChanged event
+	onChangedObj := vm.NewObject()
+	_ = onChangedObj.Set("addListener", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) > 0 {
+			if cb, ok := goja.AssertFunction(call.Argument(0)); ok {
+				c.mu.Lock()
+				c.cookieEventListeners = append(c.cookieEventListeners, cb)
+				c.mu.Unlock()
+			}
+		}
+		return goja.Undefined()
+	})
+	_ = cookiesObj.Set("onChanged", onChangedObj)
+
 	_ = chromeObj.Set("cookies", cookiesObj)
 	return nil
 }
@@ -2204,13 +2433,34 @@ func (c *ChromeAPI) bindAlarms(vm *goja.Runtime, ext *Extension, ops AlarmOperat
 	// chrome.alarms.onAlarm event
 	onAlarmObj := vm.NewObject()
 	_ = onAlarmObj.Set("addListener", func(call goja.FunctionCall) goja.Value {
-		_ = call
+		if len(call.Arguments) > 0 {
+			if cb, ok := goja.AssertFunction(call.Argument(0)); ok {
+				c.mu.Lock()
+				c.alarmEventListeners["onAlarm"] = append(c.alarmEventListeners["onAlarm"], cb)
+				c.mu.Unlock()
+			}
+		}
 		return goja.Undefined()
 	})
 	_ = alarmsObj.Set("onAlarm", onAlarmObj)
 
 	_ = chromeObj.Set("alarms", alarmsObj)
 	return nil
+}
+
+// FireAlarm fires the chrome.alarms.onAlarm event to all registered
+// listeners for this extension.
+func (c *ChromeAPI) FireAlarm(name string) {
+	c.mu.Lock()
+	listeners := make([]goja.Callable, len(c.alarmEventListeners["onAlarm"]))
+	copy(listeners, c.alarmEventListeners["onAlarm"])
+	c.mu.Unlock()
+
+	for _, cb := range listeners {
+		_, _ = cb(goja.Undefined(), c.vm.ToValue(map[string]interface{}{
+			"name": name,
+		}))
+	}
 }
 
 // bindI18n installs chrome.i18n into the VM.
@@ -2841,5 +3091,437 @@ func (c *ChromeAPI) bindDownloads(vm *goja.Runtime, ext *Extension, ops Download
 	_ = dlObj.Set("onErased", onErasedObj)
 
 	_ = chromeObj.Set("downloads", dlObj)
+	return nil
+}
+
+// bindBookmarks installs chrome.bookmarks into the VM.
+func (c *ChromeAPI) bindBookmarks(vm *goja.Runtime, ext *Extension, ops BookmarkOperations) error {
+	chrome := vm.Get("chrome")
+	var chromeObj *goja.Object
+	if chrome == nil || chrome.ToObject(vm) == nil {
+		chromeObj = vm.NewObject()
+		_ = vm.Set("chrome", chromeObj)
+	} else {
+		chromeObj = chrome.ToObject(vm)
+	}
+
+	bookmarksObj := vm.NewObject()
+
+	// chrome.bookmarks.create
+	_ = bookmarksObj.Set("create", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(vm.NewGoError(fmt.Errorf("create requires a bookmark argument")))
+		}
+		bmObj := call.Argument(0).ToObject(vm)
+		bm := Bookmark{}
+		if bmObj != nil {
+			if titleVal := bmObj.Get("title"); titleVal != nil {
+				bm.Title = titleVal.String()
+			}
+			if urlVal := bmObj.Get("url"); urlVal != nil {
+				bm.URL = urlVal.String()
+			}
+			if parentIDVal := bmObj.Get("parentId"); parentIDVal != nil {
+				bm.ParentID = parentIDVal.String()
+			}
+			if indexVal := bmObj.Get("index"); indexVal != nil {
+				bm.Index = int(indexVal.ToInteger())
+			}
+		}
+		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		created, err := ops.CreateBookmark(bm)
+		if err != nil || created == nil {
+			if callback != nil {
+				_, _ = callback(goja.Undefined())
+			}
+			return goja.Undefined()
+		}
+		if callback != nil {
+			_, _ = callback(vm.ToValue(map[string]interface{}{
+				"id":       created.ID,
+				"title":    created.Title,
+				"url":      created.URL,
+				"parentId": created.ParentID,
+				"index":    created.Index,
+			}))
+		}
+		return goja.Undefined()
+	})
+
+	// chrome.bookmarks.get
+	_ = bookmarksObj.Set("get", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(vm.NewGoError(fmt.Errorf("get requires an id argument")))
+		}
+		id := call.Argument(0).String()
+		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		bm, err := ops.GetBookmark(id)
+		if err != nil || bm == nil {
+			if callback != nil {
+				_, _ = callback(goja.Undefined())
+			}
+			return goja.Undefined()
+		}
+		if callback != nil {
+			_, _ = callback(vm.ToValue(map[string]interface{}{
+				"id":       bm.ID,
+				"title":    bm.Title,
+				"url":      bm.URL,
+				"parentId": bm.ParentID,
+				"index":    bm.Index,
+			}))
+		}
+		return goja.Undefined()
+	})
+
+	// chrome.bookmarks.getChildren
+	_ = bookmarksObj.Set("getChildren", func(call goja.FunctionCall) goja.Value {
+		parentID := ""
+		if len(call.Arguments) > 0 {
+			parentID = call.Argument(0).String()
+		}
+		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		children, err := ops.GetChildren(parentID)
+		if err != nil {
+			if callback != nil {
+				_, _ = callback(goja.Undefined())
+			}
+			return goja.Undefined()
+		}
+		result := make([]interface{}, 0, len(children))
+		for _, bm := range children {
+			result = append(result, map[string]interface{}{
+				"id":       bm.ID,
+				"title":    bm.Title,
+				"url":      bm.URL,
+				"parentId": bm.ParentID,
+				"index":    bm.Index,
+			})
+		}
+		if callback != nil {
+			_, _ = callback(vm.ToValue(result))
+		}
+		return goja.Undefined()
+	})
+
+	// chrome.bookmarks.move
+	_ = bookmarksObj.Set("move", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(vm.NewGoError(fmt.Errorf("move requires an id argument")))
+		}
+		id := call.Argument(0).String()
+		moveObj := call.Argument(1).ToObject(vm)
+		parentID := ""
+		index := 0
+		if moveObj != nil {
+			if pid := moveObj.Get("parentId"); pid != nil {
+				parentID = pid.String()
+			}
+			if idx := moveObj.Get("index"); idx != nil {
+				index = int(idx.ToInteger())
+			}
+		}
+		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		bm, err := ops.MoveBookmark(id, parentID, index)
+		if err != nil || bm == nil {
+			if callback != nil {
+				_, _ = callback(goja.Undefined())
+			}
+			return goja.Undefined()
+		}
+		if callback != nil {
+			_, _ = callback(vm.ToValue(map[string]interface{}{
+				"id":       bm.ID,
+				"title":    bm.Title,
+				"url":      bm.URL,
+				"parentId": bm.ParentID,
+				"index":    bm.Index,
+			}))
+		}
+		return goja.Undefined()
+	})
+
+	// chrome.bookmarks.remove
+	_ = bookmarksObj.Set("remove", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(vm.NewGoError(fmt.Errorf("remove requires an id argument")))
+		}
+		id := call.Argument(0).String()
+		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		_ = ops.RemoveBookmark(id)
+		if callback != nil {
+			_, _ = callback(goja.Undefined())
+		}
+		return goja.Undefined()
+	})
+
+	// chrome.bookmarks.update
+	_ = bookmarksObj.Set("update", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(vm.NewGoError(fmt.Errorf("update requires an id argument")))
+		}
+		id := call.Argument(0).String()
+		updates := Bookmark{}
+		if len(call.Arguments) > 1 {
+			updObj := call.Argument(1).ToObject(vm)
+			if updObj != nil {
+				if titleVal := updObj.Get("title"); titleVal != nil {
+					updates.Title = titleVal.String()
+				}
+				if urlVal := updObj.Get("url"); urlVal != nil {
+					updates.URL = urlVal.String()
+				}
+			}
+		}
+		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		bm, err := ops.UpdateBookmark(id, updates)
+		if err != nil || bm == nil {
+			if callback != nil {
+				_, _ = callback(goja.Undefined())
+			}
+			return goja.Undefined()
+		}
+		if callback != nil {
+			_, _ = callback(vm.ToValue(map[string]interface{}{
+				"id":       bm.ID,
+				"title":    bm.Title,
+				"url":      bm.URL,
+				"parentId": bm.ParentID,
+				"index":    bm.Index,
+			}))
+		}
+		return goja.Undefined()
+	})
+
+	_ = chromeObj.Set("bookmarks", bookmarksObj)
+	return nil
+}
+
+// bindHistory installs chrome.history into the VM.
+func (c *ChromeAPI) bindHistory(vm *goja.Runtime, ext *Extension, ops HistoryOperations) error {
+	chrome := vm.Get("chrome")
+	var chromeObj *goja.Object
+	if chrome == nil || chrome.ToObject(vm) == nil {
+		chromeObj = vm.NewObject()
+		_ = vm.Set("chrome", chromeObj)
+	} else {
+		chromeObj = chrome.ToObject(vm)
+	}
+
+	historyObj := vm.NewObject()
+
+	// chrome.history.addUrl
+	_ = historyObj.Set("addUrl", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(vm.NewGoError(fmt.Errorf("addUrl requires a url argument")))
+		}
+		url := call.Argument(0).String()
+		title := ""
+		if len(call.Arguments) > 1 {
+			details := call.Argument(1).ToObject(vm)
+			if details != nil {
+				if titleVal := details.Get("title"); titleVal != nil {
+					title = titleVal.String()
+				}
+			}
+		}
+		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		if err := ops.AddUrl(url, title); err != nil {
+			if callback != nil {
+				_, _ = callback(goja.Undefined())
+			}
+			return goja.Undefined()
+		}
+		if callback != nil {
+			_, _ = callback(goja.Undefined())
+		}
+		return goja.Undefined()
+	})
+
+	// chrome.history.deleteUrl
+	_ = historyObj.Set("deleteUrl", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(vm.NewGoError(fmt.Errorf("deleteUrl requires a url argument")))
+		}
+		url := call.Argument(0).String()
+		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		if err := ops.DeleteUrl(url); err != nil {
+			if callback != nil {
+				_, _ = callback(goja.Undefined())
+			}
+			return goja.Undefined()
+		}
+		if callback != nil {
+			_, _ = callback(goja.Undefined())
+		}
+		return goja.Undefined()
+	})
+
+	// chrome.history.search
+	_ = historyObj.Set("search", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(vm.NewGoError(fmt.Errorf("search requires a query argument")))
+		}
+		query := call.Argument(0).String()
+		maxResults := 100
+		if len(call.Arguments) > 1 {
+			opts := call.Argument(1).ToObject(vm)
+			if opts != nil {
+				if mr := opts.Get("maxResults"); mr != nil {
+					maxResults = int(mr.ToInteger())
+				}
+			}
+		}
+		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		results, err := ops.Search(query, maxResults)
+		if err != nil {
+			if callback != nil {
+				_, _ = callback(goja.Undefined())
+			}
+			return goja.Undefined()
+		}
+		result := make([]interface{}, 0, len(results))
+		for _, entry := range results {
+			result = append(result, map[string]interface{}{
+				"id":         entry.ID,
+				"url":        entry.URL,
+				"title":      entry.Title,
+				"visitTime":  entry.VisitTime,
+				"typed":      entry.Typed,
+			})
+		}
+		if callback != nil {
+			_, _ = callback(vm.ToValue(result))
+		}
+		return goja.Undefined()
+	})
+
+	_ = chromeObj.Set("history", historyObj)
+	return nil
+}
+
+// bindAction installs chrome.action into the VM.
+func (c *ChromeAPI) bindAction(vm *goja.Runtime, ext *Extension, ops ActionOperations) error {
+	chrome := vm.Get("chrome")
+	var chromeObj *goja.Object
+	if chrome == nil || chrome.ToObject(vm) == nil {
+		chromeObj = vm.NewObject()
+		_ = vm.Set("chrome", chromeObj)
+	} else {
+		chromeObj = chrome.ToObject(vm)
+	}
+
+	actionObj := vm.NewObject()
+
+	// chrome.action.setBadgeText
+	_ = actionObj.Set("setBadgeText", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(vm.NewGoError(fmt.Errorf("setBadgeText requires a details argument")))
+		}
+		details := call.Argument(0).ToObject(vm)
+		text := ""
+		tabID := -1
+		if details != nil {
+			if textVal := details.Get("text"); textVal != nil {
+				text = textVal.String()
+			}
+			if tabIDVal := details.Get("tabId"); tabIDVal != nil {
+				tabID = int(tabIDVal.ToInteger())
+			}
+		}
+		if err := ops.SetBadgeText(ext.ID, text, tabID); err != nil {
+			return goja.Undefined()
+		}
+		return goja.Undefined()
+	})
+
+	// chrome.action.setBadgeColor
+	_ = actionObj.Set("setBadgeColor", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(vm.NewGoError(fmt.Errorf("setBadgeColor requires a details argument")))
+		}
+		details := call.Argument(0).ToObject(vm)
+		color := ""
+		tabID := -1
+		if details != nil {
+			if colorVal := details.Get("color"); colorVal != nil {
+				color = colorVal.String()
+			}
+			if tabIDVal := details.Get("tabId"); tabIDVal != nil {
+				tabID = int(tabIDVal.ToInteger())
+			}
+		}
+		if err := ops.SetBadgeColor(ext.ID, color, tabID); err != nil {
+			return goja.Undefined()
+		}
+		return goja.Undefined()
+	})
+
+	// chrome.action.setIcon
+	_ = actionObj.Set("setIcon", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(vm.NewGoError(fmt.Errorf("setIcon requires a details argument")))
+		}
+		details := call.Argument(0).ToObject(vm)
+		path := ""
+		tabID := -1
+		if details != nil {
+			if pathVal := details.Get("path"); pathVal != nil {
+				path = pathVal.String()
+			}
+			if tabIDVal := details.Get("tabId"); tabIDVal != nil {
+				tabID = int(tabIDVal.ToInteger())
+			}
+		}
+		if err := ops.SetIcon(ext.ID, path, tabID); err != nil {
+			return goja.Undefined()
+		}
+		return goja.Undefined()
+	})
+
+	// chrome.action.setPopup
+	_ = actionObj.Set("setPopup", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(vm.NewGoError(fmt.Errorf("setPopup requires a details argument")))
+		}
+		details := call.Argument(0).ToObject(vm)
+		popup := ""
+		tabID := -1
+		if details != nil {
+			if popupVal := details.Get("popup"); popupVal != nil {
+				popup = popupVal.String()
+			}
+			if tabIDVal := details.Get("tabId"); tabIDVal != nil {
+				tabID = int(tabIDVal.ToInteger())
+			}
+		}
+		if err := ops.SetPopup(ext.ID, popup, tabID); err != nil {
+			return goja.Undefined()
+		}
+		return goja.Undefined()
+	})
+
+	// chrome.action.getPopup
+	_ = actionObj.Set("getPopup", func(call goja.FunctionCall) goja.Value {
+		tabID := -1
+		if len(call.Arguments) > 0 {
+			details := call.Argument(0).ToObject(vm)
+			if details != nil {
+				if tabIDVal := details.Get("tabId"); tabIDVal != nil {
+					tabID = int(tabIDVal.ToInteger())
+				}
+			}
+		}
+		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		popup, _ := ops.GetPopup(ext.ID, tabID)
+		if callback != nil {
+			_, _ = callback(vm.ToValue(map[string]interface{}{
+				"popup": popup,
+			}))
+		}
+		return goja.Undefined()
+	})
+
+	_ = chromeObj.Set("action", actionObj)
 	return nil
 }

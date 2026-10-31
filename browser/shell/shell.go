@@ -221,6 +221,21 @@ func (bs *BrowserShell) Init() error {
 	bs.extManager.SetNotificationOperations(eo)
 	dlOps := newDownloadOps(bs)
 	bs.extManager.SetDownloadOperations(dlOps)
+	bs.extManager.SetBookmarkOperations(eo)
+	bs.extManager.SetHistoryOperations(eo)
+	bs.extManager.SetActionOperations(eo)
+
+	// Auto-discover and load extensions from watch directories.
+	if _, err := bs.extManager.Scan(); err != nil {
+		return fmt.Errorf("scan extensions: %w", err)
+	}
+
+	// Enable all discovered extensions (fires onStartup for background scripts).
+	for _, ext := range bs.extManager.GetEnabled() {
+		if err := bs.extManager.Enable(ext.ID); err != nil {
+			return fmt.Errorf("enable extension %s: %w", ext.ID, err)
+		}
+	}
 
 	bs.buildUI()
 
@@ -349,6 +364,14 @@ func (bs *BrowserShell) buildUI() {
 			m := bs.pageLoadTracker.StartLoad(tab.URL)
 			_ = m // Mark as started; completed when page finishes loading.
 		}
+
+		// Inject content scripts for all enabled extensions that match this URL.
+		if tab != nil {
+			if err := bs.injectContentScripts(tab); err != nil {
+				// Content script injection failures should not block navigation.
+				bs.errorLogger.Log(errors.SeverityError, "shell", "content_script", fmt.Sprintf("tab %d", tab.ID), err.Error())
+			}
+		}
 	})
 
 	// Open a default tab only if no tabs were restored from session.
@@ -445,6 +468,37 @@ func (bs *BrowserShell) recordHistory(tab *Tab) {
 		return
 	}
 	bs.historyManager.AddEntry(tab.Title, tab.URL)
+}
+
+// injectContentScripts injects matching content scripts into the given tab
+// for all enabled extensions. Scripts are executed in isolated sandboxes.
+func (bs *BrowserShell) injectContentScripts(tab *Tab) error {
+	exts := bs.extManager.GetEnabled()
+	for _, ext := range exts {
+		scripts := bs.extManager.ContentLoader().MatchingForExtension(ext.ID, tab.URL)
+		for _, script := range scripts {
+			// Check CSP if the manifest defines a content security policy.
+			if ext.Manifest.ContentSecurityPolicy != "" {
+				csp := extensions.NewContentScriptCSP(ext.Manifest.ContentSecurityPolicy)
+				for _, js := range script.JS {
+					jsURL := ext.ResolvePath(js)
+					if err := csp.CheckScript(jsURL); err != nil {
+						bs.errorLogger.Log(errors.SeverityError, "shell", "csp", fmt.Sprintf("script %s", js), err.Error())
+						continue
+					}
+				}
+			}
+
+			sandbox := bs.extManager.SandboxFor(ext.ID)
+			// Load and execute each JS file in the sandbox.
+			for _, js := range script.JS {
+				if err := sandbox.LoadScript(ext.Path, js); err != nil {
+					return fmt.Errorf("load content script %s: %w", js, err)
+				}
+			}
+		}
+	}
+	return nil
 }
 
 // TabManager returns the shell's tab manager.

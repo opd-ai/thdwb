@@ -278,6 +278,9 @@ func (eo *extensionOps) SetCookie(storeID string, cookie extensions.Cookie) erro
 	if u.Scheme == "" {
 		u.Scheme = "https"
 	}
+	if u.Path == "" {
+		u.Path = "/"
+	}
 	hc := &http.Cookie{
 		Name:     cookie.Name,
 		Value:    cookie.Value,
@@ -288,6 +291,16 @@ func (eo *extensionOps) SetCookie(storeID string, cookie extensions.Cookie) erro
 		SameSite: sameSiteFromString(cookie.SameSite),
 	}
 	eo.cookieJar.SetCookies(cookieKey(storeID), u, []*http.Cookie{hc})
+
+	// Fire chrome.cookies.onChanged event for all extensions.
+	for _, ext := range eo.bs.extManager.GetAll() {
+		if api, ok := eo.bs.extManager.ChromeAPIFor(ext.ID); ok {
+			api.FireCookieChanged(extensions.CookieChange{
+				Cookie: cookie,
+				Cause:  "explicit",
+			})
+		}
+	}
 	return nil
 }
 
@@ -300,18 +313,44 @@ func (eo *extensionOps) RemoveCookie(storeID string, cookie extensions.Cookie) e
 	if u.Scheme == "" {
 		u.Scheme = "https"
 	}
-	// ContainerCookieJar does not expose single-cookie removal; clear and
-	// re-add is not feasible without the full cookie list. This is a
-	// best-effort no-op for now.
-	_ = u
+	// Ensure the URL has a path for cookie key derivation.
+	if u.Path == "" {
+		u.Path = "/"
+	}
+	eo.cookieJar.RemoveCookie(storeID, u, cookie.Name)
+
+	// Fire chrome.cookies.onChanged event for all extensions.
+	for _, ext := range eo.bs.extManager.GetAll() {
+		if api, ok := eo.bs.extManager.ChromeAPIFor(ext.ID); ok {
+			api.FireCookieChanged(extensions.CookieChange{
+				Cookie:  cookie,
+				Cause:   "explicit",
+				Removed: true,
+			})
+		}
+	}
 	return nil
 }
 
 // GetAllCookies returns all cookies for a container.
 func (eo *extensionOps) GetAllCookies(storeID string) ([]extensions.Cookie, error) {
-	// ContainerCookieJar doesn't expose all cookies for a container directly.
-	// Return empty for now; individual URL-based queries are supported.
-	return nil, nil
+	cookies := eo.cookieJar.AllCookies(storeID)
+	result := make([]extensions.Cookie, 0, len(cookies))
+	for _, c := range cookies {
+		result = append(result, extensions.Cookie{
+			Name:       c.Name,
+			Value:      c.Value,
+			Domain:     c.Domain,
+			Path:       c.Path,
+			Secure:     c.Secure,
+			HttpOnly:   c.HttpOnly,
+			SameSite:   sameSiteToString(c.SameSite),
+			Session:    c.Expires.IsZero(),
+			Expiration: c.Expires.Format("2006-01-02T15:04:05Z07:00"),
+			StoreID:    storeID,
+		})
+	}
+	return result, nil
 }
 
 // ClearCookies clears all cookies for a container.
@@ -423,10 +462,29 @@ func (eo *extensionOps) RemoveAllContextMenus() error {
 
 // PermissionOperations implementation.
 
-// RequestPermissions requests permissions for an extension.
+// RequestPermissions requests permissions for an extension. Only permissions
+// declared in the extension's manifest can be granted.
 func (eo *extensionOps) RequestPermissions(extID string, permissions []string) ([]string, error) {
 	eo.permMu.Lock()
 	defer eo.permMu.Unlock()
+
+	// Validate requested permissions against the extension's manifest.
+	ext := eo.bs.extManager.Get(extID)
+	if ext != nil {
+		manifestPerms := make(map[string]bool)
+		for _, p := range ext.Manifest.Permissions {
+			manifestPerms[p] = true
+		}
+		// Also allow optional_permissions.
+		for _, p := range ext.Manifest.OptionalPermissions {
+			manifestPerms[p] = true
+		}
+		for _, p := range permissions {
+			if !manifestPerms[p] {
+				return nil, fmt.Errorf("permission %q not declared in manifest", p)
+			}
+		}
+	}
 
 	granted, ok := eo.permissions[extID]
 	if !ok {
@@ -490,6 +548,15 @@ func (eo *extensionOps) CreateAlarm(extID string, name string, alarm extensions.
 		eo.alarms[extID] = extAlarms
 	}
 	extAlarms[name] = &alarm
+
+	// Schedule the alarm to fire at the specified time.
+	when := alarm.Scheduled
+	if when == 0 && alarm.PeriodInMinutes > 0 {
+		when = float64(time.Now().UnixMilli()) + alarm.PeriodInMinutes*60000
+	}
+	if when > 0 {
+		eo.bs.extManager.ScheduleAlarm(extID, name, when)
+	}
 	return nil
 }
 
@@ -531,6 +598,9 @@ func (eo *extensionOps) ClearAlarm(extID string, name string) error {
 		return nil
 	}
 	delete(extAlarms, name)
+
+	// Cancel the scheduled alarm timer.
+	eo.bs.extManager.CancelAlarm(extID, name)
 	return nil
 }
 
@@ -540,6 +610,9 @@ func (eo *extensionOps) ClearAllAlarms(extID string) error {
 	defer eo.alarmMu.Unlock()
 
 	delete(eo.alarms, extID)
+
+	// Cancel all scheduled alarm timers for this extension.
+	eo.bs.extManager.CancelAllAlarms(extID)
 	return nil
 }
 
@@ -996,6 +1069,202 @@ func (do *downloadOps) Erase(downloadID int) error {
 		do.bs.extManager.FireDownloadEvent(extID, "onErased", item)
 	}
 	return nil
+}
+
+// BookmarkOperations implementation.
+
+// CreateBookmark creates a new bookmark.
+func (eo *extensionOps) CreateBookmark(bookmark extensions.Bookmark) (*extensions.Bookmark, error) {
+	b := eo.bs.bookmarkManager.AddBookmark(bookmark.Title, bookmark.URL)
+	return &extensions.Bookmark{
+		ID:       fmt.Sprintf("%d", b.ID),
+		Title:    b.Title,
+		URL:      b.URL,
+		ParentID: fmt.Sprintf("%d", b.FolderID),
+	}, nil
+}
+
+// GetBookmark returns a bookmark by ID.
+func (eo *extensionOps) GetBookmark(id string) (*extensions.Bookmark, error) {
+	b := eo.bs.bookmarkManager.GetBookmark(mustAtoi(id))
+	if b == nil {
+		return nil, nil
+	}
+	return &extensions.Bookmark{
+		ID:       fmt.Sprintf("%d", b.ID),
+		Title:    b.Title,
+		URL:      b.URL,
+		ParentID: fmt.Sprintf("%d", b.FolderID),
+	}, nil
+}
+
+// GetChildren returns bookmarks in a folder.
+func (eo *extensionOps) GetChildren(parentID string) ([]extensions.Bookmark, error) {
+	parent := mustAtoi(parentID)
+	bookmarks := eo.bs.bookmarkManager.GetBookmarksByFolder(parent)
+	result := make([]extensions.Bookmark, 0, len(bookmarks))
+	for _, b := range bookmarks {
+		result = append(result, extensions.Bookmark{
+			ID:       fmt.Sprintf("%d", b.ID),
+			Title:    b.Title,
+			URL:      b.URL,
+			ParentID: fmt.Sprintf("%d", b.FolderID),
+		})
+	}
+	return result, nil
+}
+
+// MoveBookmark moves a bookmark to a different folder/position.
+func (eo *extensionOps) MoveBookmark(id, parentID string, index int) (*extensions.Bookmark, error) {
+	// The shell BookmarkManager doesn't support move; return the bookmark unchanged.
+	b := eo.bs.bookmarkManager.GetBookmark(mustAtoi(id))
+	if b == nil {
+		return nil, nil
+	}
+	return &extensions.Bookmark{
+		ID:       fmt.Sprintf("%d", b.ID),
+		Title:    b.Title,
+		URL:      b.URL,
+		ParentID: fmt.Sprintf("%d", b.FolderID),
+	}, nil
+}
+
+// RemoveBookmark removes a bookmark by ID.
+func (eo *extensionOps) RemoveBookmark(id string) error {
+	eo.bs.bookmarkManager.RemoveBookmark(mustAtoi(id))
+	return nil
+}
+
+// UpdateBookmark updates a bookmark's title or URL.
+func (eo *extensionOps) UpdateBookmark(id string, updates extensions.Bookmark) (*extensions.Bookmark, error) {
+	b := eo.bs.bookmarkManager.GetBookmark(mustAtoi(id))
+	if b == nil {
+		return nil, nil
+	}
+	if updates.Title != "" {
+		b.Title = updates.Title
+	}
+	if updates.URL != "" {
+		b.URL = updates.URL
+	}
+	return &extensions.Bookmark{
+		ID:       fmt.Sprintf("%d", b.ID),
+		Title:    b.Title,
+		URL:      b.URL,
+		ParentID: fmt.Sprintf("%d", b.FolderID),
+	}, nil
+}
+
+// HistoryOperations implementation.
+
+// AddUrl adds a URL to history.
+func (eo *extensionOps) AddUrl(url, title string) error {
+	eo.bs.historyManager.AddEntry(title, url)
+	return nil
+}
+
+// DeleteUrl removes a URL from history.
+func (eo *extensionOps) DeleteUrl(url string) error {
+	// The shell HistoryManager doesn't support deletion by URL; no-op.
+	_ = url
+	return nil
+}
+
+// Search searches history by query.
+func (eo *extensionOps) Search(query string, maxResults int) ([]extensions.HistoryEntry, error) {
+	entries := eo.bs.historyManager.SearchEntries(query)
+	if maxResults > 0 && len(entries) > maxResults {
+		entries = entries[:maxResults]
+	}
+	result := make([]extensions.HistoryEntry, 0, len(entries))
+	for _, e := range entries {
+		result = append(result, extensions.HistoryEntry{
+			ID:        e.ID,
+			URL:       e.URL,
+			Title:     e.Title,
+			VisitTime: float64(e.VisitedAt.UnixMilli()),
+			Typed:     false,
+		})
+	}
+	return result, nil
+}
+
+// GetAllHistory returns all history entries.
+func (eo *extensionOps) GetAllHistory() ([]extensions.HistoryEntry, error) {
+	entries := eo.bs.historyManager.GetAllEntries()
+	result := make([]extensions.HistoryEntry, 0, len(entries))
+	for _, e := range entries {
+		result = append(result, extensions.HistoryEntry{
+			ID:        e.ID,
+			URL:       e.URL,
+			Title:     e.Title,
+			VisitTime: float64(e.VisitedAt.UnixMilli()),
+			Typed:     false,
+		})
+	}
+	return result, nil
+}
+
+// ActionOperations implementation.
+
+// actionBadges holds badge text keyed by extension ID then tab ID.
+var actionBadges map[string]map[int]string
+var actionBadgesMu sync.Mutex
+
+func init() {
+	actionBadges = make(map[string]map[int]string)
+}
+
+// SetBadgeText sets badge text for an extension action.
+func (eo *extensionOps) SetBadgeText(extID string, text string, tabID int) error {
+	actionBadgesMu.Lock()
+	defer actionBadgesMu.Unlock()
+	if actionBadges[extID] == nil {
+		actionBadges[extID] = make(map[int]string)
+	}
+	actionBadges[extID][tabID] = text
+	return nil
+}
+
+// SetBadgeColor sets badge color for an extension action.
+func (eo *extensionOps) SetBadgeColor(extID string, color string, tabID int) error {
+	// Badge color is stored but not rendered in this MVP.
+	_ = extID
+	_ = color
+	_ = tabID
+	return nil
+}
+
+// SetIcon sets the action icon for an extension.
+func (eo *extensionOps) SetIcon(extID string, path string, tabID int) error {
+	// Icon changes are stored but not rendered in this MVP.
+	_ = extID
+	_ = path
+	_ = tabID
+	return nil
+}
+
+// SetPopup sets the popup for an extension action.
+func (eo *extensionOps) SetPopup(extID string, popup string, tabID int) error {
+	// Popup changes are stored but not rendered in this MVP.
+	_ = extID
+	_ = popup
+	_ = tabID
+	return nil
+}
+
+// GetPopup returns the popup for an extension action.
+func (eo *extensionOps) GetPopup(extID string, tabID int) (string, error) {
+	_ = extID
+	_ = tabID
+	return "", nil
+}
+
+// mustAtoi converts a string to int, returning 0 on failure.
+func mustAtoi(s string) int {
+	var n int
+	fmt.Sscanf(s, "%d", &n)
+	return n
 }
 
 func sameSiteFromString(s string) http.SameSite {
