@@ -6,18 +6,22 @@ import (
 
 // ExtensionInfo is a summary of a loaded extension for the inspector.
 type ExtensionInfo struct {
-	ID          string
-	Name        string
-	Version     string
-	Enabled     bool
-	Permissions []string
-	MemoryMB    float64
+	ID              string   `json:"id"`
+	Name            string   `json:"name"`
+	Version         string   `json:"version"`
+	Description     string   `json:"description,omitempty"`
+	ManifestVersion int      `json:"manifest_version"`
+	Enabled         bool     `json:"enabled"`
+	Permissions     []string `json:"permissions"`
+	MemoryMB        float64  `json:"memory_mb"`
+	StorageBytes    int64    `json:"storage_bytes"`
+	ContentScripts  int      `json:"content_scripts"`
 }
 
 // Inspector provides read-only inspection of loaded extensions.
 type Inspector struct {
-	mu      sync.Mutex
-	extensions map[string]*ExtensionInfo
+	mu          sync.Mutex
+	extensions  map[string]*ExtensionInfo
 }
 
 // NewInspector creates a new Inspector.

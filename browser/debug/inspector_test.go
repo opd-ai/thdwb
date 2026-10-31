@@ -82,3 +82,36 @@ func TestInspectorCount(t *testing.T) {
 	i.UnregisterExtension("ext1")
 	assert.Equal(t, 1, i.Count())
 }
+
+// TestInspectorExtensionInfoFields verifies all ExtensionInfo fields are
+// preserved through Register/Get.
+func TestInspectorExtensionInfoFields(t *testing.T) {
+	i := NewInspector()
+
+	info := &ExtensionInfo{
+		ID:              "ext1",
+		Name:            "Test Ext",
+		Version:         "2.0",
+		Description:     "A test extension",
+		ManifestVersion: 3,
+		Enabled:         true,
+		Permissions:     []string{"tabs", "storage", "cookies"},
+		MemoryMB:        25.5,
+		StorageBytes:    1024,
+		ContentScripts:  3,
+	}
+	i.RegisterExtension(info)
+
+	got := i.GetExtension("ext1")
+	require.NotNil(t, got)
+	assert.Equal(t, "ext1", got.ID)
+	assert.Equal(t, "Test Ext", got.Name)
+	assert.Equal(t, "2.0", got.Version)
+	assert.Equal(t, "A test extension", got.Description)
+	assert.Equal(t, 3, got.ManifestVersion)
+	assert.True(t, got.Enabled)
+	assert.Equal(t, []string{"tabs", "storage", "cookies"}, got.Permissions)
+	assert.Equal(t, 25.5, got.MemoryMB)
+	assert.Equal(t, int64(1024), got.StorageBytes)
+	assert.Equal(t, 3, got.ContentScripts)
+}
