@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Product - Example Store</title>
+<style>
+  body { font-family: 'Helvetica', sans-serif; margin: 0; }
+  .product-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+  .product-card { border: 1px solid #ddd; padding: 1rem; border-radius: 8px; }
+  .product-card h3 { margin-top: 0; }
+  .price { font-weight: bold; color: #e74c3c; }
+  button { background: #3498db; color: white; border: none; padding: 0.5rem 1rem; cursor: pointer; }
+  button:hover { background: #2980b9; }
+</style>
+</head>
+<body>
+<div class="product-grid">
+  <div class="product-card">
+    <h3>Widget Pro</h3>
+    <img src="/images/widget.jpg" alt="Widget">
+    <p class="price">$29.99</p>
+    <button>Add to Cart</button>
+  </div>
+  <div class="product-card">
+    <h3>Gadget Max</h3>
+    <img src="/images/gadget.jpg" alt="Gadget">
+    <p class="price">$49.99</p>
+    <button>Add to Cart</button>
+  </div>
+  <div class="product-card">
+    <h3>Doohickey Plus</h3>
+    <img src="/images/doohickey.jpg" alt="Doohickey">
+    <p class="price">$19.99</p>
+    <button>Add to Cart</button>
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Dashboard - Example App</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 0; background: #f5f5f5; }
+  .sidebar { width: 250px; background: #2c3e50; color: white; padding: 1rem; position: fixed; height: 100vh; }
+  .sidebar h2 { font-size: 1.2rem; margin-top: 0; }
+  .sidebar ul { list-style: none; padding: 0; }
+  .sidebar li { margin: 0.5rem 0; }
+  .sidebar a { color: #bdc3c7; text-decoration: none; }
+  .main { margin-left: 260px; padding: 2rem; }
+  .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 2rem; }
+  .stat-card { background: white; padding: 1rem; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+  .stat-card h3 { margin: 0; font-size: 0.9rem; color: #666; }
+  .stat-card .value { font-size: 2rem; font-weight: bold; color: #2c3e50; }
+  table { width: 100%; border-collapse: collapse; background: white; }
+  th, td { padding: 0.75rem; text-align: left; border-bottom: 1px solid #ddd; }
+  th { background: #f8f9fa; font-weight: 600; }
+</style>
+</head>
+<body>
+<aside class="sidebar">
+  <h2>Dashboard</h2>
+  <ul>
+    <li><a href="/">Overview</a></li>
+    <li><a href="/reports">Reports</a></li>
+    <li><a href="/settings">Settings</a></li>
+  </ul>
+</aside>
+<main class="main">
+  <h1>Overview</h1>
+  <div class="stats-grid">
+    <div class="stat-card">
+      <h3>Users</h3>
+      <div class="value">1,234</div>
+    </div>
+    <div class="stat-card">
+      <h3>Orders</h3>
+      <div class="value">567</div>
+    </div>
+    <div class="stat-card">
+      <h3>Revenue</h3>
+      <div class="value">$89,012</div>
+    </div>
+    <div class="stat-card">
+      <h3>Conversion</h3>
+      <div class="value">3.2%</div>
+    </div>
+  </div>
+  <table>
+    <thead>
+      <tr><th>Order</th><th>Customer</th><th>Amount</th><th>Status</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>#1001</td><td>Alice</td><td>$45.00</td><td>Delivered</td></tr>
+      <tr><td>#1002</td><td>Bob</td><td>$89.50</td><td>Pending</td></tr>
+      <tr><td>#1003</td><td>Carol</td><td>$12.00</td><td>Shipped</td></tr>
+    </tbody>
+  </table>
+</main>
+</body>
+</html>

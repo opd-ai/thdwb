@@ -148,6 +148,191 @@ func TestLayoutReflowsDocument(t *testing.T) {
 	}
 }
 
+// TestRenderNewsArticle verifies a realistic news article layout renders
+// correctly: header, nav, article with heading, meta, image, and paragraphs.
+func TestRenderNewsArticle(t *testing.T) {
+	doc := ketchup.ParseHTMLDocument(loadFixture(t, "news-article.html"), nil)
+	if doc == nil || doc.DOM == nil {
+		t.Fatal("news article failed to parse")
+	}
+
+	// Header with navigation.
+	header := firstByTag(doc.DOM, "header")
+	if header == nil {
+		t.Fatal("header element missing from news article")
+	}
+
+	// Article with heading.
+	article := firstByTag(doc.DOM, "article")
+	if article == nil {
+		t.Fatal("article element missing from news article")
+	}
+
+	h1 := firstByTag(article, "h1")
+	if h1 == nil || elementText(h1) != "Breaking News: Major Event Occurs" {
+		t.Errorf("article h1 = %q, want \"Breaking News: Major Event Occurs\"", elementText(h1))
+	}
+
+	// Image present.
+	img := firstByTag(doc.DOM, "img")
+	if img == nil {
+		t.Fatal("img element missing from news article")
+	}
+
+	// Footer present.
+	footer := firstByTag(doc.DOM, "footer")
+	if footer == nil {
+		t.Fatal("footer element missing from news article")
+	}
+}
+
+// collectAllByTag recursively collects all elements matching tag, descending
+// into children of matches (unlike collectByTag which stops at first match).
+func collectAllByTag(root *hotdog.NodeDOM, tag string) []*hotdog.NodeDOM {
+	var out []*hotdog.NodeDOM
+	var walk func(n *hotdog.NodeDOM)
+	walk = func(n *hotdog.NodeDOM) {
+		if n == nil {
+			return
+		}
+		if n.Element == tag {
+			out = append(out, n)
+		}
+		for _, child := range n.Children {
+			walk(child)
+		}
+	}
+	walk(root)
+	return out
+}
+
+// TestRenderEcommerceProduct verifies an e-commerce product grid renders
+// correctly: product cards with headings, images, prices, and buttons.
+func TestRenderEcommerceProduct(t *testing.T) {
+	doc := ketchup.ParseHTMLDocument(loadFixture(t, "ecommerce-product.html"), nil)
+	if doc == nil || doc.DOM == nil {
+		t.Fatal("ecommerce product page failed to parse")
+	}
+
+	body := firstByTag(doc.DOM, "body")
+	if body == nil {
+		t.Fatal("body element missing from ecommerce page")
+	}
+
+	// Product cards are divs with class product-card.
+	divs := collectAllByTag(doc.DOM, "div")
+	productCards := 0
+	for _, d := range divs {
+		for _, attr := range d.Attributes {
+			if attr.Name == "class" && attr.Value == "product-card" {
+				productCards++
+				break
+			}
+		}
+	}
+	if productCards != 3 {
+		t.Errorf("expected 3 product cards, found %d", productCards)
+	}
+
+	// Product headings (h3 elements).
+	h3s := collectAllByTag(doc.DOM, "h3")
+	if len(h3s) != 3 {
+		t.Errorf("expected 3 product headings, found %d", len(h3s))
+	}
+	expectedHeadings := []string{"Widget Pro", "Gadget Max", "Doohickey Plus"}
+	for _, expected := range expectedHeadings {
+		found := false
+		for _, h := range h3s {
+			if elementText(h) == expected {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected heading %q not found", expected)
+		}
+	}
+
+	// Prices present (p elements).
+	ps := collectAllByTag(doc.DOM, "p")
+	foundPrice := false
+	for _, p := range ps {
+		if elementText(p) == "$29.99" || elementText(p) == "$49.99" || elementText(p) == "$19.99" {
+			foundPrice = true
+			break
+		}
+	}
+	if !foundPrice {
+		t.Errorf("no product price found")
+	}
+
+	// Buttons present.
+	buttons := collectAllByTag(doc.DOM, "button")
+	if len(buttons) != 3 {
+		t.Errorf("expected 3 add-to-cart buttons, found %d", len(buttons))
+	}
+
+	// Images present.
+	imgs := collectAllByTag(doc.DOM, "img")
+	if len(imgs) != 3 {
+		t.Errorf("expected 3 product images, found %d", len(imgs))
+	}
+}
+
+// TestRenderDashboard verifies a dashboard layout renders correctly:
+// sidebar navigation, stats grid, and data table.
+func TestRenderDashboard(t *testing.T) {
+	doc := ketchup.ParseHTMLDocument(loadFixture(t, "dashboard.html"), nil)
+	if doc == nil || doc.DOM == nil {
+		t.Fatal("dashboard failed to parse")
+	}
+
+	// Sidebar navigation.
+	sidebar := firstByTag(doc.DOM, "aside")
+	if sidebar == nil {
+		t.Fatal("sidebar missing from dashboard")
+	}
+
+	// Main content.
+	main := firstByTag(doc.DOM, "main")
+	if main == nil {
+		t.Fatal("main content missing from dashboard")
+	}
+
+	// Data table.
+	table := firstByTag(doc.DOM, "table")
+	if table == nil {
+		t.Fatal("data table missing from dashboard")
+	}
+
+	// Table rows.
+	rows := collectAllByTag(doc.DOM, "tr")
+	if len(rows) < 4 { // header + 3 data rows
+		t.Errorf("expected at least 4 table rows, found %d", len(rows))
+	}
+
+	// Table cells.
+	cells := collectAllByTag(doc.DOM, "td")
+	if len(cells) < 9 { // 3 rows x 3 data columns
+		t.Errorf("expected at least 9 table cells, found %d", len(cells))
+	}
+
+	// Headings present.
+	h1s := collectAllByTag(doc.DOM, "h1")
+	if len(h1s) == 0 || elementText(h1s[0]) != "Overview" {
+		t.Errorf("expected h1 'Overview'")
+	}
+
+	// Stat values present in the DOM text.
+	var text strings.Builder
+	collectText(doc.DOM, &text)
+	for _, want := range []string{"1,234", "567", "$89,012", "3.2%"} {
+		if !strings.Contains(text.String(), want) {
+			t.Errorf("stat value %q missing from dashboard", want)
+		}
+	}
+}
+
 // elementText returns the concatenated text of an element and its descendants.
 func elementText(n *hotdog.NodeDOM) string {
 	if n == nil {
