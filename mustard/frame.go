@@ -86,9 +86,14 @@ func (frame *Frame) draw() {
 		childrenWidgets := getCoreWidgets(frame.widgets)
 		childrenLayout := calculateChildrenWidgetsLayout(childrenWidgets, top, left, width, height, frame.orientation)
 
-		for idx, child := range frame.Widgets() {
-			child.ComputedBox().SetCoords(childrenLayout[idx].box.GetCoords())
+		visibleIdx := 0
+		for _, child := range frame.Widgets() {
+			if !child.BaseWidget().GetVisible() {
+				continue
+			}
+			child.ComputedBox().SetCoords(childrenLayout[visibleIdx].box.GetCoords())
 			child.draw()
+			visibleIdx++
 		}
 	}
 }

@@ -973,8 +973,9 @@ func fetchExternalPageWithOptions(client *http.Client, URL *url.URL, method stri
 	// The actual preflight is handled by the caller (JS layer) which sends OPTIONS first
 	// This function just makes the actual request
 
-	resp, err := requestClient(client, URL, "").Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
+		resource.Code = -1
 		resource.Body = loadErrorPage(err.Error())
 		return resource
 	}

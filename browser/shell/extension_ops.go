@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	errs "github.com/danfragoso/thdwb/browser/errors"
 	extensions "github.com/danfragoso/thdwb/browser/extensions"
 	hotdog "github.com/danfragoso/thdwb/hotdog"
 	sauce "github.com/danfragoso/thdwb/sauce"
@@ -152,8 +153,10 @@ func (eo *extensionOps) UpdateTab(tabID int, updates extensions.TabUpdate) (*ext
 			eo.cookieJar.TransferOrigin(t.ContainerID, updates.ContainerID, origin)
 			// Transfer localStorage via the storage manager.
 			manager, err := hotdog.DefaultOriginStorageManager()
-			if err == nil {
-				_ = manager.TransferOrigin(t.ContainerID, updates.ContainerID, origin)
+			if err != nil {
+				eo.bs.errorLogger.Log(errs.SeverityError, "shell", "storage", "failed to get storage manager", err.Error())
+			} else if err := manager.TransferOrigin(t.ContainerID, updates.ContainerID, origin); err != nil {
+				eo.bs.errorLogger.Log(errs.SeverityError, "shell", "storage", "failed to transfer origin", err.Error())
 			}
 		}
 		t = eo.bs.tabManager.MoveTabToContainer(tabID, updates.ContainerID, updates.ContainerName, updates.ContainerColor)

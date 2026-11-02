@@ -339,6 +339,9 @@ func (wc *WindowContext) LoadURL(rawURL string) error {
 	}
 
 	resource := sauce.FetchExternalPageWithOptions(u, "GET", nil, nil)
+	if resource.Code <= 0 {
+		return fmt.Errorf("transport error: %s", resource.Body)
+	}
 	if resource.Code >= 400 {
 		return fmt.Errorf("HTTP %d: %s", resource.Code, resource.Body)
 	}

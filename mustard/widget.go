@@ -44,24 +44,6 @@ func calculateChildrenWidgetsLayout(children []*baseWidget, top, left, width, he
 		currentLayout := &baseWidget{}
 
 		if orientation == VerticalFrame {
-			fixedWidthElemens, volatileWidthElements := getFixedWidthElements(children)
-			remainingWidth := calculateFlexibleWidth(width, fixedWidthElemens)
-
-			if i > 0 {
-				currentLayout.box.left = childrenLayout[i-1].box.left + childrenLayout[i-1].box.width
-			} else {
-				currentLayout.box.left = left
-			}
-
-			if children[i].fixedWidth {
-				currentLayout.box.width = children[i].box.width
-			} else {
-				currentLayout.box.width = remainingWidth / float64(len(volatileWidthElements))
-			}
-
-			currentLayout.box.top = top
-			currentLayout.box.height = height
-		} else {
 			fixedHeightElements, volatileHeightElements := getFixedHeightElements(children)
 			remainingHeight := calculateFlexibleHeight(height, fixedHeightElements)
 
@@ -79,6 +61,24 @@ func calculateChildrenWidgetsLayout(children []*baseWidget, top, left, width, he
 
 			currentLayout.box.left = left
 			currentLayout.box.width = width
+		} else {
+			fixedWidthElemens, volatileWidthElements := getFixedWidthElements(children)
+			remainingWidth := calculateFlexibleWidth(width, fixedWidthElemens)
+
+			if i > 0 {
+				currentLayout.box.left = childrenLayout[i-1].box.left + childrenLayout[i-1].box.width
+			} else {
+				currentLayout.box.left = left
+			}
+
+			if children[i].fixedWidth {
+				currentLayout.box.width = children[i].box.width
+			} else {
+				currentLayout.box.width = remainingWidth / float64(len(volatileWidthElements))
+			}
+
+			currentLayout.box.top = top
+			currentLayout.box.height = height
 		}
 
 		childrenLayout = append(childrenLayout, currentLayout)

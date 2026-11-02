@@ -24,6 +24,10 @@ func (window *WindowBase) Hide() {
 }
 
 func (window *WindowBase) Close() {
+	window.visible = false
+	window.context = nil
+	window.frameBuffer = nil
+	window.rootFrame = nil
 }
 
 func (window *WindowBase) IsClosed() bool {

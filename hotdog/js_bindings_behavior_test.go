@@ -29,7 +29,7 @@ func TestDocumentBindingQueriesAndCreation(t *testing.T) {
 	wc := newBindingTestContext(t, `<html><head><title>Page</title></head><body><p id="one" class="entry"></p><p class="entry"></p></body></html>`)
 	wc.ActiveDocument.Title = "Page"
 	assertJSResult(t, wc, `document.querySelectorAll("p").length + ":" + document.getElementById("one").tagName + ":" + document.getElementsByClassName("entry").length + ":" + document.getElementsByTagName("p").length`, "2:P:2:2")
-	assertJSResult(t, wc, `document.documentElement.tagName + ":" + document.title()`, "HTML:Page")
+	assertJSResult(t, wc, `document.documentElement.tagName + ":" + document.title`, "HTML:Page")
 
 	// Test createTextNode and appendChild - the text node will be appended after existing children
 	result, err := wc.RunJS(`var text = document.createTextNode("new"); document.body.appendChild(text); document.body.lastChild().textContent`)

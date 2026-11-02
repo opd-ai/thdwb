@@ -12,8 +12,8 @@ func paintBlockElement(ctx *gg.Context, node *hotdog.NodeDOM) {
 		return
 	}
 
-	ctx.DrawRectangle(node.RenderBox.Left, node.RenderBox.Top, node.RenderBox.Width, node.RenderBox.Height)
 	ctx.SetRGBA(node.Style.BackgroundColor.R, node.Style.BackgroundColor.G, node.Style.BackgroundColor.B, node.Style.BackgroundColor.A)
+	ctx.DrawRectangle(node.RenderBox.Left, node.RenderBox.Top, node.RenderBox.Width, node.RenderBox.Height)
 	ctx.Fill()
 
 	paintTextWithinBounds(ctx, node, node.Content, 1, 1.5)
@@ -25,7 +25,11 @@ func calculateBlockLayout(ctx *gg.Context, node *hotdog.NodeDOM, childIdx int) {
 		textContent := node.GetTextContent()
 		ctx.SetFont(sansSerif[node.Style.FontWeight], node.Style.FontSize)
 		if node.Style.Width == 0 {
-			node.RenderBox.Width = node.Parent.RenderBox.Width
+			parentWidth := node.Parent.RenderBox.Width
+			if parentWidth == 0 {
+				parentWidth = float64(ctx.Width())
+			}
+			node.RenderBox.Width = parentWidth
 		}
 		if node.Style.Height == 0 {
 			node.RenderBox.Height = ctx.MeasureStringWrapped(textContent, node.RenderBox.Width, 1.5) + 2 + ctx.FontHeight()*.5
@@ -41,7 +45,11 @@ func calculateBlockLayout(ctx *gg.Context, node *hotdog.NodeDOM, childIdx int) {
 	}
 
 	if node.Style.Width == 0 {
-		node.RenderBox.Width = node.Parent.RenderBox.Width
+		parentWidth := node.Parent.RenderBox.Width
+		if parentWidth == 0 {
+			parentWidth = float64(ctx.Width())
+		}
+		node.RenderBox.Width = parentWidth
 	}
 
 	if node.Style.Height == 0 {

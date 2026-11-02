@@ -185,7 +185,7 @@ func (wc *WindowContext) InitJSRuntime() error {
 		// Expose body and documentElement as properties (getters)
 		_ = docObj.DefineAccessorProperty("body", runtime.ToValue(docWrapper.getBody), goja.Undefined(), 0, 0)
 		_ = docObj.DefineAccessorProperty("documentElement", runtime.ToValue(docWrapper.getDocumentElement), goja.Undefined(), 0, 0)
-		_ = docObj.Set("title", docWrapper.getTitle)
+		_ = docObj.DefineAccessorProperty("title", runtime.ToValue(docWrapper.getTitle), goja.Undefined(), 0, 0)
 		_ = runtime.Set("document", docObj)
 	}
 
