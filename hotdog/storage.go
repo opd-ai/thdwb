@@ -84,7 +84,7 @@ var globalLocalStorageState struct {
 	err     error
 }
 
-func defaultOriginStorageManager() (*OriginStorageManager, error) {
+func DefaultOriginStorageManager() (*OriginStorageManager, error) {
 	globalLocalStorageState.once.Do(func() {
 		configDir, err := os.UserConfigDir()
 		if err != nil {
@@ -106,16 +106,12 @@ func GetLocalStorage(origin *url.URL) StorageMap {
 
 // GetLocalStorageForContainer returns localStorage for the given container and origin.
 func GetLocalStorageForContainer(containerID string, origin *url.URL) StorageMap {
-	manager, err := defaultOriginStorageManager()
+	manager, err := DefaultOriginStorageManager()
 	if err != nil {
 		log.Printf("initialize localStorage for %s: %v", originKey(origin), err)
 		return nil
 	}
 	return manager.getLocalStorage(containerID, origin)
-}
-
-func getLocalStorageManager() (*OriginStorageManager, error) {
-	return defaultOriginStorageManager()
 }
 
 func (manager *OriginStorageManager) getLocalStorage(containerID string, origin *url.URL) StorageMap {
@@ -317,7 +313,7 @@ func ClearLocalStorage(origin *url.URL) {
 
 // ClearLocalStorageWithError clears localStorage and reports persistence failures.
 func ClearLocalStorageWithError(containerID string, origin *url.URL) error {
-	manager, err := defaultOriginStorageManager()
+	manager, err := DefaultOriginStorageManager()
 	if err != nil {
 		return err
 	}
@@ -326,7 +322,7 @@ func ClearLocalStorageWithError(containerID string, origin *url.URL) error {
 
 // GetAllLocalStorageOrigins returns origins that currently have localStorage data.
 func GetAllLocalStorageOrigins() []string {
-	manager, err := defaultOriginStorageManager()
+	manager, err := DefaultOriginStorageManager()
 	if err != nil {
 		log.Printf("list localStorage origins: %v", err)
 		return nil

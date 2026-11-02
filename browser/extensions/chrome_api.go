@@ -24,11 +24,24 @@ type TabInfo struct {
 
 // TabUpdate describes fields that can be updated on a tab.
 type TabUpdate struct {
-	URL      string `json:"url,omitempty"`
-	Title    string `json:"title,omitempty"`
-	Active   *bool  `json:"active,omitempty"`
-	Pinned   *bool  `json:"pinned,omitempty"`
-	Muted    *bool  `json:"muted,omitempty"`
+	URL            string `json:"url,omitempty"`
+	Title          string `json:"title,omitempty"`
+	Active         *bool  `json:"active,omitempty"`
+	Pinned         *bool  `json:"pinned,omitempty"`
+	Muted          *bool  `json:"muted,omitempty"`
+	ContainerID    string `json:"containerId,omitempty"`
+	ContainerName  string `json:"containerName,omitempty"`
+	ContainerColor string `json:"containerColor,omitempty"`
+}
+
+// TabQuery describes filter criteria for chrome.tabs.query.
+type TabQuery struct {
+	Active       *bool   `json:"active,omitempty"`
+	CurrentWindow *bool  `json:"currentWindow,omitempty"`
+	URL          string  `json:"url,omitempty"`
+	Title        string  `json:"title,omitempty"`
+	Status       string  `json:"status,omitempty"`
+	WindowID     *int    `json:"windowId,omitempty"`
 }
 
 // TabCreate describes fields for creating a new tab.
@@ -54,6 +67,7 @@ type WindowInfo struct {
 // operations to extension APIs without creating an import cycle.
 type TabOperations interface {
 	QueryTabs() []TabInfo
+	QueryTabsFiltered(q TabQuery) []TabInfo
 	GetTab(tabID int) (*TabInfo, error)
 	UpdateTab(tabID int, updates TabUpdate) (*TabInfo, error)
 	CreateTab(tab TabCreate) (*TabInfo, error)
@@ -136,6 +150,8 @@ type ScriptingOperations interface {
 	InjectCSS(extID, css string) error
 	RemoveCSS(extID string) error
 	ExecuteScriptTab(extID string, tabID int, world ScriptingWorld, script string) (interface{}, error)
+	RegisterContentScripts(extID string, scripts []ContentScript) error
+	UnregisterContentScripts(extID string, scriptIDs []string) error
 }
 
 // ContextMenuItem describes a context menu item as exposed to extension APIs.
@@ -171,6 +187,7 @@ type PermissionOperations interface {
 	RequestPermissions(extID string, permissions []string) ([]string, error)
 	ContainsPermissions(extID string, permissions []string) ([]string, error)
 	GetAllPermissions(extID string) ([]string, error)
+	RemovePermissions(extID string, permissions []string) ([]string, error)
 }
 
 // Alarm describes an alarm as exposed to extension APIs.
@@ -343,6 +360,17 @@ type DownloadOperations interface {
 	Get(downloadID int) (*DownloadItem, error)
 	GetAll() ([]DownloadItem, error)
 	Erase(downloadID int) error
+	Search(query DownloadQuery) ([]DownloadItem, error)
+}
+
+// DownloadQuery describes filter criteria for chrome.downloads.search.
+type DownloadQuery struct {
+	ID        *int    `json:"id,omitempty"`
+	URL       string  `json:"url,omitempty"`
+	Filename  string  `json:"filename,omitempty"`
+	State     string  `json:"state,omitempty"`
+	Paused    *bool   `json:"paused,omitempty"`
+	Error     string  `json:"error,omitempty"`
 }
 
 // PlatformInfo describes the browser platform as reported by chrome.runtime.
@@ -391,6 +419,16 @@ type ChromeAPI struct {
 	cookieEventListeners []goja.Callable
 	// alarmEventListeners holds listeners for alarms.onAlarm events keyed by alarm name.
 	alarmEventListeners map[string][]goja.Callable
+	// containerEventListeners holds listeners for contextualIdentities events keyed by event name.
+	containerEventListeners map[string][]goja.Callable
+	// contextMenuEventListeners holds listeners for contextMenus.onClicked events.
+	contextMenuEventListeners []goja.Callable
+	// permissionEventListeners holds listeners for permissions.onAdded/onRemoved events.
+	permissionAddedListeners   []goja.Callable
+	permissionRemovedListeners []goja.Callable
+	// notificationEventListeners holds listeners for notifications.onClicked/onClosed events.
+	notificationClickedListeners   []goja.Callable
+	notificationClosedListeners    []goja.Callable
 }
 
 // NewChromeAPI creates a ChromeAPI binding for the given extension and VM.
@@ -411,6 +449,12 @@ func NewChromeAPI(ext *Extension, vm *goja.Runtime, router *MessageRouter) *Chro
 		downloadEventListeners: make(map[string][]goja.Callable),
 		cookieEventListeners:   make([]goja.Callable, 0),
 		alarmEventListeners:    make(map[string][]goja.Callable),
+		containerEventListeners: make(map[string][]goja.Callable),
+		contextMenuEventListeners: make([]goja.Callable, 0),
+		permissionAddedListeners:   make([]goja.Callable, 0),
+		permissionRemovedListeners: make([]goja.Callable, 0),
+		notificationClickedListeners:   make([]goja.Callable, 0),
+		notificationClosedListeners:    make([]goja.Callable, 0),
 	}
 }
 
@@ -1000,7 +1044,34 @@ func (c *ChromeAPI) bindTabs(vm *goja.Runtime, ext *Extension, router *MessageRo
 	// chrome.tabs.query
 	_ = tabsObj.Set("query", func(call goja.FunctionCall) goja.Value {
 		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
-		tabs := tabOps.QueryTabs()
+		q := TabQuery{}
+		if len(call.Arguments) > 0 {
+			qObj := call.Argument(0).ToObject(vm)
+			if qObj != nil {
+				if v := qObj.Get("active"); v != nil {
+					b := v.ToBoolean()
+					q.Active = &b
+				}
+				if v := qObj.Get("currentWindow"); v != nil {
+					b := v.ToBoolean()
+					q.CurrentWindow = &b
+				}
+				if v := qObj.Get("url"); v != nil {
+					q.URL = v.String()
+				}
+				if v := qObj.Get("title"); v != nil {
+					q.Title = v.String()
+				}
+				if v := qObj.Get("status"); v != nil {
+					q.Status = v.String()
+				}
+				if v := qObj.Get("windowId"); v != nil {
+					w := int(v.ToInteger())
+					q.WindowID = &w
+				}
+			}
+		}
+		tabs := tabOps.QueryTabsFiltered(q)
 		result := make([]interface{}, 0, len(tabs))
 		for _, t := range tabs {
 			result = append(result, map[string]interface{}{
@@ -1070,6 +1141,15 @@ func (c *ChromeAPI) bindTabs(vm *goja.Runtime, ext *Extension, router *MessageRo
 				if activeVal := updateObj.Get("active"); activeVal != nil {
 					b := activeVal.ToBoolean()
 					updates.Active = &b
+				}
+				if containerIDVal := updateObj.Get("containerId"); containerIDVal != nil {
+					updates.ContainerID = containerIDVal.String()
+				}
+				if containerNameVal := updateObj.Get("containerName"); containerNameVal != nil {
+					updates.ContainerName = containerNameVal.String()
+				}
+				if containerColorVal := updateObj.Get("containerColor"); containerColorVal != nil {
+					updates.ContainerColor = containerColorVal.String()
 				}
 			}
 		}
@@ -1663,8 +1743,136 @@ func (c *ChromeAPI) bindContextualIdentities(vm *goja.Runtime, ext *Extension, c
 		return goja.Undefined()
 	})
 
+	// chrome.contextualIdentities.onCreated event
+	onCreatedObj := vm.NewObject()
+	_ = onCreatedObj.Set("addListener", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) > 0 {
+			if cb, ok := goja.AssertFunction(call.Argument(0)); ok {
+				c.mu.Lock()
+				c.containerEventListeners["onCreated"] = append(c.containerEventListeners["onCreated"], cb)
+				c.mu.Unlock()
+			}
+		}
+		return goja.Undefined()
+	})
+	_ = ciObj.Set("onCreated", onCreatedObj)
+
+	// chrome.contextualIdentities.onRemoved event
+	onRemovedObj := vm.NewObject()
+	_ = onRemovedObj.Set("addListener", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) > 0 {
+			if cb, ok := goja.AssertFunction(call.Argument(0)); ok {
+				c.mu.Lock()
+				c.containerEventListeners["onRemoved"] = append(c.containerEventListeners["onRemoved"], cb)
+				c.mu.Unlock()
+			}
+		}
+		return goja.Undefined()
+	})
+	_ = ciObj.Set("onRemoved", onRemovedObj)
+
+	// chrome.contextualIdentities.onUpdated event
+	onUpdatedObj := vm.NewObject()
+	_ = onUpdatedObj.Set("addListener", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) > 0 {
+			if cb, ok := goja.AssertFunction(call.Argument(0)); ok {
+				c.mu.Lock()
+				c.containerEventListeners["onUpdated"] = append(c.containerEventListeners["onUpdated"], cb)
+				c.mu.Unlock()
+			}
+		}
+		return goja.Undefined()
+	})
+	_ = ciObj.Set("onUpdated", onUpdatedObj)
+
 	_ = chromeObj.Set("contextualIdentities", ciObj)
 	return nil
+}
+
+// FireContainerCreated fires the chrome.contextualIdentities.onCreated event.
+func (c *ChromeAPI) FireContainerCreated(container *ContainerInfo) {
+	c.mu.Lock()
+	listeners := make([]goja.Callable, len(c.containerEventListeners["onCreated"]))
+	copy(listeners, c.containerEventListeners["onCreated"])
+	c.mu.Unlock()
+
+	for _, cb := range listeners {
+		_, _ = cb(goja.Undefined(), c.vm.ToValue(map[string]interface{}{
+			"id":    container.ID,
+			"name":  container.Name,
+			"color": container.Color,
+			"icon":  container.Icon,
+		}))
+	}
+}
+
+// FireContainerRemoved fires the chrome.contextualIdentities.onRemoved event.
+func (c *ChromeAPI) FireContainerRemoved(containerID string) {
+	c.mu.Lock()
+	listeners := make([]goja.Callable, len(c.containerEventListeners["onRemoved"]))
+	copy(listeners, c.containerEventListeners["onRemoved"])
+	c.mu.Unlock()
+
+	for _, cb := range listeners {
+		_, _ = cb(goja.Undefined(), c.vm.ToValue(map[string]interface{}{
+			"id": containerID,
+		}))
+	}
+}
+
+// FireContainerUpdated fires the chrome.contextualIdentities.onUpdated event.
+func (c *ChromeAPI) FireContainerUpdated(container *ContainerInfo) {
+	c.mu.Lock()
+	listeners := make([]goja.Callable, len(c.containerEventListeners["onUpdated"]))
+	copy(listeners, c.containerEventListeners["onUpdated"])
+	c.mu.Unlock()
+
+	for _, cb := range listeners {
+		_, _ = cb(goja.Undefined(), c.vm.ToValue(map[string]interface{}{
+			"id":    container.ID,
+			"name":  container.Name,
+			"color": container.Color,
+			"icon":  container.Icon,
+		}))
+	}
+}
+
+// FireContextMenuClicked fires the chrome.contextMenus.onClicked event.
+func (c *ChromeAPI) FireContextMenuClicked(itemID string) {
+	c.mu.Lock()
+	listeners := make([]goja.Callable, len(c.contextMenuEventListeners))
+	copy(listeners, c.contextMenuEventListeners)
+	c.mu.Unlock()
+
+	for _, cb := range listeners {
+		_, _ = cb(goja.Undefined(), c.vm.ToValue(map[string]interface{}{
+			"menuItemId": itemID,
+		}))
+	}
+}
+
+// FirePermissionAdded fires the chrome.permissions.onAdded event.
+func (c *ChromeAPI) FirePermissionAdded(permissions []string) {
+	c.mu.Lock()
+	listeners := make([]goja.Callable, len(c.permissionAddedListeners))
+	copy(listeners, c.permissionAddedListeners)
+	c.mu.Unlock()
+
+	for _, cb := range listeners {
+		_, _ = cb(goja.Undefined(), c.vm.ToValue(permissions))
+	}
+}
+
+// FirePermissionRemoved fires the chrome.permissions.onRemoved event.
+func (c *ChromeAPI) FirePermissionRemoved(permissions []string) {
+	c.mu.Lock()
+	listeners := make([]goja.Callable, len(c.permissionRemovedListeners))
+	copy(listeners, c.permissionRemovedListeners)
+	c.mu.Unlock()
+
+	for _, cb := range listeners {
+		_, _ = cb(goja.Undefined(), c.vm.ToValue(permissions))
+	}
 }
 
 // bindCookies installs chrome.cookies into the VM.
@@ -2059,6 +2267,86 @@ func (c *ChromeAPI) bindScripting(vm *goja.Runtime, ext *Extension, ops Scriptin
 		return goja.Undefined()
 	})
 
+	// chrome.scripting.registerContentScripts
+	_ = scriptingObj.Set("registerContentScripts", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(vm.NewGoError(fmt.Errorf("registerContentScripts requires a scripts argument")))
+		}
+		scriptsObj := call.Argument(0).ToObject(vm)
+		var scripts []ContentScript
+		if scriptsObj != nil {
+			if arr, ok := scriptsObj.ToObject(vm).Export().([]interface{}); ok {
+				for _, v := range arr {
+					if s, ok := v.(map[string]interface{}); ok {
+						script := ContentScript{
+							ExtID: ext.ID,
+						}
+						if id, ok := s["id"].(string); ok {
+							script.ID = id
+						}
+						if matches, ok := s["matches"].([]interface{}); ok {
+							for _, m := range matches {
+								script.Matches = append(script.Matches, m.(string))
+							}
+						}
+						if js, ok := s["js"].([]interface{}); ok {
+							for _, j := range js {
+								script.JS = append(script.JS, j.(string))
+							}
+						}
+						if css, ok := s["css"].([]interface{}); ok {
+							for _, c := range css {
+								script.CSS = append(script.CSS, c.(string))
+							}
+						}
+						if runAt, ok := s["runAt"].(string); ok {
+							script.RunAt = runAt
+						}
+						scripts = append(scripts, script)
+					}
+				}
+			}
+		}
+		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		if err := ops.RegisterContentScripts(ext.ID, scripts); err != nil {
+			if callback != nil {
+				_, _ = callback(goja.Undefined())
+			}
+			return goja.Undefined()
+		}
+		if callback != nil {
+			_, _ = callback(goja.Undefined())
+		}
+		return goja.Undefined()
+	})
+
+	// chrome.scripting.unregisterContentScripts
+	_ = scriptingObj.Set("unregisterContentScripts", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(vm.NewGoError(fmt.Errorf("unregisterContentScripts requires a scriptIds argument")))
+		}
+		idsObj := call.Argument(0).ToObject(vm)
+		var scriptIDs []string
+		if idsObj != nil {
+			if arr, ok := idsObj.Export().([]interface{}); ok {
+				for _, v := range arr {
+					scriptIDs = append(scriptIDs, v.(string))
+				}
+			}
+		}
+		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		if err := ops.UnregisterContentScripts(ext.ID, scriptIDs); err != nil {
+			if callback != nil {
+				_, _ = callback(goja.Undefined())
+			}
+			return goja.Undefined()
+		}
+		if callback != nil {
+			_, _ = callback(goja.Undefined())
+		}
+		return goja.Undefined()
+	})
+
 	_ = chromeObj.Set("scripting", scriptingObj)
 	return nil
 }
@@ -2196,8 +2484,13 @@ func (c *ChromeAPI) bindContextMenus(vm *goja.Runtime, ext *Extension, ops Conte
 	// chrome.contextMenus.onClicked event
 	onClickedObj := vm.NewObject()
 	_ = onClickedObj.Set("addListener", func(call goja.FunctionCall) goja.Value {
-		// Listener storage wired by shell via message router.
-		_ = call
+		if len(call.Arguments) > 0 {
+			if cb, ok := goja.AssertFunction(call.Argument(0)); ok {
+				c.mu.Lock()
+				c.contextMenuEventListeners = append(c.contextMenuEventListeners, cb)
+				c.mu.Unlock()
+			}
+		}
 		return goja.Undefined()
 	})
 	_ = menusObj.Set("onClicked", onClickedObj)
@@ -2294,7 +2587,13 @@ func (c *ChromeAPI) bindPermissions(vm *goja.Runtime, ext *Extension, ops Permis
 	// chrome.permissions.onAdded event
 	onAddedObj := vm.NewObject()
 	_ = onAddedObj.Set("addListener", func(call goja.FunctionCall) goja.Value {
-		_ = call
+		if len(call.Arguments) > 0 {
+			if cb, ok := goja.AssertFunction(call.Argument(0)); ok {
+				c.mu.Lock()
+				c.permissionAddedListeners = append(c.permissionAddedListeners, cb)
+				c.mu.Unlock()
+			}
+		}
 		return goja.Undefined()
 	})
 	_ = permsObj.Set("onAdded", onAddedObj)
@@ -2302,7 +2601,13 @@ func (c *ChromeAPI) bindPermissions(vm *goja.Runtime, ext *Extension, ops Permis
 	// chrome.permissions.onRemoved event
 	onRemovedObj := vm.NewObject()
 	_ = onRemovedObj.Set("addListener", func(call goja.FunctionCall) goja.Value {
-		_ = call
+		if len(call.Arguments) > 0 {
+			if cb, ok := goja.AssertFunction(call.Argument(0)); ok {
+				c.mu.Lock()
+				c.permissionRemovedListeners = append(c.permissionRemovedListeners, cb)
+				c.mu.Unlock()
+			}
+		}
 		return goja.Undefined()
 	})
 	_ = permsObj.Set("onRemoved", onRemovedObj)
@@ -2859,8 +3164,60 @@ func (c *ChromeAPI) bindNotifications(vm *goja.Runtime, ext *Extension, ops Noti
 		return vm.ToValue(result)
 	})
 
+	// chrome.notifications.onClicked event
+	onClickedObj := vm.NewObject()
+	_ = onClickedObj.Set("addListener", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) > 0 {
+			if cb, ok := goja.AssertFunction(call.Argument(0)); ok {
+				c.mu.Lock()
+				c.notificationClickedListeners = append(c.notificationClickedListeners, cb)
+				c.mu.Unlock()
+			}
+		}
+		return goja.Undefined()
+	})
+	_ = notifObj.Set("onClicked", onClickedObj)
+
+	// chrome.notifications.onClosed event
+	onClosedObj := vm.NewObject()
+	_ = onClosedObj.Set("addListener", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) > 0 {
+			if cb, ok := goja.AssertFunction(call.Argument(0)); ok {
+				c.mu.Lock()
+				c.notificationClosedListeners = append(c.notificationClosedListeners, cb)
+				c.mu.Unlock()
+			}
+		}
+		return goja.Undefined()
+	})
+	_ = notifObj.Set("onClosed", onClosedObj)
+
 	_ = chromeObj.Set("notifications", notifObj)
 	return nil
+}
+
+// FireNotificationClicked fires the chrome.notifications.onClicked event.
+func (c *ChromeAPI) FireNotificationClicked(notificationID string) {
+	c.mu.Lock()
+	listeners := make([]goja.Callable, len(c.notificationClickedListeners))
+	copy(listeners, c.notificationClickedListeners)
+	c.mu.Unlock()
+
+	for _, cb := range listeners {
+		_, _ = cb(goja.Undefined(), c.vm.ToValue(notificationID))
+	}
+}
+
+// FireNotificationClosed fires the chrome.notifications.onClosed event.
+func (c *ChromeAPI) FireNotificationClosed(notificationID string) {
+	c.mu.Lock()
+	listeners := make([]goja.Callable, len(c.notificationClosedListeners))
+	copy(listeners, c.notificationClosedListeners)
+	c.mu.Unlock()
+
+	for _, cb := range listeners {
+		_, _ = cb(goja.Undefined(), c.vm.ToValue(notificationID))
+	}
 }
 
 // bindDownloads installs chrome.downloads into the VM.
@@ -3046,6 +3403,65 @@ func (c *ChromeAPI) bindDownloads(vm *goja.Runtime, ext *Extension, ops Download
 		}
 		if callback != nil {
 			_, _ = callback(goja.Undefined())
+		}
+		return goja.Undefined()
+	})
+
+	// chrome.downloads.search
+	_ = dlObj.Set("search", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			return goja.Undefined()
+		}
+		queryObj := call.Argument(0).ToObject(vm)
+		q := DownloadQuery{}
+		if queryObj != nil {
+			if v := queryObj.Get("id"); v != nil {
+				i := int(v.ToInteger())
+				q.ID = &i
+			}
+			if v := queryObj.Get("url"); v != nil {
+				q.URL = v.String()
+			}
+			if v := queryObj.Get("filename"); v != nil {
+				q.Filename = v.String()
+			}
+			if v := queryObj.Get("state"); v != nil {
+				q.State = v.String()
+			}
+			if v := queryObj.Get("paused"); v != nil {
+				b := v.ToBoolean()
+				q.Paused = &b
+			}
+			if v := queryObj.Get("error"); v != nil {
+				q.Error = v.String()
+			}
+		}
+		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		items, err := ops.Search(q)
+		if err != nil {
+			if callback != nil {
+				_, _ = callback(goja.Undefined())
+			}
+			return goja.Undefined()
+		}
+		result := make([]interface{}, 0, len(items))
+		for _, item := range items {
+			result = append(result, map[string]interface{}{
+				"id":           item.ID,
+				"url":          item.URL,
+				"filename":     item.Filename,
+				"state":        item.State,
+				"totalBytes":   item.TotalBytes,
+				"bytesReceived": item.BytesReceived,
+				"mime":         item.Mime,
+				"startTime":    item.StartTime,
+				"endTime":      item.EndTime,
+				"paused":       item.Paused,
+				"error":        item.Error,
+			})
+		}
+		if callback != nil {
+			_, _ = callback(vm.ToValue(result))
 		}
 		return goja.Undefined()
 	})

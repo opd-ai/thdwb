@@ -2,6 +2,7 @@ package extensions
 
 import (
 	"archive/zip"
+	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -153,8 +154,12 @@ func (pkg *XPIPackage) Validate() error {
 
 // ValidateSignature verifies the package signature if one is present.
 // If the package is not signed, it returns nil (signature validation is
-// optional for unsigned packages). If signed, it verifies the signature
-// against the embedded public key or a provided verifier.
+// optional for unsigned packages). If signed, it attempts to verify the
+// signature against the embedded public key found in META-INF/. For
+// Ed25519-signed packages with a valid 32-byte public key, the signature is
+// cryptographically verified over manifest.json. Other algorithms are
+// accepted as declared (no verification performed) for backward
+// compatibility with unsigned/legacy packages.
 func (pkg *XPIPackage) ValidateSignature() error {
 	if !pkg.Signed {
 		// Unsigned packages are allowed but not verified.
@@ -166,10 +171,92 @@ func (pkg *XPIPackage) ValidateSignature() error {
 	if pkg.SignatureAlgorithm == "" {
 		return fmt.Errorf("xpi %s: signed package but no signature algorithm", pkg.Path)
 	}
-	// TODO: Implement actual cryptographic signature verification once a
-	// public key store is available. For now, accept the signature as
-	// declared and record it for audit.
+
+	// Only Ed25519 signatures are cryptographically verifiable.
+	if pkg.SignatureAlgorithm == "ed25519" {
+		return pkg.verifyEd25519Signature()
+	}
+
+	// Non-Ed25519 algorithms are accepted as declared.
 	return nil
+}
+
+// verifyEd25519Signature verifies an Ed25519 signature over manifest.json
+// using the public key found in META-INF/.
+func (pkg *XPIPackage) verifyEd25519Signature() error {
+	// Decode the signature.
+	sigBytes, err := hex.DecodeString(pkg.Signature)
+	if err != nil {
+		return fmt.Errorf("xpi %s: invalid signature encoding: %w", pkg.Path, err)
+	}
+	if len(sigBytes) != ed25519.SignatureSize {
+		return fmt.Errorf("xpi %s: invalid signature length %d, expected %d", pkg.Path, len(sigBytes), ed25519.SignatureSize)
+	}
+
+	// Find the public key in META-INF/.
+	r, err := zip.OpenReader(pkg.Path)
+	if err != nil {
+		return fmt.Errorf("open xpi %s: %w", pkg.Path, err)
+	}
+	defer r.Close()
+
+	var publicKey []byte
+	for _, f := range r.File {
+		if strings.HasPrefix(f.Name, "META-INF/") && strings.HasSuffix(f.Name, ".rsa") {
+			rc, err := f.Open()
+			if err != nil {
+				continue
+			}
+			data, err := io.ReadAll(rc)
+			rc.Close()
+			if err != nil {
+				continue
+			}
+			// The .rsa file contains the raw Ed25519 public key (32 bytes).
+			if len(data) == ed25519.PublicKeySize {
+				publicKey = data
+				break
+			}
+		}
+	}
+
+	if publicKey == nil {
+		return fmt.Errorf("xpi %s: no Ed25519 public key found in META-INF/", pkg.Path)
+	}
+
+	// Verify the signature over the manifest.json content.
+	manifestData, err := pkg.readManifest()
+	if err != nil {
+		return fmt.Errorf("xpi %s: cannot read manifest for verification: %w", pkg.Path, err)
+	}
+
+	if !ed25519.Verify(ed25519.PublicKey(publicKey), manifestData, sigBytes) {
+		return fmt.Errorf("xpi %s: signature verification failed", pkg.Path)
+	}
+
+	return nil
+}
+
+// readManifest reads the manifest.json content from the XPI package.
+func (pkg *XPIPackage) readManifest() ([]byte, error) {
+	r, err := zip.OpenReader(pkg.Path)
+	if err != nil {
+		return nil, fmt.Errorf("open xpi %s: %w", pkg.Path, err)
+	}
+	defer r.Close()
+
+	for _, f := range r.File {
+		if f.Name == "manifest.json" || filepath.Base(f.Name) == "manifest.json" {
+			rc, err := f.Open()
+			if err != nil {
+				return nil, fmt.Errorf("open manifest in archive: %w", err)
+			}
+			defer rc.Close()
+			return io.ReadAll(rc)
+		}
+	}
+
+	return nil, fmt.Errorf("xpi %s: missing manifest.json", pkg.Path)
 }
 
 // IsSigned reports whether the package contains a signature.

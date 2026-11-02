@@ -1,17 +1,20 @@
 package shell
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	extensions "github.com/danfragoso/thdwb/browser/extensions"
+	hotdog "github.com/danfragoso/thdwb/hotdog"
 	sauce "github.com/danfragoso/thdwb/sauce"
 )
 
@@ -37,8 +40,9 @@ type extensionOps struct {
 	alarms  map[string]map[string]*extensions.Alarm
 	alarmMu sync.Mutex
 
-	// i18nMessages holds localized messages keyed by extension ID then message name.
-	i18nMessages map[string]map[string]string
+	// i18nMessages holds localized messages keyed by extension ID, then locale,
+	// then message name (e.g. i18nMessages[extID]["en"]["greeting"] = "Hello").
+	i18nMessages map[string]map[string]map[string]string
 	i18nMu       sync.Mutex
 }
 
@@ -50,7 +54,7 @@ func newExtensionOps(bs *BrowserShell) *extensionOps {
 		contextMenus: make(map[string]map[string]extensions.ContextMenuItem),
 		permissions:  make(map[string]map[string]bool),
 		alarms:       make(map[string]map[string]*extensions.Alarm),
-		i18nMessages: make(map[string]map[string]string),
+		i18nMessages: make(map[string]map[string]map[string]string),
 	}
 }
 
@@ -58,9 +62,39 @@ func newExtensionOps(bs *BrowserShell) *extensionOps {
 
 // QueryTabs returns all open tabs as TabInfo.
 func (eo *extensionOps) QueryTabs() []extensions.TabInfo {
+	return eo.QueryTabsFiltered(extensions.TabQuery{})
+}
+
+// QueryTabsFiltered returns tabs matching the given query criteria.
+func (eo *extensionOps) QueryTabsFiltered(q extensions.TabQuery) []extensions.TabInfo {
 	tabs := eo.bs.tabManager.Tabs()
 	result := make([]extensions.TabInfo, 0, len(tabs))
 	for _, t := range tabs {
+		if q.Active != nil && t.IsActive != *q.Active {
+			continue
+		}
+		if q.CurrentWindow != nil {
+			// Single-window implementation: all tabs are in the current window.
+			if !*q.CurrentWindow {
+				continue
+			}
+		}
+		if q.WindowID != nil && 1 != *q.WindowID {
+			continue
+		}
+		if q.URL != "" && t.URL != q.URL {
+			continue
+		}
+		if q.Title != "" && t.Title != q.Title {
+			continue
+		}
+		if q.Status != "" {
+			// Status filtering is not tracked per-tab in this implementation;
+			// treat all tabs as "complete" unless status is "complete".
+			if q.Status != "complete" && q.Status != "loading" {
+				continue
+			}
+		}
 		result = append(result, extensions.TabInfo{
 			ID:             t.ID,
 			Title:          t.Title,
@@ -109,6 +143,23 @@ func (eo *extensionOps) UpdateTab(tabID int, updates extensions.TabUpdate) (*ext
 	}
 	if updates.Active != nil && *updates.Active {
 		eo.bs.tabManager.Activate(tabID)
+	}
+	// Handle container move: transfer cookies/storage and update tab container.
+	if updates.ContainerID != "" && updates.ContainerID != t.ContainerID {
+		origin, err := url.Parse(t.URL)
+		if err == nil {
+			// Transfer cookies to new container via the cookie jar.
+			eo.cookieJar.TransferOrigin(t.ContainerID, updates.ContainerID, origin)
+			// Transfer localStorage via the storage manager.
+			manager, err := hotdog.DefaultOriginStorageManager()
+			if err == nil {
+				_ = manager.TransferOrigin(t.ContainerID, updates.ContainerID, origin)
+			}
+		}
+		t = eo.bs.tabManager.MoveTabToContainer(tabID, updates.ContainerID, updates.ContainerName, updates.ContainerColor)
+		if t == nil {
+			t = eo.bs.tabManager.GetTab(tabID)
+		}
 	}
 	// Re-fetch after mutations.
 	t = eo.bs.tabManager.GetTab(tabID)
@@ -399,6 +450,23 @@ func (eo *extensionOps) RemoveCSS(extID string) error {
 	return eo.bs.extManager.DynamicScripting().RemoveCSS(extID)
 }
 
+// RegisterContentScripts registers dynamic content scripts for an extension.
+func (eo *extensionOps) RegisterContentScripts(extID string, scripts []extensions.ContentScript) error {
+	for _, s := range scripts {
+		s.ExtID = extID
+		eo.bs.extManager.ContentRegistry().Register(s)
+	}
+	return nil
+}
+
+// UnregisterContentScripts unregisters dynamic content scripts for an extension.
+func (eo *extensionOps) UnregisterContentScripts(extID string, scriptIDs []string) error {
+	for _, id := range scriptIDs {
+		eo.bs.extManager.ContentLoader().RemoveScript(id)
+	}
+	return nil
+}
+
 // ExecuteScriptTab executes a script in a specific tab.
 func (eo *extensionOps) ExecuteScriptTab(extID string, tabID int, world extensions.ScriptingWorld, script string) (interface{}, error) {
 	return eo.bs.extManager.DynamicScripting().ExecuteScriptTab(extID, tabID, world, script)
@@ -460,6 +528,15 @@ func (eo *extensionOps) RemoveAllContextMenus() error {
 	return nil
 }
 
+// FireContextMenuClicked fires the chrome.contextMenus.onClicked event for
+// the given extension and menu item ID. Called by the shell UI when a user
+// clicks a context menu item.
+func (eo *extensionOps) FireContextMenuClicked(extID, itemID string) {
+	if api, ok := eo.bs.extManager.ChromeAPIFor(extID); ok {
+		api.FireContextMenuClicked(itemID)
+	}
+}
+
 // PermissionOperations implementation.
 
 // RequestPermissions requests permissions for an extension. Only permissions
@@ -491,8 +568,18 @@ func (eo *extensionOps) RequestPermissions(extID string, permissions []string) (
 		granted = make(map[string]bool)
 		eo.permissions[extID] = granted
 	}
+	var newlyGranted []string
 	for _, p := range permissions {
+		if !granted[p] {
+			newlyGranted = append(newlyGranted, p)
+		}
 		granted[p] = true
+	}
+	// Fire onAdded event for newly granted permissions.
+	if len(newlyGranted) > 0 {
+		if api, ok := eo.bs.extManager.ChromeAPIFor(extID); ok {
+			api.FirePermissionAdded(newlyGranted)
+		}
 	}
 	result := make([]string, 0, len(granted))
 	for p := range granted {
@@ -533,6 +620,31 @@ func (eo *extensionOps) GetAllPermissions(extID string) ([]string, error) {
 		result = append(result, p)
 	}
 	return result, nil
+}
+
+// RemovePermissions removes permissions from an extension.
+func (eo *extensionOps) RemovePermissions(extID string, permissions []string) ([]string, error) {
+	eo.permMu.Lock()
+	defer eo.permMu.Unlock()
+
+	granted, ok := eo.permissions[extID]
+	if !ok {
+		return nil, nil
+	}
+	var removed []string
+	for _, p := range permissions {
+		if granted[p] {
+			delete(granted, p)
+			removed = append(removed, p)
+		}
+	}
+	// Fire onRemoved event for removed permissions.
+	if len(removed) > 0 {
+		if api, ok := eo.bs.extManager.ChromeAPIFor(extID); ok {
+			api.FirePermissionRemoved(removed)
+		}
+	}
+	return removed, nil
 }
 
 // AlarmOperations implementation.
@@ -627,8 +739,19 @@ func (eo *extensionOps) GetMessage(extID string, messageName string, substitutio
 	eo.i18nMu.Lock()
 	defer eo.i18nMu.Unlock()
 
-	messages, ok := eo.i18nMessages[extID]
+	locales, ok := eo.i18nMessages[extID]
 	if !ok {
+		return messageName, nil
+	}
+	// Try "en" first, then fall back to any available locale.
+	var messages map[string]string
+	if messages, ok = locales["en"]; !ok {
+		for _, m := range locales {
+			messages = m
+			break
+		}
+	}
+	if messages == nil {
 		return messageName, nil
 	}
 	msg, ok := messages[messageName]
@@ -644,8 +767,53 @@ func (eo *extensionOps) GetMessage(extID string, messageName string, substitutio
 
 // GetAcceptLanguages returns accepted languages.
 func (eo *extensionOps) GetAcceptLanguages(extID string) ([]string, error) {
-	_ = extID
-	return []string{"en-US", "en"}, nil
+	eo.i18nMu.Lock()
+	defer eo.i18nMu.Unlock()
+
+	locales, ok := eo.i18nMessages[extID]
+	if !ok || len(locales) == 0 {
+		return []string{"en-US", "en"}, nil
+	}
+	result := make([]string, 0, len(locales))
+	for l := range locales {
+		result = append(result, l)
+	}
+	sort.Strings(result)
+	return result, nil
+}
+
+// LoadLocaleMessages loads localized messages from the extension's _locales/
+// directory. Each locale is a JSON file named <locale>.json (e.g. en.json,
+// fr.json) mapping message names to localized strings.
+func (eo *extensionOps) LoadLocaleMessages(extID, localesDir string) error {
+	eo.i18nMu.Lock()
+	defer eo.i18nMu.Unlock()
+
+	entries, err := os.ReadDir(localesDir)
+	if err != nil {
+		return fmt.Errorf("read locales dir %s: %w", localesDir, err)
+	}
+
+	if eo.i18nMessages[extID] == nil {
+		eo.i18nMessages[extID] = make(map[string]map[string]string)
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		locale := strings.TrimSuffix(entry.Name(), ".json")
+		data, err := os.ReadFile(filepath.Join(localesDir, entry.Name()))
+		if err != nil {
+			continue
+		}
+		var messages map[string]string
+		if err := json.Unmarshal(data, &messages); err != nil {
+			continue
+		}
+		eo.i18nMessages[extID][locale] = messages
+	}
+	return nil
 }
 
 // WebRequestOperations implementation.
@@ -772,7 +940,6 @@ func init() {
 // CreateNotification creates a desktop notification.
 func (eo *extensionOps) CreateNotification(extID string, id string, options extensions.NotificationOptions) (string, error) {
 	notificationsMu.Lock()
-	defer notificationsMu.Unlock()
 	if notifications[extID] == nil {
 		notifications[extID] = make(map[string]extensions.Notification)
 	}
@@ -786,20 +953,34 @@ func (eo *extensionOps) CreateNotification(extID string, id string, options exte
 		Timestamp: options.Timestamp,
 	}
 	notifications[extID][id] = n
+	notificationsMu.Unlock()
+
+	// Fire onClicked event for the new notification.
+	if api, ok := eo.bs.extManager.ChromeAPIFor(extID); ok {
+		api.FireNotificationClicked(id)
+	}
 	return id, nil
 }
 
 // ClearNotification dismisses a notification.
 func (eo *extensionOps) ClearNotification(extID string, id string) (bool, error) {
 	notificationsMu.Lock()
-	defer notificationsMu.Unlock()
+	wasCleared := false
 	if notifications[extID] != nil {
 		if _, ok := notifications[extID][id]; ok {
 			delete(notifications[extID], id)
-			return true, nil
+			wasCleared = true
 		}
 	}
-	return false, nil
+	notificationsMu.Unlock()
+
+	// Fire onClosed event for the dismissed notification.
+	if wasCleared {
+		if api, ok := eo.bs.extManager.ChromeAPIFor(extID); ok {
+			api.FireNotificationClosed(id)
+		}
+	}
+	return wasCleared, nil
 }
 
 // GetAllNotifications returns all notifications for an extension.
@@ -1073,6 +1254,36 @@ func (do *downloadOps) Erase(downloadID int) error {
 		do.bs.extManager.FireDownloadEvent(extID, "onErased", item)
 	}
 	return nil
+}
+
+// Search returns download items matching the given query criteria.
+func (do *downloadOps) Search(q extensions.DownloadQuery) ([]extensions.DownloadItem, error) {
+	downloadsMu.Lock()
+	defer downloadsMu.Unlock()
+
+	var result []extensions.DownloadItem
+	for _, item := range downloads {
+		if q.ID != nil && item.ID != *q.ID {
+			continue
+		}
+		if q.URL != "" && item.URL != q.URL {
+			continue
+		}
+		if q.Filename != "" && item.Filename != q.Filename {
+			continue
+		}
+		if q.State != "" && item.State != q.State {
+			continue
+		}
+		if q.Paused != nil && item.Paused != *q.Paused {
+			continue
+		}
+		if q.Error != "" && item.Error != q.Error {
+			continue
+		}
+		result = append(result, item)
+	}
+	return result, nil
 }
 
 // BookmarkOperations implementation.

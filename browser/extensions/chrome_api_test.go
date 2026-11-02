@@ -24,6 +24,19 @@ func (m *mockTabOps) QueryTabs() []TabInfo {
 	return m.tabs
 }
 
+func (m *mockTabOps) QueryTabsFiltered(q TabQuery) []TabInfo {
+	if q.Active != nil {
+		var filtered []TabInfo
+		for _, t := range m.tabs {
+			if t.IsActive == *q.Active {
+				filtered = append(filtered, t)
+			}
+		}
+		return filtered
+	}
+	return m.tabs
+}
+
 func (m *mockTabOps) GetTab(tabID int) (*TabInfo, error) {
 	if m.getErr != nil {
 		return nil, m.getErr
@@ -1063,6 +1076,32 @@ func (m *mockDownloadOps) Erase(downloadID int) error {
 	}
 	delete(m.downloads, downloadID)
 	return nil
+}
+
+func (m *mockDownloadOps) Search(q DownloadQuery) ([]DownloadItem, error) {
+	var result []DownloadItem
+	for _, item := range m.downloads {
+		if q.ID != nil && item.ID != *q.ID {
+			continue
+		}
+		if q.URL != "" && item.URL != q.URL {
+			continue
+		}
+		if q.Filename != "" && item.Filename != q.Filename {
+			continue
+		}
+		if q.State != "" && item.State != q.State {
+			continue
+		}
+		if q.Paused != nil && item.Paused != *q.Paused {
+			continue
+		}
+		if q.Error != "" && item.Error != q.Error {
+			continue
+		}
+		result = append(result, item)
+	}
+	return result, nil
 }
 
 func TestChromeAPIWebRequestAddListener(t *testing.T) {

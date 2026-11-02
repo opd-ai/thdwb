@@ -591,12 +591,19 @@ func (bs *BrowserShell) CreateContainer(name, color string) (*extensions.Contain
 	if err != nil {
 		return nil, err
 	}
-	return &extensions.ContainerInfo{
+	info := &extensions.ContainerInfo{
 		ID:    c.ID,
 		Name:  c.Name,
 		Color: c.Color,
 		Icon:  c.Icon,
-	}, nil
+	}
+	// Fire onCreated event to all extensions.
+	for _, ext := range bs.extManager.GetAll() {
+		if api, ok := bs.extManager.ChromeAPIFor(ext.ID); ok {
+			api.FireContainerCreated(info)
+		}
+	}
+	return info, nil
 }
 
 // UpdateContainer implements ContainerOperations for chrome.contextualIdentities.
@@ -605,18 +612,31 @@ func (bs *BrowserShell) UpdateContainer(id, name, color string) (*extensions.Con
 	if err != nil {
 		return nil, err
 	}
-	return &extensions.ContainerInfo{
+	info := &extensions.ContainerInfo{
 		ID:    c.ID,
 		Name:  c.Name,
 		Color: c.Color,
 		Icon:  c.Icon,
-	}, nil
+	}
+	// Fire onUpdated event to all extensions.
+	for _, ext := range bs.extManager.GetAll() {
+		if api, ok := bs.extManager.ChromeAPIFor(ext.ID); ok {
+			api.FireContainerUpdated(info)
+		}
+	}
+	return info, nil
 }
 
 // RemoveContainer implements ContainerOperations for chrome.contextualIdentities.
 func (bs *BrowserShell) RemoveContainer(id string) error {
 	if !bs.containerManager.Remove(id) {
 		return fmt.Errorf("container %q not found", id)
+	}
+	// Fire onRemoved event to all extensions.
+	for _, ext := range bs.extManager.GetAll() {
+		if api, ok := bs.extManager.ChromeAPIFor(ext.ID); ok {
+			api.FireContainerRemoved(id)
+		}
 	}
 	return nil
 }

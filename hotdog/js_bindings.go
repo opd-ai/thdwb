@@ -146,7 +146,7 @@ func (wc *WindowContext) InitJSRuntime() error {
 	if runtime == nil {
 		return fmt.Errorf("no JavaScript runtime available")
 	}
-	if _, err := getLocalStorageManager(); err != nil {
+	if _, err := DefaultOriginStorageManager(); err != nil {
 		return fmt.Errorf("initialize localStorage: %w", err)
 	}
 	if wc.ActiveDocument != nil && wc.ActiveDocument.ResponseHeaders != nil {
@@ -1271,7 +1271,7 @@ func (w *JSWindowWrapper) storageOperations(storageType string) storageOperation
 	if storageType != "localStorage" {
 		return sessionStorageOperations(w.windowCtx.GetSessionStorageManager(), containerID, origin)
 	}
-	manager, err := getLocalStorageManager()
+	manager, err := DefaultOriginStorageManager()
 	if err != nil {
 		panic(w.runtime.NewGoError(err))
 	}

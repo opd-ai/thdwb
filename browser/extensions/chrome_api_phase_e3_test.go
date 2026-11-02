@@ -52,6 +52,14 @@ func (m *mockScriptingOps) ExecuteScriptTab(extID string, tabID int, world Scrip
 	return m.executeResult, nil
 }
 
+func (m *mockScriptingOps) RegisterContentScripts(extID string, scripts []ContentScript) error {
+	return nil
+}
+
+func (m *mockScriptingOps) UnregisterContentScripts(extID string, scriptIDs []string) error {
+	return nil
+}
+
 // mockContextMenuOps implements ContextMenuOperations for testing.
 type mockContextMenuOps struct {
 	items            map[string]ContextMenuItem
@@ -138,6 +146,10 @@ func (m *mockPermissionOps) GetAllPermissions(extID string) ([]string, error) {
 		return nil, m.getAllErr
 	}
 	return m.all, nil
+}
+
+func (m *mockPermissionOps) RemovePermissions(extID string, permissions []string) ([]string, error) {
+	return permissions, nil
 }
 
 // mockAlarmOps implements AlarmOperations for testing.

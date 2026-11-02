@@ -935,7 +935,7 @@ func (wc *WindowContext) TransferStorage(fromContainer, toContainer string, orig
 	if wc.cookieJar != nil {
 		wc.cookieJar.TransferOrigin(fromContainer, toContainer, origin)
 	}
-	manager, err := getLocalStorageManager()
+	manager, err := DefaultOriginStorageManager()
 	if err != nil {
 		return err
 	}
@@ -953,7 +953,7 @@ func (wc *WindowContext) TransferAllStorage(fromContainer, toContainer string) e
 	if wc.cookieJar != nil {
 		wc.cookieJar.TransferContainer(fromContainer, toContainer)
 	}
-	manager, err := getLocalStorageManager()
+	manager, err := DefaultOriginStorageManager()
 	if err != nil {
 		return err
 	}
