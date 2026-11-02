@@ -74,26 +74,36 @@ func (frame *Frame) draw() {
 	}
 	top, left, width, height := frame.computedBox.GetCoords()
 	window := frame.window
-	context := window.context.(*gg.Context)
+	context, ok := window.context.(*gg.Context)
+	if !ok {
+		return
+	}
 	context.SetHexColor(frame.backgroundColor)
 	context.DrawRectangle(float64(left), float64(top), float64(width), float64(height))
 	context.Fill()
 
 	copyWidgetToBuffer(frame, context.Image())
 
-	childrenLen := len(frame.widgets)
-	if childrenLen > 0 {
-		childrenWidgets := getCoreWidgets(frame.widgets)
-		childrenLayout := calculateChildrenWidgetsLayout(childrenWidgets, top, left, width, height, frame.orientation)
+	// Collect visible children once so the layout array and the draw loop
+	// iterate over the identical set of widgets (prevents index-out-of-range
+	// when hidden children are interleaved with visible ones).
+	var visibleChildren []Widget
+	for _, child := range frame.Widgets() {
+		if child.BaseWidget().GetVisible() {
+			visibleChildren = append(visibleChildren, child)
+		}
+	}
 
-		visibleIdx := 0
-		for _, child := range frame.Widgets() {
-			if !child.BaseWidget().GetVisible() {
-				continue
-			}
-			child.ComputedBox().SetCoords(childrenLayout[visibleIdx].box.GetCoords())
+	if len(visibleChildren) > 0 {
+		var coreWidgets []*baseWidget
+		for _, child := range visibleChildren {
+			coreWidgets = append(coreWidgets, child.BaseWidget())
+		}
+		childrenLayout := calculateChildrenWidgetsLayout(coreWidgets, top, left, width, height, frame.orientation)
+
+		for i, child := range visibleChildren {
+			child.ComputedBox().SetCoords(childrenLayout[i].box.GetCoords())
 			child.draw()
-			visibleIdx++
 		}
 	}
 }

@@ -642,6 +642,14 @@ func requestClient(client *http.Client, requestURL *url.URL, origin string) *htt
 	if base == nil {
 		base = http.DefaultTransport
 	}
+	// Avoid double-wrapping: if the client already uses an originCookieTransport,
+	// reuse its underlying base transport instead of nesting transports.
+	if existing, ok := base.(*originCookieTransport); ok {
+		base = existing.base
+		if base == nil {
+			base = http.DefaultTransport
+		}
+	}
 	clone.Transport = &originCookieTransport{
 		jar: jar, initiator: initiator, topLevel: topLevel, hsts: hstsStore, base: base,
 	}
