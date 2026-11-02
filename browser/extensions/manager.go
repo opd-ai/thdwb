@@ -53,6 +53,9 @@ type Manager struct {
 
 	// lazyLoader manages deferred startup of extensions.
 	lazyLoader *LazyLoader
+
+	// hotReloader watches extension directories for changes during development.
+	hotReloader *HotReloader
 }
 
 // NewManager creates a new extension manager.
@@ -76,6 +79,9 @@ func NewManager(storageDir string) *Manager {
 	// Create the lazy loader after the manager is initialized so the
 	// callback can reference the manager.
 	m.lazyLoader = NewLazyLoader(m.loadExtensionLazy)
+
+	// Create the hot reloader with a 1-second poll interval.
+	m.hotReloader = NewHotReloader(m.reloadExtension, time.Second)
 
 	// Wire lifecycle hooks to initialize Chrome API bindings on start and
 	// clean up on stop.
@@ -472,6 +478,66 @@ func (m *Manager) loadExtensionLazy(extID string) error {
 // LazyLoader returns the lazy loader used for deferred extension startup.
 func (m *Manager) LazyLoader() *LazyLoader {
 	return m.lazyLoader
+}
+
+// HotReloader returns the hot reloader used for development-time extension
+// reloading.
+func (m *Manager) HotReloader() *HotReloader {
+	return m.hotReloader
+}
+
+// WatchExtension starts watching an extension directory for changes and
+// reloads it when files are modified. Intended for development use.
+func (m *Manager) WatchExtension(extID string) error {
+	m.mu.Lock()
+	ext := m.extensions[extID]
+	m.mu.Unlock()
+	if ext == nil {
+		return fmt.Errorf("extension not found: %s", extID)
+	}
+	return m.hotReloader.Watch(extID, ext.Path)
+}
+
+// UnwatchExtension stops watching an extension directory for changes.
+func (m *Manager) UnwatchExtension(extID string) {
+	m.hotReloader.Unwatch(extID)
+}
+
+// reloadExtension reloads an extension's background script and re-registers
+// its content scripts. Called by the hot reloader on file changes.
+func (m *Manager) reloadExtension(extID string) error {
+	m.mu.Lock()
+	ext := m.extensions[extID]
+	m.mu.Unlock()
+	if ext == nil {
+		return fmt.Errorf("extension not found: %s", extID)
+	}
+
+	// Stop the extension if it's running.
+	if m.IsEnabled(extID) {
+		if err := m.Disable(extID); err != nil {
+			return err
+		}
+	}
+
+	// Re-parse the manifest in case it changed.
+	manifest, err := ParseManifest(filepath.Join(ext.Path, "manifest.json"))
+	if err != nil {
+		return fmt.Errorf("re-parse manifest: %w", err)
+	}
+	ext.Manifest = manifest
+	ext.Version = manifest.Version
+	ext.Name = manifest.Name
+	ext.Description = manifest.Description
+	ext.Permissions = manifest.Permissions
+	ext.Icons = manifest.Icons
+
+	// Re-enable the extension (restarts background script).
+	if err := m.Enable(extID); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // EnableLazy enables an extension using lazy loading: the extension is marked
