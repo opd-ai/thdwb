@@ -128,11 +128,20 @@ func (window *WindowBase) resize(width, height int, xscale, yscale float32) {
 
 func compositeWidget(buffer *image.RGBA, widget Widget) {
 	if widget.NeedsRepaint() {
+		// Hidden widgets are never drawn by the layout pass, so their buffer
+		// stays nil. Compositing must not dereference it. A visible widget with
+		// a nil buffer has likewise produced nothing to blit.
+		src := widget.Buffer()
+		if src == nil {
+			widget.SetNeedsRepaint(false)
+			return
+		}
+
 		top, left, width, height := widget.ComputedBox().GetCoords()
 
 		draw.Draw(buffer, image.Rectangle{
 			image.Point{int(left), int(top)}, image.Point{int(left + width), int(top + height)},
-		}, widget.Buffer(), image.Point{}, draw.Over)
+		}, src, image.Point{}, draw.Over)
 
 		widget.SetNeedsRepaint(false)
 	}

@@ -86,6 +86,111 @@ func TestRender_RefreshAfterResize(t *testing.T) {
 	}
 }
 
+// TestRender_HiddenChildrenDoesNotPanic verifies that rendering a window whose
+// root frame has hidden children does not panic. Hidden children are never
+// drawn (Frame.draw skips them), so their buffers stay nil; the composite pass
+// must not dereference those nil buffers. This is a regression test for the
+// first-frame startup panic where compositeAll iterated all children and
+// blitted the nil buffer of an invisible widget.
+func TestRender_HiddenChildrenDoesNotPanic(t *testing.T) {
+	window := &WindowBase{title: "test", width: 240, height: 160, visible: true}
+
+	root := CreateFrame(VerticalFrame)
+
+	// Visible child drawn first (gets a buffer).
+	visible := CreateLabelWidget("shown")
+	visible.SetHeight(40)
+	root.AttachWidget(visible)
+
+	// Hidden children never drawn, so their buffers remain nil. These mirror
+	// the shell's sidebar/settings/new-tab widgets that start hidden.
+	hiddenA := CreateFrame(VerticalFrame)
+	hiddenA.SetHeight(32)
+	hiddenA.SetVisible(false)
+	root.AttachWidget(hiddenA)
+
+	hiddenB := CreateLabelWidget("hidden")
+	hiddenB.SetHeight(20)
+	hiddenB.SetVisible(false)
+	root.AttachWidget(hiddenB)
+
+	// Another visible child after the hidden ones, so hidden and visible are
+	// interleaved in the child slice.
+	visible2 := CreateLabelWidget("shown-2")
+	visible2.SetHeight(40)
+	root.AttachWidget(visible2)
+
+	window.SetRootFrame(root)
+	app := CreateNewApp(nil, "test")
+	app.AddWindow(window)
+	window.Show()
+
+	var frame *image.RGBA
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				t.Fatalf("render panicked with hidden children: %v", r)
+			}
+		}()
+		frame = window.render()
+	}()
+
+	if frame == nil {
+		t.Fatal("render returned nil frame buffer")
+	}
+	if got, want := frame.Bounds().Dx(), 240; got != want {
+		t.Errorf("frame width = %d, want %d", got, want)
+	}
+
+	// The root background (#fff) must still paint at a corner.
+	r, g, b, a := frame.At(235, 155).RGBA()
+	if a>>8 == 0 {
+		t.Fatalf("frame corner pixel is transparent; render did not paint: rgba(%d,%d,%d,%d)", r>>8, g>>8, b>>8, a>>8)
+	}
+	if r>>8 != 255 || g>>8 != 255 || b>>8 != 255 {
+		t.Errorf("expected white background, got rgba(%d,%d,%d,%d)", r>>8, g>>8, b>>8, a>>8)
+	}
+}
+
+// TestCompositeAll_SkipsHiddenChildren verifies compositeAll only blits widgets
+// that have a buffer (i.e. were drawn), never a nil buffer.
+func TestCompositeAll_SkipsHiddenChildren(t *testing.T) {
+	window := &WindowBase{title: "test", width: 100, height: 80, visible: true}
+	root := CreateFrame(VerticalFrame)
+	window.SetRootFrame(root)
+	app := CreateNewApp(nil, "test")
+	app.AddWindow(window)
+	window.Show()
+
+	// Draw the root frame so visible children get buffers, leaving hidden ones nil.
+	drawRootFrame(window)
+
+	visible := CreateLabelWidget("v")
+	visible.SetHeight(20)
+	root.AttachWidget(visible)
+	visible.draw()
+
+	hidden := CreateLabelWidget("h")
+	hidden.SetHeight(20)
+	hidden.SetVisible(false)
+	root.AttachWidget(hidden)
+	// hidden never drawn: buffer is nil.
+	if hidden.Buffer() != nil {
+		t.Fatal("precondition: hidden child should have a nil buffer before draw")
+	}
+
+	buf := image.NewRGBA(image.Rect(0, 0, window.width, window.height))
+	window.frameBuffer = buf
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				t.Fatalf("compositeAll panicked on nil-buffer hidden child: %v", r)
+			}
+		}()
+		compositeAll(buf, root)
+	}()
+}
+
 // TestRender_Overlays verifies static and active overlays are composited onto
 // the frame buffer at their position.
 func TestRender_Overlays(t *testing.T) {
