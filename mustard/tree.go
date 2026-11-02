@@ -154,7 +154,13 @@ func (tree *TreeWidget) SetBackgroundColor(backgroundColor string) {
 }
 
 func (tree *TreeWidget) draw() {
-	context := tree.window.context.(*gg.Context)
+	if tree.window == nil || tree.window.context == nil {
+		return
+	}
+	context, ok := tree.window.context.(*gg.Context)
+	if !ok {
+		return
+	}
 	top, left, width, height := tree.computedBox.GetCoords()
 
 	context.SetHexColor(tree.backgroundColor)
@@ -212,7 +218,9 @@ func drawNode(context *gg.Context, node *TreeWidgetNode, tree *TreeWidget, level
 	}
 
 	context.SetHexColor(tree.fontColor)
-	context.SetFont(tree.font.(font.Face), tree.fontSize)
+	if fontFace, ok := tree.font.(font.Face); ok {
+		context.SetFont(fontFace, tree.fontSize)
+	}
 	context.DrawString(node.Key, float64(left)+20+tree.fontSize/4, float64(top)+tree.fontSize*2/2)
 	context.Fill()
 

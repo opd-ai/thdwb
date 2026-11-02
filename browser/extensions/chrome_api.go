@@ -915,7 +915,10 @@ func (c *ChromeAPI) bindStorage(vm *goja.Runtime, ext *Extension) error {
 				}
 			case []interface{}:
 				for _, key := range k {
-					keyStr, _ := key.(string)
+					keyStr, ok := key.(string)
+					if !ok {
+						continue
+					}
 					if v, ok := sp.Get(area, keyStr); ok {
 						result[keyStr] = v
 					}
@@ -961,7 +964,10 @@ func (c *ChromeAPI) bindStorage(vm *goja.Runtime, ext *Extension) error {
 				_ = sp.Remove(area, k)
 			case []interface{}:
 				for _, key := range k {
-					keyStr, _ := key.(string)
+					keyStr, ok := key.(string)
+					if !ok {
+						continue
+					}
 					_ = sp.Remove(area, keyStr)
 				}
 			}
@@ -999,7 +1005,10 @@ func (c *ChromeAPI) bindStorage(vm *goja.Runtime, ext *Extension) error {
 				}
 			case []interface{}:
 				for _, key := range k {
-					keyStr, _ := key.(string)
+					keyStr, ok := key.(string)
+					if !ok {
+						continue
+					}
 					if v, ok := sp.Get(area, keyStr); ok {
 						total += len(keyStr) + len(v)
 					}
@@ -2286,17 +2295,23 @@ func (c *ChromeAPI) bindScripting(vm *goja.Runtime, ext *Extension, ops Scriptin
 						}
 						if matches, ok := s["matches"].([]interface{}); ok {
 							for _, m := range matches {
-								script.Matches = append(script.Matches, m.(string))
+								if matchStr, ok := m.(string); ok {
+									script.Matches = append(script.Matches, matchStr)
+								}
 							}
 						}
 						if js, ok := s["js"].([]interface{}); ok {
 							for _, j := range js {
-								script.JS = append(script.JS, j.(string))
+								if jsStr, ok := j.(string); ok {
+									script.JS = append(script.JS, jsStr)
+								}
 							}
 						}
 						if css, ok := s["css"].([]interface{}); ok {
 							for _, c := range css {
-								script.CSS = append(script.CSS, c.(string))
+								if cssStr, ok := c.(string); ok {
+									script.CSS = append(script.CSS, cssStr)
+								}
 							}
 						}
 						if runAt, ok := s["runAt"].(string); ok {
@@ -2330,7 +2345,9 @@ func (c *ChromeAPI) bindScripting(vm *goja.Runtime, ext *Extension, ops Scriptin
 		if idsObj != nil {
 			if arr, ok := idsObj.Export().([]interface{}); ok {
 				for _, v := range arr {
-					scriptIDs = append(scriptIDs, v.(string))
+					if idStr, ok := v.(string); ok {
+						scriptIDs = append(scriptIDs, idStr)
+					}
 				}
 			}
 		}
@@ -2381,7 +2398,9 @@ func (c *ChromeAPI) bindContextMenus(vm *goja.Runtime, ext *Extension, ops Conte
 			if contextsVal := itemObj.Get("contexts"); contextsVal != nil {
 				if arr, ok := contextsVal.Export().([]interface{}); ok {
 					for _, v := range arr {
-						item.Contexts = append(item.Contexts, v.(string))
+						if ctxStr, ok := v.(string); ok {
+							item.Contexts = append(item.Contexts, ctxStr)
+						}
 					}
 				}
 			}
@@ -2522,7 +2541,9 @@ func (c *ChromeAPI) bindPermissions(vm *goja.Runtime, ext *Extension, ops Permis
 		if permsObj != nil {
 			if arr, ok := permsObj.Export().([]interface{}); ok {
 				for _, v := range arr {
-					permissions = append(permissions, v.(string))
+					if permStr, ok := v.(string); ok {
+						permissions = append(permissions, permStr)
+					}
 				}
 			}
 		}
@@ -2550,7 +2571,9 @@ func (c *ChromeAPI) bindPermissions(vm *goja.Runtime, ext *Extension, ops Permis
 		if permsObj != nil {
 			if arr, ok := permsObj.Export().([]interface{}); ok {
 				for _, v := range arr {
-					permissions = append(permissions, v.(string))
+					if permStr, ok := v.(string); ok {
+						permissions = append(permissions, permStr)
+					}
 				}
 			}
 		}
@@ -2795,7 +2818,9 @@ func (c *ChromeAPI) bindI18n(vm *goja.Runtime, ext *Extension, ops I18nOperation
 			if subsObj != nil {
 				if arr, ok := subsObj.Export().([]interface{}); ok {
 					for _, v := range arr {
-						substitutions = append(substitutions, v.(string))
+						if subStr, ok := v.(string); ok {
+							substitutions = append(substitutions, subStr)
+						}
 					}
 				}
 			}

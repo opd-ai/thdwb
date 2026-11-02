@@ -377,23 +377,28 @@ func writeLocalStorageFile(path string, data []byte) error {
 		return fmt.Errorf("create localStorage temporary file: %w", err)
 	}
 	name := temporary.Name()
-	defer func() { _ = os.Remove(name) }()
-	if err := temporary.Chmod(0o600); err != nil {
+	cleanup := func() {
 		_ = temporary.Close()
+		_ = os.Remove(name)
+	}
+	if err := temporary.Chmod(0o600); err != nil {
+		cleanup()
 		return fmt.Errorf("secure localStorage temporary file: %w", err)
 	}
 	if _, err := temporary.Write(data); err != nil {
-		_ = temporary.Close()
+		cleanup()
 		return fmt.Errorf("write localStorage: %w", err)
 	}
 	if err := temporary.Sync(); err != nil {
-		_ = temporary.Close()
+		cleanup()
 		return fmt.Errorf("sync localStorage: %w", err)
 	}
 	if err := temporary.Close(); err != nil {
+		cleanup()
 		return fmt.Errorf("close localStorage: %w", err)
 	}
 	if err := os.Rename(name, path); err != nil {
+		cleanup()
 		return fmt.Errorf("replace localStorage: %w", err)
 	}
 	return nil

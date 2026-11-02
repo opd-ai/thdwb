@@ -65,7 +65,13 @@ func (scrollBar *ScrollBarWidget) SetScrollerOffset(scrollerOffset float64) {
 }
 
 func (scrollBar *ScrollBarWidget) draw() {
-	context := scrollBar.window.context.(*gg.Context)
+	if scrollBar.window == nil || scrollBar.window.context == nil {
+		return
+	}
+	context, ok := scrollBar.window.context.(*gg.Context)
+	if !ok {
+		return
+	}
 
 	top := float64(scrollBar.computedBox.top)
 	left := float64(scrollBar.computedBox.left)

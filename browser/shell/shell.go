@@ -207,7 +207,11 @@ func (bs *BrowserShell) Init() error {
 	if err != nil {
 		return fmt.Errorf("create window: %w", err)
 	}
-	bs.windowBase = window.(*mustard.WindowBase)
+	windowBase, ok := window.(*mustard.WindowBase)
+	if !ok {
+		return fmt.Errorf("window is not a *mustard.WindowBase")
+	}
+	bs.windowBase = windowBase
 
 	// Wire container operations to the extension manager for chrome.contextualIdentities.
 	bs.extManager.SetContainerOperations(bs)

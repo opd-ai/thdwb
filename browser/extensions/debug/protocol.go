@@ -191,8 +191,8 @@ func (dp *DebugProtocol) handleListExtensions(c *client, msg Message) {
 
 // handleGetExtensionInfo returns info about a specific extension.
 func (dp *DebugProtocol) handleGetExtensionInfo(c *client, msg Message) {
-	extID, _ := msg.Params["extensionId"].(string)
-	if extID == "" {
+	extID, ok := msg.Params["extensionId"].(string)
+	if !ok || extID == "" {
 		c.send(&Response{ID: msg.ID, Error: &Error{Code: errCodeInvalidParams, Message: "missing extensionId"}})
 		return
 	}
@@ -216,9 +216,13 @@ func (dp *DebugProtocol) handleGetExtensionInfo(c *client, msg Message) {
 
 // handleEvaluate evaluates JavaScript in an extension's VM.
 func (dp *DebugProtocol) handleEvaluate(c *client, msg Message) {
-	extID, _ := msg.Params["extensionId"].(string)
-	source, _ := msg.Params["expression"].(string)
-	if extID == "" || source == "" {
+	extID, ok := msg.Params["extensionId"].(string)
+	if !ok || extID == "" {
+		c.send(&Response{ID: msg.ID, Error: &Error{Code: errCodeInvalidParams, Message: "missing extensionId or expression"}})
+		return
+	}
+	source, ok := msg.Params["expression"].(string)
+	if !ok || source == "" {
 		c.send(&Response{ID: msg.ID, Error: &Error{Code: errCodeInvalidParams, Message: "missing extensionId or expression"}})
 		return
 	}
@@ -243,8 +247,8 @@ func (dp *DebugProtocol) handleEvaluate(c *client, msg Message) {
 
 // handleGetVMState returns the state of an extension's VM.
 func (dp *DebugProtocol) handleGetVMState(c *client, msg Message) {
-	extID, _ := msg.Params["extensionId"].(string)
-	if extID == "" {
+	extID, ok := msg.Params["extensionId"].(string)
+	if !ok || extID == "" {
 		c.send(&Response{ID: msg.ID, Error: &Error{Code: errCodeInvalidParams, Message: "missing extensionId"}})
 		return
 	}

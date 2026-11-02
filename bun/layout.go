@@ -67,7 +67,10 @@ func layoutNode(ctx *gg.Context, node *hotdog.NodeDOM) {
 		return
 	}
 
-	flexNode := node.FlexNode.(*flex.Node)
+	flexNode, ok := node.FlexNode.(*flex.Node)
+	if !ok {
+		return
+	}
 
 	// Calculate layout for the entire tree from root
 	// We only call this on the root node

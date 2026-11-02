@@ -46,8 +46,14 @@ func (label *ImageWidget) SetHeight(height float64) {
 }
 
 func (im *ImageWidget) draw() {
+	if im.window == nil || im.window.context == nil {
+		return
+	}
+	context, ok := im.window.context.(*gg.Context)
+	if !ok {
+		return
+	}
 	top, left, _, _ := im.computedBox.GetCoords()
-	context := im.window.context.(*gg.Context)
 	context.DrawImage(im.img, int(left)+15, int(top)+3)
 
 	copyWidgetToBuffer(im, context.Image())

@@ -106,13 +106,28 @@ func (input *InputWidget) draw() {
 	input.padding = 4
 	top, left, width, height := input.computedBox.GetCoords()
 	totalPadding := input.padding * 2
-	if input.context == nil || input.context.(*gg.Context).Width() != int(width-totalPadding) || input.context.(*gg.Context).Height() != int(height-totalPadding) {
+	if input.context == nil {
+		input.context = gg.NewContext(int(width-totalPadding), int(height-totalPadding))
+	} else if ctx, ok := input.context.(*gg.Context); ok {
+		if ctx.Width() != int(width-totalPadding) || ctx.Height() != int(height-totalPadding) {
+			input.context = gg.NewContext(int(width-totalPadding), int(height-totalPadding))
+		}
+	} else {
 		input.context = gg.NewContext(int(width-totalPadding), int(height-totalPadding))
 	}
 
 	window := input.window
-	context := window.context.(*gg.Context)
-	windowContext := window.context.(*gg.Context)
+	if window == nil || window.context == nil {
+		return
+	}
+	context, ok := window.context.(*gg.Context)
+	if !ok {
+		return
+	}
+	windowContext, ok := window.context.(*gg.Context)
+	if !ok {
+		return
+	}
 
 	if input.selected {
 		windowContext.SetHexColor("#e4e4e4")
@@ -137,7 +152,9 @@ func (input *InputWidget) draw() {
 
 	context.SetHexColor("#2f2f2f")
 
-	context.SetFont(input.font.(font.Face), input.fontSize)
+	if fontFace, ok := input.font.(font.Face); ok {
+		context.SetFont(fontFace, input.fontSize)
+	}
 	w, h := context.MeasureString(input.value)
 
 	cursorP := width - totalPadding*2

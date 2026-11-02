@@ -83,7 +83,10 @@ func (r *ebitenRenderer) DrawRectangle(x, y, width, height float64) {
 	if w <= 0 || h <= 0 {
 		return
 	}
-	fill := r.current.(color.NRGBA)
+	fill, ok := r.current.(color.NRGBA)
+	if !ok {
+		return
+	}
 	key := fillKey{fill.R, fill.G, fill.B, fill.A, w, h}
 	if r.fillCache == nil {
 		r.fillCache = make(map[fillKey]*ebiten.Image)

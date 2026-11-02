@@ -3,6 +3,8 @@
 package webview
 
 import (
+	"fmt"
+
 	"github.com/danfragoso/thdwb/platform"
 )
 
@@ -20,7 +22,11 @@ func newWebView(config Config) (WebView, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &stubWebView{desktop: dwv.(*desktopWebView)}, nil
+	desktop, ok := dwv.(*desktopWebView)
+	if !ok {
+		return nil, fmt.Errorf("desktop webview is not a *desktopWebView")
+	}
+	return &stubWebView{desktop: desktop}, nil
 }
 
 func (w *stubWebView) LoadURL(url string) error {

@@ -82,8 +82,12 @@ func (window *WindowBase) DrawContextMenu() {
 	ctx.SetHexColor("#ddd")
 	ctx.Stroke()
 
+	img, ok := ctx.Image().(*image.RGBA)
+	if !ok {
+		return
+	}
 	overlay := extractOverlay(
-		ctx.Image().(*image.RGBA),
+		img,
 		image.Point{
 			int(menuLeft),
 			int(menuTop),

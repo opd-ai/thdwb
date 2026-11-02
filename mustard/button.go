@@ -93,7 +93,13 @@ func (button *ButtonWidget) SetBackgroundColor(backgroundColor string) {
 }
 
 func (button *ButtonWidget) draw() {
-	context := button.window.context.(*gg.Context)
+	if button.window == nil || button.window.context == nil {
+		return
+	}
+	context, ok := button.window.context.(*gg.Context)
+	if !ok {
+		return
+	}
 	top, left, width, height := button.computedBox.GetCoords()
 
 	if button.selected {
@@ -112,7 +118,9 @@ func (button *ButtonWidget) draw() {
 
 	if button.content != "" {
 		context.SetHexColor(button.fontColor)
-		context.SetFont(button.font.(font.Face), button.fontSize)
+		if fontFace, ok := button.font.(font.Face); ok {
+			context.SetFont(fontFace, button.fontSize)
+		}
 		context.DrawString(button.content, float64(left)+button.padding, float64(top)+button.padding+button.fontSize)
 	}
 

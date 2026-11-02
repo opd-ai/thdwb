@@ -669,7 +669,10 @@ func (dc *Context) DrawRegularPolygon(n int, x, y, r, rotation float64) {
 
 // DrawImage draws the specified image at the specified point.
 func (dc *Context) DrawImage(src image.Image, x, y int) {
-	dest, _ := dc.Image().(draw.Image)
+	dest, ok := dc.Image().(draw.Image)
+	if !ok {
+		return
+	}
 	draw.Draw(dest, src.Bounds().Add(image.Pt(x, y)), src, image.Point{}, draw.Over)
 }
 

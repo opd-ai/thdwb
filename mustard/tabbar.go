@@ -178,11 +178,14 @@ func (tb *TabBar) draw() {
 
 	top, left, width, height := tb.computedBox.GetCoords()
 	window := tb.window
-	if window == nil {
+	if window == nil || window.context == nil {
 		return
 	}
 
-	context := window.context.(*gg.Context)
+	context, ok := window.context.(*gg.Context)
+	if !ok {
+		return
+	}
 	context.SetHexColor(tb.backgroundColor)
 	context.DrawRectangle(float64(left), float64(top), float64(width), float64(height))
 	context.Fill()

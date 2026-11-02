@@ -79,7 +79,13 @@ func (label *LabelWidget) SetBackgroundColor(backgroundColor string) {
 }
 
 func (label *LabelWidget) draw() {
-	context := label.window.context.(*gg.Context)
+	if label.window == nil || label.window.context == nil {
+		return
+	}
+	context, ok := label.window.context.(*gg.Context)
+	if !ok {
+		return
+	}
 	top, left, width, height := label.computedBox.GetCoords()
 
 	context.SetHexColor(label.backgroundColor)
@@ -87,7 +93,9 @@ func (label *LabelWidget) draw() {
 	context.Fill()
 
 	context.SetHexColor(label.fontColor)
-	context.SetFont(label.font.(font.Face), label.fontSize)
+	if fontFace, ok := label.font.(font.Face); ok {
+		context.SetFont(fontFace, label.fontSize)
+	}
 	context.DrawString(label.content, float64(left)+label.fontSize/4, float64(top)+label.fontSize*2/2)
 	context.Fill()
 

@@ -80,10 +80,18 @@ func (text *TextWidget) SetBackgroundColor(backgroundColor string) {
 }
 
 func (text *TextWidget) draw() {
-	context := text.window.context.(*gg.Context)
+	if text.window == nil || text.window.context == nil {
+		return
+	}
+	context, ok := text.window.context.(*gg.Context)
+	if !ok {
+		return
+	}
 	top, left, width, height := text.computedBox.GetCoords()
 
-	context.SetFont(text.font.(font.Face), text.fontSize)
+	if fontFace, ok := text.font.(font.Face); ok {
+		context.SetFont(fontFace, text.fontSize)
+	}
 	context.DrawRectangle(float64(left), float64(top), float64(width), float64(height))
 	context.SetHexColor(text.backgroundColor)
 	context.Fill()

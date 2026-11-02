@@ -68,7 +68,14 @@ func (canvas *CanvasWidget) GetOffset() int {
 }
 
 func (canvas *CanvasWidget) GetContext() *gg.Context {
-	return canvas.drawingContext.(*gg.Context)
+	if canvas.drawingContext == nil {
+		return nil
+	}
+	ctx, ok := canvas.drawingContext.(*gg.Context)
+	if !ok {
+		return nil
+	}
+	return ctx
 }
 
 func (canvas *CanvasWidget) SetContext(ctx *gg.Context) {
@@ -80,8 +87,17 @@ func (cavas *CanvasWidget) SetDrawingRepaint(repaint bool) {
 }
 
 func (ctx *CanvasWidget) draw() {
-	windowContext := ctx.window.context.(*gg.Context)
-	canvasContext := ctx.context.(*gg.Context)
+	if ctx.window == nil || ctx.window.context == nil {
+		return
+	}
+	windowContext, ok := ctx.window.context.(*gg.Context)
+	if !ok {
+		return
+	}
+	canvasContext, ok := ctx.context.(*gg.Context)
+	if !ok {
+		return
+	}
 	top, left, width, height := ctx.computedBox.GetCoords()
 	ctx.ensureContexts(int(width), int(height))
 
@@ -92,30 +108,48 @@ func (ctx *CanvasWidget) draw() {
 
 	canvasContext.SetHexColor(ctx.backgroundColor)
 	canvasContext.Clear()
-	canvasContext.DrawImage(ctx.drawingContext.(*gg.Context).Image(), 0, -ctx.offset)
+	if drawingCtx, ok := ctx.drawingContext.(*gg.Context); ok {
+		canvasContext.DrawImage(drawingCtx.Image(), 0, -ctx.offset)
+	}
 	windowContext.DrawImage(canvasContext.Image(), int(left), int(top))
 	copyWidgetToBuffer(ctx, canvasContext.Image())
 }
 
 func (canvas *CanvasWidget) maxOffset() (int, bool) {
-	if canvas.drawingContext == nil || canvas.drawingContext.(*gg.Context).Height() == 0 {
+	if canvas.drawingContext == nil {
+		return 0, false
+	}
+	drawingCtx, ok := canvas.drawingContext.(*gg.Context)
+	if !ok {
+		return 0, false
+	}
+	if drawingCtx.Height() == 0 {
 		return 0, false
 	}
 	viewportHeight := int(canvas.computedBox.height)
 	if viewportHeight <= 0 && canvas.context != nil {
-		viewportHeight = canvas.context.(*gg.Context).Height()
+		if ctx, ok := canvas.context.(*gg.Context); ok {
+			viewportHeight = ctx.Height()
+		}
 	}
 	if viewportHeight <= 0 {
 		return 0, false
 	}
-	if canvas.drawingContext.(*gg.Context).Height() <= viewportHeight {
+	if drawingCtx.Height() <= viewportHeight {
 		return 0, true
 	}
-	return canvas.drawingContext.(*gg.Context).Height() - viewportHeight, true
+	return drawingCtx.Height() - viewportHeight, true
 }
 
 func (canvas *CanvasWidget) ensureContexts(width, height int) {
-	currentSize := canvas.context.(*gg.Context).Image().Bounds().Size()
+	if canvas.context == nil {
+		return
+	}
+	context, ok := canvas.context.(*gg.Context)
+	if !ok {
+		return
+	}
+	currentSize := context.Image().Bounds().Size()
 	if currentSize.X != width || currentSize.Y != height {
 		canvas.context = gg.NewContext(width, height)
 		canvas.drawingContext = gg.NewContext(width, 12000)
@@ -125,8 +159,14 @@ func (canvas *CanvasWidget) ensureContexts(width, height int) {
 }
 
 func createCtxScrollBar(ctx *CanvasWidget) {
+	if ctx.window == nil || ctx.window.context == nil {
+		return
+	}
 	top, _, width, height := ctx.computedBox.GetCoords()
-	context := ctx.window.context.(*gg.Context)
+	context, ok := ctx.window.context.(*gg.Context)
+	if !ok {
+		return
+	}
 
 	// Scroll Track
 	context.SetHexColor("#c1c1c1")

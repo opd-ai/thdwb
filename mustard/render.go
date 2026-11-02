@@ -23,8 +23,15 @@ func (window *WindowBase) render() *image.RGBA {
 		window.needsReflow = true
 	}
 
-	context := window.context.(*gg.Context)
-	window.frameBuffer = context.Image().(*image.RGBA)
+	context, ok := window.context.(*gg.Context)
+	if !ok {
+		return nil
+	}
+	img, ok := context.Image().(*image.RGBA)
+	if !ok {
+		return nil
+	}
+	window.frameBuffer = img
 
 	if window.rootFrame == nil {
 		return window.frameBuffer
