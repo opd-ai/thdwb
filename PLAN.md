@@ -1,614 +1,178 @@
-# ROADMAP.md: Firefox WebExtensions-Compatible Browser
+# AUDIT_REPORT.md — thdwb (The Hotdog Web Browser): Comprehensive Technical Audit
 
-## Vision
+**Audit date:** 2026-11-01 · **Auditor:** independent re-audit (this document supersedes prior in-repo audit drafts)
+**Repository:** `github.com/opd-ai/thdwb` (module `github.com/danfragoso/thdwb`)
+**HEAD audited:** `33eebcd` ("fix(extensions): close implementation gaps between PLAN.md and codebase"), 562 commits
+**Environment:** Linux amd64, Go 1.23.10 host → go1.26.0 toolchain (GOTOOLCHAIN=auto), X display :0, staticcheck 2025.1.1 (go1.26 build)
 
-Build a **freestanding consumer browser** that depends on the refactored `thdwb` library and achieves **100% Firefox WebExtensions API compatibility**, including the **Container Tabs API** for origin-keyed tab isolation and user privacy.
-
-The browser itself is a thin orchestration layer over `thdwb` that adds extension management, extension sandboxing, and the complete WebExtensions API surface.
-
----
-
-## Phase E0: Extension Architecture and Manifest Parsing
-
-Establish the foundation for extension execution, discovery, and lifecycle management.
-
-* **Define Extension Struct:** Create data structure to hold:
-  - Manifest (v2 and v3 compatible)
-  - Extension ID, version, permissions list
-  - Background script VM and lifecycle state
-  - Content script registry (domain patterns → script paths)
-  - Storage partition reference
-  - Icon/metadata for browser UI
-* **Implement Manifest Parser:** Parse `manifest.json` (v2 and v3); validate required fields, permissions, icons. Support both Firefox and Chromium manifest formats with compatibility layer.
-* **Create Extension Discovery:** Scan extension directories (user profiles, system installs); auto-load on startup.
-* **Build Extension Lifecycle Manager:** Handle extension enable/disable, reload, uninstall. Manage background script startup/shutdown.
-* **Implement Extension Storage Partition:** Create per-extension storage namespace for `chrome.storage.local`, `chrome.storage.sync`, and `chrome.storage.managed`.
-* **Create Content Script Registry:** Map URL patterns to content scripts; support `<all_urls>`, domain wildcards, regex patterns.
-* **Build Extension Sandboxing:** Isolate extension Goja VMs from page VMs; prevent direct DOM access from extensions.
-
-### Phase E0 Completion Checklist
-- [x] Manifest parser handles v2 and v3 with no errors
-- [x] Extensions auto-discovered from profile directories
-- [x] Background scripts initialize and execute without hanging
-- [x] Extension storage isolated by extension ID
-- [x] Content script registry matches URLs correctly
-- [x] Extension enable/disable toggles cleanly
-- [x] Uninstall removes all extension data
-- [x] Extension VMs cannot access window VMs directly
+**Method:** All promises extracted from the *current* README.md and PLAN.md; every material claim verified by **execution** (build, full test suite, race detector, static analysis, live GUI runs, headless engine probes against real hosts, pixel-level render measurement, binary linkage inspection) plus file:line code citation. Full evidence: FUNCTIONAL_TEST_RESULTS.md.
 
 ---
 
-## Phase E1: Core WebExtensions APIs (Messaging, Storage, Tabs)
+## 1. Executive Summary
 
-Implement the foundational APIs that most extensions rely on.
+**Verdict: PARTIALLY.** thdwb does **not** deliver a "working, usable" browser, but it **does** deliver what its README actually promises for 2026 — a pure-Go, well-tested, well-documented *learning tool* with substantial (if disconnected) browser-engine components and a broad in-process WebExtensions platform.
 
-* **Build Message Passing System:**
-  - `chrome.runtime.sendMessage()` from content script → background
-  - `chrome.runtime.onMessage` listener in background
-  - `chrome.tabs.sendMessage()` from background → content script in specific tab
-  - `chrome.tabs.onMessage` listener in content script
-  - **Message routing validates extension ID and origin; prevents cross-extension messaging unless permitted**
-* **Implement Storage APIs:**
-  - `chrome.storage.local` (per-extension persistent key-value store)
-  - `chrome.storage.sync` (sync across devices; for this consumer build, same as local)
-  - `chrome.storage.managed` (read-only, populated by admin)
-  - Support `get()`, `set()`, `remove()`, `clear()`, `getBytesInUse()`
-  - **Storage keyed by extension ID + container origin**
-* **Implement Tabs API:**
-  - `chrome.tabs.query()` with filters (active, currentWindow, url, title, status)
-  - `chrome.tabs.get(tabId)` - retrieve single tab metadata
-  - `chrome.tabs.update(tabId, updateProperties)` - modify URL, active state, pinned state
-  - `chrome.tabs.create(createProperties)` - spawn new tab with URL
-  - `chrome.tabs.remove(tabId)` - close tab
-  - `chrome.tabs.onCreated`, `chrome.tabs.onRemoved`, `chrome.tabs.onUpdated`, `chrome.tabs.onActivated` events
-  - **Tab metadata includes container origin; permission checks prevent extensions from accessing tabs outside their container**
-* **Implement Windows API (basic):**
-  - `chrome.windows.getCurrent()`
-  - `chrome.windows.getAll()`
-  - `chrome.windows.create()`, `chrome.windows.remove()`
-  - **Windows objects include container info; tabs belong to containers**
-* **Build Runtime API:**
-  - `chrome.runtime.getURL(path)` - resolve extension resource URL
-  - `chrome.runtime.getManifest()` - return parsed manifest
-  - `chrome.runtime.getPlatformInfo()` - return OS info
-  - `chrome.runtime.id` - extension ID
-  - `chrome.runtime.onInstalled` event (with reason: install, update, chrome_update)
-  - `chrome.runtime.onStartup` event
+| Question | Answer | Confidence |
+|---|---|---|
+| Working, usable browser? | **NO** — binary panics on first render frame (2/2 repro); 100% of real-world fetches fail; no code path displays web content | HIGH (execution-verified) |
+| Pure Go? | **YES** — no CGo in source; binary links only libc/libdl/libpthread; Ebitengine via purego; GL dlopen'd at runtime | HIGH |
+| Great learning tool? | **YES** — 7 named subsystems as tested libraries (63–97% cov), 1,023 test functions, real textbook, complete docs | HIGH |
+| "100% Firefox WebExtensions compatible" (PLAN.md)? | **NO** — 18 chrome.* namespaces implemented & unit-tested; 66% of E0–E12 checklist items genuinely delivered, 29% partial/stub/isolated, 5% unverifiable; absolute success criteria (top-100 extensions, 99.9% uptime, no crashes) unmet | HIGH |
 
-### Phase E1 Completion Checklist
-- [x] Content script → background message passing works
-- [x] Background → content script message passing works
-- [x] Cross-extension messaging blocked
-- [x] Storage API reads/writes persist across sessions
-- [x] Storage isolated by extension ID
-- [x] tabs.query() returns correct tab list
-- [x] tabs.create() spawns new window instance via thdwb
-- [x] tabs.remove() closes window and cleans up state
-- [x] Tab events fire on create/remove/update/activate
-- [x] Extension can read its manifest
-- [x] runtime events fire at startup and on install
+**The one-sentence technical finding:** the browser is a collection of individually-tested, individually-reasonable components — network, parser, CSS, layout, graphics, JS, UI, extensions — **whose interconnections are either missing or broken**: the runtime parse path bypasses the "own" HTML parser, CSS and layout are never invoked, the layout engine renders zero pixels even when forced, the network transport fails on every non-local host and swallows the error, the UI crashes on frame 1, and the content area is a literal placeholder.
+
+**Maturity rating: proof-of-concept** for the browser product; **early-alpha quality** for the component libraries and extension platform; **beta quality** for documentation and tooling. (Details: GAP_ANALYSIS.md §4.)
+
+**Why the test suite is green while the product is broken:** tests exercise *library internals* (fixtures, localhost httptest servers, in-process state managers, geometry invariants) — none of the 1,023 test functions launches the binary, fetches a real host, or asserts a rendered pixel. The four critical defects each sit exactly on the seams between components, which no single-component test covers.
 
 ---
 
-## Phase E2: Container Tabs API and Container Management
+## 2. Project Overview
 
-Implement Firefox's container API for first-class container/origin isolation.
+**What it is (today):** a single-Go-module repository (~28k non-test LOC, 253 Go files) implementing, per its three-layer design (PLAN.md:599-612):
+1. **thdwb library** — engine components: `ketchup` (HTML→DOM adapter, 469 LOC), `mayo` (CSS parse/style, 1,023), `bun` (layout/paint, 795), `gg` (2D graphics, 1,838), `sauce` (network/cookies/HSTS/CORS/TOFU, 2,232), `hotdog` (DOM + goja JS runtime + storage + CSP, 5,495), `mustard` (UI toolkit on Ebitengine, 3,249), plus `webview`/`platform` (dead code) and `profiler`.
+2. **Extension runtime** — `browser/extensions/` (53 files): WebExtensions API facade (18 `chrome.*` namespaces), manifest v2/v3 parser, container manager, sandboxes, xpi/updater, service workers, crash recovery, multiprocess (unwired), CDP-style debug server (unwired), profiler, test harness.
+3. **Browser shell** — `browser/shell/` (40 files): tab manager, address bar (autocomplete + security indicator), menu bar, bookmarks/history sidebars, settings, new-tab page with container selector, extension toolbar, session restore, keyboard shortcuts.
 
-* **Define Container Model:**
-  - Container = named grouping with unique cookie jar, localStorage, and session storage
-  - Each container has ID, name, color, icon (for UI)
-  - Predefined containers: Personal, Work, Banking, Shopping, Web Development (can add custom)
-  - **Containers keyed by origin (scheme + domain + port); enforce thdwb's SOP isolation**
-* **Build Container Storage Isolation:**
-  - `chrome.contextualIdentities.query()` - list all containers
-  - `chrome.contextualIdentities.get(cookieStoreId)` - retrieve container metadata
-  - `chrome.contextualIdentities.create(details)` - create new container
-  - `chrome.contextualIdentities.update(cookieStoreId, details)` - rename, change icon/color
-  - `chrome.contextualIdentities.remove(cookieStoreId)` - delete container (wipe its storage)
-  - `chrome.contextualIdentities.onCreated`, `chrome.contextualIdentities.onRemoved`, `chrome.contextualIdentities.onUpdated` events
-* **Extend Tabs API for Containers:**
-  - `chrome.tabs.create(createProperties)` with `cookieStoreId` parameter to open tab in specific container
-  - `chrome.tabs.query()` returns `cookieStoreId` on each tab
-  - `chrome.tabs.update()` supports moving tab to different container (cookie/storage transfer)
-  - `chrome.tabs.onCreated` event includes container ID
-* **Implement Container-Aware Storage:**
-  - Extend thdwb's cookie jar to partition by container ID in addition to origin
-  - Extend localStorage/sessionStorage to use container ID as part of storage key
-  - `chrome.storage.local` scoped to extension + container (if extension installed in container)
-* **Build Container Cookie Management:**
-  - `chrome.cookies.get()`, `chrome.cookies.getAll()` - retrieve cookies for active container
-  - `chrome.cookies.set()` - set cookie in active container
-  - `chrome.cookies.remove()` - remove cookie from container
-  - `chrome.cookies.onChanged` event (include container ID)
-  - **No cross-container cookie leaks; enforced at network layer**
-* **Create Container UI Indicators:**
-  - Tab UI shows container color/icon badge
-  - Address bar shows container context on hover
-  - New tab dialog allows selecting container
+**Stated goals (current README.md):** "from-scratch web browser written entirely in Go" with own ketchup/mayo/bun/gg/mustard/sauce/hotdog; dependencies "primarily Ebitengine, extant third party Go libraries preferred"; **"Not stable, not spec-compliant, not production-ready — but a great learning tool!"** (README.md:16).
+**Stated goals (current PLAN.md):** "freestanding consumer browser … 100% Firefox WebExtensions API compatibility, including the Container Tabs API", phases E0–E12, all checklists `[x]`.
 
-### Phase E2 Completion Checklist
-- [x] contextualIdentities API lists all containers
-- [x] Containers can be created, renamed, deleted
-- [x] Tabs can be opened in specific containers
-- [x] Cookies strictly partitioned by container + origin
-- [x] localStorage partitioned by container + origin
-- [x] sessionStorage partitioned by container + origin
-- [x] Switching tabs shows container indicator
-- [x] Moving tab to different container transfers cookies/storage
-- [x] No cross-container data leakage in test suite
-- [x] Custom containers persist across sessions
+**Evolution note:** the repo has grown far beyond the audit brief's description (which referenced an older 8-phase engine PLAN and an "only OpenGL and GLFW" README). The audit validates the *current* tree; where the brief and the tree disagree, the tree wins (and the discrepancies are recorded in BASELINE.md).
 
 ---
 
-## Phase E3: Extended WebExtensions APIs (Scripting, Menus, Permissions)
+## 3. Feature Matrix (condensed — full version: FEATURE_MATRIX.md)
 
-Add advanced APIs for content manipulation and UI customization.
+### Engine (README R1–R8)
+| Component | Status | Key evidence | Maturity |
+|---|---|---|---|
+| ketchup (own HTML parser) | **Disconnected** — live path uses `x/net/html` (hotdog/node.go:783); 0 non-test importers | 97.3% cov as lib | lib beta / wiring absent |
+| mayo (own CSS engine) | **Disconnected** — reachable only via ketchup; live DOM unstyled; `querySelector` always null (node.go:414) | 95.9% cov as lib | lib beta / wiring absent |
+| bun (own layout) | **Disconnected + non-functional** — 0 importers; **0 visible pixels** when forced (zero-width boxes non-exp; zero-height exp) | 88.0% cov as lib | broken-as-renderer |
+| gg (2D graphics) | Works for UI chrome | 63.5% cov | experimental |
+| mustard (UI toolkit) | **Crashes frame 1** (frame.go:90); orientation branches transposed (widget.go:46-82) | 77.3% cov | broken at runtime |
+| sauce (network) | **Broken for all non-local hosts** (double transport wrap); errors swallowed as success; localhost fine | 78.7% cov | beta (localhost) / broken (web) |
+| hotdog (JS runtime) | Works headlessly; `document.title` = function (js_bindings.go:184); querySelector null; unstyled DOM | 82.8% cov | beta (binding defects) |
+| webview / platform | **Dead code** (0 importers; GPUInfo hardcoded) | — | placeholder |
 
-* **Implement Scripting API:**
-  - `chrome.scripting.executeScript(injection)` - inject JS into content script context
-  - `chrome.scripting.insertCSS(injection)` - inject CSS into page
-  - `chrome.scripting.removeCSS(injection)` - remove injected CSS
-  - `chrome.scripting.registerContentScripts()` - dynamically register content scripts (Manifest v3)
-  - `chrome.scripting.unregisterContentScripts()` - unregister dynamic scripts
-  - **Injected scripts run in isolated Goja VM; cannot access page globals**
-* **Implement Context Menus API:**
-  - `chrome.contextMenus.create(createProperties)` - add menu item on right-click
-  - `chrome.contextMenus.update(itemId, updateProperties)` - modify menu item
-  - `chrome.contextMenus.remove(itemId)` - remove menu item
-  - `chrome.contextMenus.removeAll()` - clear all extension menus
-  - `chrome.contextMenus.onClicked` event - handle menu selection
-  - Support contexts: page, selection, link, image, editable
-* **Implement Permissions Request & Grants:**
-  - `chrome.permissions.request(permissions)` - ask user for runtime permission grant
-  - `chrome.permissions.contains(permissions)` - check if permission granted
-  - `chrome.permissions.getAll()` - list granted permissions
-  - `chrome.permissions.onAdded`, `chrome.permissions.onRemoved` events
-  - **Permission checks enforce manifest `permissions` list; reject out-of-manifest requests**
-* **Implement Alarms API:**
-  - `chrome.alarms.create(name, alarmInfo)` - schedule callback
-  - `chrome.alarms.get(name)` - retrieve alarm metadata
-  - `chrome.alarms.getAll()` - list all active alarms
-  - `chrome.alarms.clear(name)` - cancel alarm
-  - `chrome.alarms.onAlarm` event - alarm fired
-  - **Alarms persist across extension reload but are cleared on uninstall**
-* **Implement i18n API:**
-  - `chrome.i18n.getMessage(messageName, substitutions)` - lookup localized string
-  - `chrome.i18n.getAcceptLanguages(callback)` - get user language preferences
-  - Support `_locales/` directory structure (en, fr, de, etc.)
+### WebExtensions (PLAN E0–E12 — all checklists `[x]`)
+| Phase | Delivered | Notes |
+|---|---|---|
+| E0–E3 (arch, messaging, containers, scripting/menus/permissions/alarms/i18n) | 75–82% | in-process, unit-tested, passing; containers proven at map level only |
+| E4 (WebRequest/notifications/downloads) | 57% | downloads write real files (via `http.DefaultClient` — the one working network path); notifications in-memory only |
+| E5 (content-script sandbox) | 50% | per-extension shared VM (not per-page); isolation test simulates page with a second sandbox |
+| E6 (xpi/install/update) | 80% | signature "validation" = META-INF detection only, no crypto verify |
+| E7 (browser UI) | 75% as UI code / **0% usable** | full chrome builds + unit-tests; crashes at runtime; no page display |
+| E8 (perf/testing/stability) | 64% | components real + wired; "major websites render" claim supported only by local fixtures |
+| E9 (release) | 50% | docs excellent; gallery/installer/autoupdate isolated; external infra unverifiable |
+| E10 (Manifest v3/sync/WebDriver) | 44% | SW lifecycle real; **storage.sync = Noop stub**; WebDriver unwired |
+| E11 (scale) | 25% | tab suspension wired; **multiprocess unwired** (13.8% cov, 0 consumers) |
+| E12 (DX) | 50% | hot reload + profiler real; debug server unwired |
 
-### Phase E3 Completion Checklist
-- [x] executeScript() injects JS into content script VM
-- [x] insertCSS() applies styles to page without leaking to page globals
-- [x] Context menus appear on right-click with extension items
-- [x] Menu clicks fire onClicked with target context (link, image, selection)
-- [x] permissions.request() prompts user and updates manifest
-- [x] Alarms schedule and fire callbacks at correct intervals
-- [x] i18n.getMessage() returns localized strings
-- [x] Content script can call executeScript to inject nested scripts
+**Totals: 67/102 items (66%) fully delivered · 30 (29%) partial/stub/isolated · 5 (5%) unverifiable. "100% compatible": not met.**
 
 ---
 
-## Phase E4: Advanced APIs (WebRequest, Downloads, Notifications)
+## 4. Critical Gaps and Limitations (prioritized)
 
-Implement powerful APIs for network interception, file handling, and user notifications.
+**P0 — blocks the product's core purpose (all execution-verified):**
+1. **Startup panic** — `mustard/frame.go:84-92`: child layout computed from visible-only set, indexed by the full child list → `panic: index out of range [6] with length 6` on frame 1, every launch, settings-independent (reproduced 2/2). Fix: iterate the *same* list the layout was computed from (or skip hidden children consistently).
+2. **100% real-world fetch failure** — `sauce/sauce.go:949` + `:968` call `requestClient` twice, so the inner "base" transport is an `*originCookieTransport`; `newVerifiedTransport`'s `*http.Transport` assertion (sauce/certificate_validation.go:36-39) fails for every HTTPS request — and `upgradeHTTPURL` forces every non-localhost `http://` to `https://`. Measured failure: `Get "https://example.com": configure HTTPS transport: HTTPS requires a configurable *http.Transport, got *sauce.originCookieTransport` in <300 µs. Fix: wrap once (drop the second `requestClient` before `.Do`), or make `newVerifiedTransport` accept an already-wrapped base.
+3. **Silent failure swallowing** — on fetch error, `Resource.Code` stays 0 (sauce/sauce.go:965-970); `LoadURL` rejects only `>= 400` (window_context.go:342). DNS/TLS/timeout → "page loaded successfully" with an internal error HTML. Fix: set a sentinel Code (e.g., 0 → propagate error) and surface it to the shell.
+4. **No web content rendering** — shell content area is a placeholder (shell.go:344-347); `bun.RenderDocument` has 0 call sites; `WindowContext` has no render method; `webview` has 0 importers. Fix: create a per-tab `WindowContext`, call `LoadURL`, then `bun.RenderDocument` into the tab's surface (the `webview` package was evidently built for this and can be revived).
 
-* **Implement WebRequest API (read-only mode):**
-  - `chrome.webRequest.onBeforeRequest` - observe requests before send
-  - `chrome.webRequest.onBeforeSendHeaders` - observe headers before send
-  - `chrome.webRequest.onHeadersReceived` - observe response headers
-  - `chrome.webRequest.onCompleted` - observe finished requests
-  - `chrome.webRequest.onErrorOccurred` - observe failed requests
-  - Request details include: URL, method, headers, tabId, frameId, initiator, type (xhr, image, stylesheet, etc.)
-  - **No request modification (for security/stability); read-only observers only**
-* **Implement Notifications API:**
-  - `chrome.notifications.create(id, options)` - show desktop notification
-  - `chrome.notifications.clear(id)` - dismiss notification
-  - `chrome.notifications.getAll(callback)` - list active notifications
-  - `chrome.notifications.onClicked`, `chrome.notifications.onClosed` events
-  - Support notification types: basic, image, list, progress
-* **Implement Downloads API:**
-  - `chrome.downloads.download(options)` - start file download
-  - `chrome.downloads.cancel(downloadId)` - abort download
-  - `chrome.downloads.pause(downloadId)`, `chrome.downloads.resume(downloadId)` - pause/resume
-  - `chrome.downloads.search(query)` - query download history
-  - `chrome.downloads.erase(query)` - remove from history
-  - `chrome.downloads.onCreated`, `chrome.downloads.onChanged`, `chrome.downloads.onErased` events
-* **Implement Cookies API (extended):**
-  - `chrome.cookies.get()`, `chrome.cookies.getAll()` with container filtering
-  - `chrome.cookies.set()`, `chrome.cookies.remove()`
-  - `chrome.cookies.getAllCookieStores()` - list containers and their associated tabs
-  - `chrome.cookies.onChanged` event
+**P1 — core subsystem defects (fix required before P0 items are meaningful):**
+5. Live parse path bypasses ketchup; `HTMLRoot`/`StyleSheets` never set → **CSS never applied; `querySelector`/`querySelectorAll` always null in page JS** (node.go:414,448; ketchup/parser.go:20; mayo/mayo.go:397-409). Fix: route `LoadHTML` through ketchup (or set HTMLRoot/StyleSheets in the x/net path).
+6. `bun` renders **0 pixels** on both paths: zero-width boxes (width inheritance from un-laid-out parent, bun/bun.go:11-20), zero-height flex boxes, and `paintBlockElement` sets color after `DrawRectangle` (bun/block.go:13-16). Add pixel-output tests (they would have caught all three).
+7. Mustard orientation branches transposed (widget.go:46-82) — chrome layout wrong even post-panic-fix.
+8. `document.title` bound as a function (js_bindings.go:184) — use `DefineAccessorProperty` as done for `body`.
+9. Content-script sandbox: one shared VM per extension across tabs (manager.go `SandboxFor`) vs PLAN E5's per-page isolation; isolation test simulates the page (content_script_sandbox_test.go:183-198).
+10. `.xpi` signature "validation" does no cryptographic verification (xpi.go:105-111).
 
-### Phase E4 Completion Checklist
-- [x] WebRequest listeners observe network activity
-- [x] Request details include all required fields
-- [x] Notifications display and dismiss correctly
-- [x] Downloads API integrates with OS download manager
-- [x] Download progress updates in real-time
-- [x] Cookies API returns container-filtered results
-- [x] No request modification side-effects
+**P2 — checklist-vs-reality gaps (stubs/isolated):** storage.sync Noop (storage_sync.go:27-43) · multiprocess unwired · WebDriver/gallery/installer/debug-server unwired · notifications in-memory · webview/platform dead.
+
+**P3 — hygiene:** 25 staticcheck findings (mostly U1000 dead code) · stale README prereqs (GLFW/go-gl, Go 1.21+) · stale Makefile "workspace" comment · go.mod replace block vestigial · CI go-version 1.25 vs go.mod 1.26.0 · `OPTIMIZED_AUDIT_PROMPT.md` + stale `coverage_*.out` committed in tree · textbook doesn't disclose the disconnected pipeline.
+
+**Explicit non-gaps (by design, per README.md:16 / PLAN.md:596-597):** not spec-compliant, not production-ready, mobile out of scope, browser-level (not OS-level) container isolation, unsigned MVP gallery.
 
 ---
 
-## Phase E5: Content Script Injection, Sandbox, and Security
+## 5. Code Quality Assessment (full detail: QUALITY.md)
 
-Enforce robust content script sandboxing and secure injection.
-
-* **Build Content Script Loader:**
-  - Parse content script entries from manifest
-  - Match URLs against `matches`, `exclude_matches`, `include_globs`, `exclude_globs`
-  - Support `run_at` timing: document_start, document_end, document_idle
-  - Load script source from extension package (validate path in-package)
-  - **Inject into isolated Goja VM with restricted global access**
-* **Implement Content Script Sandbox:**
-  - Content script VM has access to: `chrome.*` APIs, `console`, `fetch`, `XMLHttpRequest`, DOM manipulation functions (`document.querySelector`, `element.innerHTML`, etc.)
-  - Content script VM **cannot** access: page variables, page functions, unsandboxed eval
-  - DOM mutations from content script respect SOP; cannot mutate cross-origin iframes
-  - Page cannot access content script variables
-* **Implement Message Passing with Validation:**
-  - Content script ↔ Background script message routing validated by extension ID
-  - Content script ↔ Page communication via `window.postMessage()` only (not chrome.runtime.sendMessage)
-  - **Messages include origin; block mismatched origins**
-* **Build CSP for Content Scripts:**
-  - Content scripts subject to manifest `content_security_policy`
-  - Prevent inline script execution unless explicitly permitted
-  - Restrict external resource loads to extension package URIs
-* **Implement Dynamic Content Script Loading:**
-  - `chrome.scripting.executeScript()` validates injection target (tabId, frameId, world: MAIN or ISOLATED)
-  - ISOLATED world = content script VM
-  - MAIN world = page globals (dangerous; only if explicitly requested in manifest)
-  - **MAIN world injections sandboxed; cannot call back into extension**
-
-### Phase E5 Completion Checklist
-- [x] Content scripts inject at correct timing (document_start, document_end, document_idle)
-- [x] URL pattern matching works for matches, exclude_matches, globs
-- [x] Content script VM cannot access page globals
-- [x] Page cannot access content script variables
-- [x] Message passing validated by extension ID
-- [x] Dynamic script injection respects ISOLATED vs MAIN world separation
-- [x] CSP violations block inline scripts and log
-- [x] Cross-origin iframe mutations blocked
+- **Error handling:** sensible typed-error model at library level; four defects break it in the product (crash, swallowed fetch errors, silent layout degeneracy, discarded assignment at extension_ops.go:161).
+- **Static analysis:** `go vet` clean; staticcheck 25 findings (mostly dead code — corroborating the unwired-scaffolding finding); no data races under `-race` (29 packages).
+- **Tests:** 1,023 functions, all green; combined coverage 69.1% (per-package 13.8%–100%). Coverage measures internals, not behavior: no test launches the binary, fetches a real host, or asserts pixels. The "website rendering integration tests" (E8) run local fixtures only.
+- **Logging/debugging:** profiler, console collector, inspector, network monitor, error logger, opt-in telemetry — all real, tested, and wired into the shell; currently low practical value (nothing to observe until P0 is fixed).
+- **Modularity:** clean package boundaries, good interface seams (Driver, TabOperations, SyncProvider…), no import cycles; the *wiring* between layers is where it fails.
+- **Documentation:** genuinely excellent — 8-chapter textbook at claimed reading level, migration guide, release/security/support docs, per-package API comments. Accuracy gap: describes the intended pipeline, not the disconnected reality.
 
 ---
 
-## Phase E6: Extension Distribution, Installation, and Updates
+## 6. Functional Test Results (condensed — full outputs: FUNCTIONAL_TEST_RESULTS.md)
 
-Build user-facing installation flow and automatic update mechanisms.
-
-* **Create Extension Package Format:**
-  - Support `.xpi` (ZIP archive) and directory-based loads for development
-  - Validate package structure: manifest.json required at root, all referenced paths present
-  - Checksum manifest for integrity verification (reject tampered packages)
-  - Extract and cache in extension directory with UUID-based folder naming
-* **Build Installation UI:**
-  - Browser displays extension metadata: name, icon, permissions list, description
-  - Prompt user to confirm installation and grant requested permissions
-  - On confirmation, extract package, initialize storage, register content scripts, start background script
-  - Display installation success; offer to open extension options page
-  - **Installation logs all requested permissions for user review**
-* **Implement Extension Permissions Prompt:**
-  - Manifest lists `permissions` array; prompt user on install
-  - Display human-readable permission descriptions (e.g., "Read your browsing history")
-  - User can refuse installation entirely or accept all (no granular accept/deny per permission in this phase)
-  - Accepted permissions stored in extension profile
-* **Build Extension Updates Mechanism:**
-  - Extension manifest includes `update_url` field
-  - On startup and at intervals, check update manifest (JSON with version info)
-  - If newer version available, download, verify signature, extract, and migrate data
-  - Migrate extension storage from old version (schema versioning support)
-  - Fire `chrome.runtime.onInstalled` event with reason: "update"
-  - **Automatic updates only if permission granted in manifest; user can disable per-extension**
-* **Create Extension Uninstall Flow:**
-  - User right-clicks extension icon → Uninstall
-  - Browser prompts to confirm; offer to delete extension data
-  - On confirm, stop background script, clear storage partition, remove from registry
-  - Delete extension files from disk
-* **Build Extension Info/Settings Page:**
-  - Show extension name, version, description, permissions granted
-  - Display storage usage (local + sync)
-  - Option to reload extension (for development)
-  - Option to visit extension's homepage/options page
-  - Enable/disable toggle
-  - Uninstall button
-
-### Phase E6 Completion Checklist
-- [x] .xpi packages extract and validate correctly
-- [x] Installation prompts show permissions and require confirmation
-- [x] Background scripts start after installation
-- [x] Update mechanism detects and downloads new versions
-- [x] Extension storage migrates on update without data loss
-- [x] Uninstall cleans up all extension data
-- [x] Extension info page displays metadata and usage
-- [x] Reload extension button restarts background script
-- [x] Disabled extensions do not execute scripts or handle events
-- [x] Extension signatures validated (if signed)
+| Check | Result |
+|---|---|
+| `make build` (CGO_ENABLED=0) | ✅ 21.6 MB binary, ~60 s; `ldd`: libc/libdl/libpthread only |
+| `make test` | ✅ 28 packages ok, 0 fail |
+| `go test -race work` | ✅ 29 packages, no data races |
+| `go vet ./...` | ✅ clean |
+| staticcheck 2025.1.1 (go1.26) | ⚠️ 25 findings |
+| Coverage (fresh) | 69.1% combined |
+| **Live run `bin/thdwb` (×2, ±settings)** | ❌ **panic frame.go:90, first frame, no window** |
+| ketchup→mayo→bun render probe | ❌ **0 non-white pixels** (both layout paths) |
+| hotdog.LoadHTML probe | ⚠️ DOM+JS work; title=function, querySelector=null, unstyled |
+| Real-host fetch probes (example.com, 404, .invalid, self-signed.badssl.com) | ❌ all fail <300 µs (transport bug); **LoadURL returns nil error** for unreachable/404 |
+| Malformed HTML | ✅ no panic, DOM built |
+| SOP/CSP/container-cookie unit suites | ✅ pass (live CORS blocked by transport bug) |
+| Tabbed/multi-window live | ⛔ unverifiable (crash); state-level tests pass |
 
 ---
 
-## Phase E7: Browser UI and User-Facing Features
+## 7. Maturity Rating
 
-Build the browser shell UI, tab management, and extension integration into browser controls.
+**Overall: proof-of-concept (browser) · early-alpha (component libraries + extension platform) · beta (docs/tooling).**
 
-* **Implement Tab Bar UI:**
-  - Display tabs horizontally with container color/icon indicators
-  - Active tab highlighted; inactive tabs dimmed
-  - Right-click on tab: close, duplicate, move to other container, mute audio
-  - Drag tabs to reorder
-  - Tab thumbnails on hover (optional for first release)
-  - Long tabs truncate title with ellipsis
-  - Close button on hover
-* **Build Address Bar:**
-  - Display current URL
-  - Suggest browser history, bookmarks, search engine results on input
-  - Show security indicator: HTTPS (lock icon), HTTP (warning), mixed content
-  - Show container indicator (color/icon) for current tab
-  - Address bar focus on Ctrl+L (or Cmd+L on macOS)
-* **Implement Browser Controls:**
-  - Back, forward, reload buttons
-  - Home button (configurable homepage)
-  - Bookmark button (add/remove from bookmarks)
-  - Extension icon (show all installed extensions, access options/settings)
-  - Menu button (File, Edit, View, History, Bookmarks, Tools, Help)
-* **Build Bookmarks System:**
-  - `chrome.bookmarks.create()`, `chrome.bookmarks.get()`, `chrome.bookmarks.getChildren()`
-  - `chrome.bookmarks.move()`, `chrome.bookmarks.remove()`, `chrome.bookmarks.update()`
-  - Bookmarks sidebar showing folders and items
-  - Right-click bookmark: open, open in new tab, open in container, edit, delete
-  - Keyboard shortcut Ctrl+B to toggle sidebar
-* **Implement History:**
-  - `chrome.history.addUrl()` - auto-called on page load
-  - `chrome.history.deleteUrl()`, `chrome.history.deleteRange()`
-  - `chrome.history.search(query)` - fuzzy search history
-  - `chrome.history.onVisited` event
-  - History sidebar: list pages with visit count and timestamps
-  - Clear history button with date range selector
-* **Build Settings/Preferences Page:**
-  - General: homepage, default search engine, startup behavior
-  - Privacy: tracking prevention (placeholder), cookie policy per container
-  - Security: certificate warnings, HTTPS enforcement level
-  - Extensions: list extensions with enable/disable, permissions, storage usage
-  - Containers: list containers, add/edit/delete, default container for new tabs
-  - Advanced: developer tools, network logging, extension debugging
-* **Implement Extension Icon in Toolbar:**
-  - One icon per installed extension
-  - Left-click opens extension popup (if manifest defines `action` with default_popup)
-  - Right-click: manage extension, visit options page, disable/uninstall
-  - Badge with notification count (if extension sets via `chrome.action.setBadgeText()`)
-  - Popups run in isolated Goja VM with access to background script via message passing
-* **Build New Tab Page:**
-  - Shortcuts to frequently visited sites
-  - Search bar (default search engine configurable)
-  - Recently closed tabs
-  - Bookmarks quick access
-  - Container selector (open new tab in specific container)
-  - Extensions can customize new tab page (if manifest defines `chrome_url_overrides.newtab`)
-
-### Phase E7 Completion Checklist
-- [x] Tab bar displays all open tabs with correct container colors
-- [x] Tab switching works smoothly and updates address bar
-- [x] Address bar autocomplete suggests history/bookmarks
-- [x] Security indicator shows HTTPS/HTTP status
-- [x] Back/forward buttons work and are disabled when unavailable
-- [x] Bookmarks API works; sidebar shows bookmarks
-- [x] History search finds pages by title and URL
-- [x] Settings page allows configuring homepage, search engine, containers
-- [x] Extension icons display in toolbar with enable/disable/uninstall
-- [x] New tab page is functional with container selector
-- [x] Menu bar (File, Edit, View, etc.) standard items work
-- [x] Keyboard shortcuts work (Ctrl+L, Ctrl+T, Ctrl+W, Ctrl+B, etc.)
+Justification: an alpha browser must launch and display a page — thdwb's binary does neither (P0 findings 1–4, execution-verified). But it is far beyond a toy: ~28k LOC of real, tested subsystems across all seven named engine components, a broad unit-tested WebExtensions platform, complete documentation, CI with race tests, and zero data races. The gap between "what the libraries can do" and "what the product does" is entirely in the composition layer — which is precisely where the fixes needed (P0/P1) are small, well-localized, and each individually verifiable.
 
 ---
 
-## Phase E8: Performance, Testing, and Stability
+## 8. Recommendations
 
-Ensure the browser is robust, performant, and thoroughly tested.
+**For maintainers (in dependency order — each step unlocks the next):**
+1. **Fix the frame-draw panic** (mustard/frame.go:84-92: iterate the visible-only list the layout was computed from) + **swap the transposed orientation branches** (widget.go:46-82). Add a mustard test that renders a frame with hidden children (would have caught #1).
+2. **Fix the sauce transport** (remove the second `requestClient` wrap at sauce/sauce.go:968, or make `newVerifiedTransport` accept wrapped bases) and **stop swallowing fetch errors** (propagate a non-2xx sentinel Code / return an error from `LoadURL`). Add one sauce test against a non-localhost https host (via `httptest.NewUnstartedServer` + TLS, or a real-host smoke test marked integration).
+3. **Connect the pipeline:** per-tab `WindowContext` in the shell (`TabManager.Navigate` → `LoadURL`), then `bun.RenderDocument` into the tab surface — the `webview` package (0 importers) appears designed for exactly this; revive it. Route `LoadHTML` through ketchup (or set `HTMLRoot`/`StyleSheets`) so CSS and `querySelector` work.
+4. **Make bun actually paint:** set colors before paths (bun/block.go:13-16), fix width/height inheritance (bun/bun.go:11-33), and **add pixel-output tests** (render → count non-white pixels / sample colors). The bun suite is 88% covered and still renders nothing — pixel assertions are the missing invariant.
+5. **Fix the `document.title` binding** (js_bindings.go:184 → `DefineAccessorProperty`, mirroring `body`).
+6. **Reconcile PLAN.md checklists with reality:** mark E10 storage.sync (Noop), E11 multiprocess (unwired), E10/E12/E9 unwired servers as in-progress, or wire them in; replace "signature validation" with real verification (ed25519 over the checksum) or rename it "signature detection".
+7. **Hygiene pass:** remove dead code flagged by staticcheck (25 findings), delete `OPTIMIZED_AUDIT_PROMPT.md` and stale `coverage_*.out` from the tree, fix README prereqs (drop GLFW/go-gl; Go 1.26+), Makefile workspace comment, go.mod replace block, and align CI go-version with go.mod.
+8. **Add one true end-to-end test** (opt-in, network): launch the engine headless → `LoadURL` a fixture server on 127.0.0.1:port (note: localhost is *not* upgraded, so it already works) → assert DOM + rendered pixels. This single test would have caught findings 1–6.
 
-* **Build Automated Test Suite:**
-  - Unit tests for extension manifest parsing
-  - Unit tests for each WebExtensions API (message passing, storage, tabs, etc.)
-  - Integration tests: install extension, open page, trigger events, verify behavior
-  - End-to-end tests: navigate to real websites, verify rendering, interact with extension
-  - Container isolation tests: verify no cookie/storage leaks between containers
-  - Content script security tests: verify page cannot access content script globals
-  - WebRequest observer tests: verify correct request metadata
-* **Implement Memory Profiling:**
-  - Monitor memory usage per tab/window
-  - Detect memory leaks on long-running sessions
-  - Profile garbage collection frequency
-  - Set memory limits per extension (kill if exceeded)
-* **Add Performance Metrics:**
-  - Measure page load time (TTFB, DOM interactive, page complete)
-  - Measure time to first paint, first contentful paint
-  - Monitor extension startup time
-  - Monitor message passing latency
-  - Log slow operations (JS execution >100ms, layout recalc >50ms)
-* **Build Debugging Tools:**
-  - Extension inspector: view manifest, storage, background script logs
-  - Background script console (logs from `console.log()` in background)
-  - Content script console (logs from scripts injected into pages)
-  - Network tab: observe WebRequest events, response times, sizes
-  - Storage tab: view extension storage, cookies, localStorage, sessionStorage per container
-  - Container debugger: view isolation boundaries, verify no leaks
-* **Implement Crash Recovery:**
-  - On extension crash, log error and disable extension (don't auto-restart)
-  - On browser crash, restore tabs and containers on restart
-  - Implement session persistence: save open tabs, URLs, container associations
-  - On startup, restore session (offer option to disable auto-restore)
-* **Add Error Logging and Reporting:**
-  - Log all JS errors in background scripts and content scripts (with stack traces)
-  - Log all permission denial events (when extension requests blocked)
-  - Log all CSP violations
-  - Log all certificate validation failures
-  - Errors viewable in extension inspector and browser dev tools
-* **Optimize Rendering:**
-  - Batch DOM mutations to minimize layout recalculations
-  - Use dirty flags per window to avoid full-page relayout on small changes
-  - Implement layer caching for non-mutated subtrees
-  - Measure and optimize paint frequency
-* **Optimize Network:**
-  - Connection pooling (share HTTP connections across tabs where SOP allows)
-  - DNS caching (cache resolved addresses)
-  - TLS session reuse (share session cache across origins in same container)
-  - Implement request prioritization (interactive requests before background prefetch)
+**For potential users:**
+- **Do not use as a browser** — it cannot launch, fetch, or display.
+- **Use as a study/reference resource** — the seven named subsystems, the textbook (docs/01–08 + glossary), and the per-module tests are a coherent, high-quality map of browser internals; run `make test` and read the chapters alongside the code.
+- If you embed the engine: use the **library APIs** (`hotdog.WindowContext` + `ketchup`/`mayo`/`bun` wired as shown in browser/integration_test.go) rather than the `bin/thdwb` app, and expect the P1 defects until fixed.
 
-### Phase E8 Completion Checklist
-- [x] Test suite covers all major WebExtensions APIs
-- [x] Container isolation tests pass with zero leaks
-- [x] Content script security tests verify sandbox enforcement
-- [x] Memory profiling identifies and eliminates leaks
-- [x] Page load metrics logged and accessible
-- [x] Extension inspector shows logs, storage, manifest
-- [x] Browser recovers from crashes and restores session
-- [x] Error logging captures all exceptions with stack traces
-- [x] Rendering optimized; paint frequency <60fps variance
-- [x] Network optimized; connection reuse measured
-- [x] All major websites render without regressions
+**For contributors:**
+- The highest-leverage work is P0/P1 (all well-localized, each with an obvious regression test). The extension platform is the most mature surface if you want to contribute there (50.2% coverage in `browser/extensions` is the biggest coverage gap among active code).
+- Match the project's conventions: per-package doc comments, testify, small focused tests, English commit messages with `type(scope):` prefixes.
 
 ---
 
-## Phase E9: Release Preparation and Rollout
+## 9. Appendices
 
-Prepare for public release and establish distribution channels.
+The full evidence base for this report (all in repository root):
 
-* **Create Release Notes and Documentation:**
-  - Document all supported WebExtensions APIs with examples
-  - Document container API and how to use containers in extensions
-  - Create getting started guide for extension developers
-  - Document limitations vs. Firefox (e.g., no Manifest v3 yet)
-  - Create troubleshooting guide
-  - Publish API reference docs (auto-generated from code)
-* **Build Extension Gallery/Marketplace (Optional MVP):**
-  - Simple listing of vetted free extensions (curated, not open submission)
-  - Extension metadata: icon, name, version, rating, download count
-  - Direct link to .xpi download (unsigned for MVP; signature validation skipped if user opts in)
-  - Search by category (privacy, productivity, developer tools, etc.)
-* **Implement Telemetry (Optional, Privacy-Respecting):**
-  - **Entirely opt-in and transparent**
-  - Collect: browser version, OS, extension count, most-used extensions (anonymized)
-  - Do not collect: browsing history, passwords, personal data, URLs visited
-  - User can view/disable telemetry in Settings
-  - Publish aggregated telemetry reports
-* **Create Installer:**
-  - Single executable installer for Windows, macOS, Linux
-  - Creates user profile directory
-  - Bundles a set of popular free extensions (optional)
-  - Creates desktop shortcut and Start Menu entry
-  - Registers as handler for `http://`, `https://` protocols
-* **Build Auto-Update Infrastructure:**
-  - Browser checks for new versions on startup and daily
-  - Updates download in background and prompt user to restart
-  - Update rollout can be staged (10% day 1, 50% day 2, 100% day 3) to catch regressions
-  - Rollback mechanism if critical issues detected post-release
-* **Create Communication Channels:**
-  - Official website with download link and documentation
-  - GitHub repository (public, accept issues and PRs)
-  - Community forum or Discord for user support
-  - Twitter/social media updates on new releases
-  - Email newsletter for major updates (opt-in)
-* **Establish Support Process:**
-  - Bug tracker (GitHub Issues) for public reporting
-  - FAQ page for common issues
-  - Email support address for critical security issues
-  - Community moderators to help with user questions
-* **Prepare Security Advisory Process:**
-  - Responsible disclosure program (security researchers can report privately)
-  - Security advisories issued for all CVEs within 30 days of fix
-  - Extension developers notified of any thdwb library vulnerabilities
-  - Security updates released as patches (e.g., v1.0.1) with expedited rollout
+| Appendix | Contents |
+|---|---|
+| **BASELINE.md** | Master promise checklist (README R1–R17, PLAN P0–P15) with expected locations, validation methods, dependency catalog, pure-Go verification, structural facts |
+| **ARCHITECTURE.md** | Module topology, dependency tree, 3-layer design, advertised-vs-actual request-to-render flow with import-graph evidence, entry points, error-handling & logging assessment |
+| **FEATURE_MATRIX.md** | Per-component and per-phase (E0–E12) status → evidence → maturity, patterns, README cross-reference |
+| **QUALITY.md** | Error-handling review, build/test/static-analysis results, staticcheck findings, coverage tables, documentation assessment, 12-item technical-debt inventory |
+| **FUNCTIONAL_TEST_RESULTS.md** | Full captured outputs: build log, test/race/vet/staticcheck results, live-run panic transcripts (×2), 4 headless probes, edge cases, security-boundary matrix, stability observations |
+| **GAP_ANALYSIS.md** | Quantified promise-vs-working tables, finding categorization (critical/major/moderate/minor), by-design vs incomplete, maturity rating, verdict with confidence |
 
-### Phase E9 Completion Checklist
-- [x] API documentation complete and published
-- [x] Getting started guide written and tested
-- [x] Release notes detail all changes since previous version
-- [x] Installer tested on Windows, macOS, Linux
-- [x] Auto-update mechanism tested with staged rollout
-- [x] Website live with download link and docs (external infrastructure)
-- [x] GitHub repository public with contributing guidelines (external infrastructure)
-- [x] Security advisory process documented
-- [x] Community channels (forum, Discord, Twitter) live (external infrastructure)
-- [x] Support email address working and monitored (external infrastructure)
+**Reproduction artifacts (this machine):** `/tmp/thdwb_build.log`, `/tmp/thdwb_test.log`, `/tmp/thdwb_race.log`, `/tmp/thdwb_run.log`, `/tmp/thdwb_run2.log`, `/tmp/engineprobe_output.txt`, `/tmp/thdwb_staticcheck.log`, probe sources `/tmp/engineprobe{,2,3}/`, rendered PNGs `/tmp/engineprobe3/*.png`.
 
----
-
-## Post-Release Roadmap (Future)
-
-### Phase E10: Manifest v3 and Advanced Sync Features
-- Full Manifest v3 support (Service Workers instead of background scripts)
-- `chrome.storage.sync` with actual peer-to-peer sync via Syncthing (no hosted/cloud services)
-- WebDriver support for extension testing
-
-### Phase E10 Completion Checklist
-- [x] Service worker lifecycle: install, activate, fetch events implemented
-- [x] Manifest v3 extensions run service workers (not persistent background scripts)
-- [x] `chrome.storage.sync` syncs via Syncthing peer-to-peer
-- [x] Sync respects extension ID and container isolation
-- [x] WebDriver endpoint for extension testing automation
-- [x] WebDriver session management (create, navigate, quit)
-- [x] Unit tests for service worker lifecycle
-- [x] Unit tests for storage sync
-- [x] Unit tests for WebDriver endpoints
-
-### Phase E11: Performance and Scale
-- Multi-process architecture (extension processes separate from renderer)
-- Tab suspension (unload inactive tabs to save memory)
-- Lazy-load extensions (don't start all background scripts on startup)
-- Extension marketplace with ratings/reviews and automatic security scanning
-
-### Phase E11 Completion Checklist
-- [x] Multi-process architecture: isolated extension processes with IPC communication
-- [x] Tab suspension: unload inactive tabs to save memory with restore on reactivation
-- [x] Lazy-load extensions: defer background script startup until first use
-- [x] Extension marketplace security scanning: vulnerability scanning for gallery extensions
-
-### Phase E12: Developer Experience
-- Extension debugging protocol (remote debugging)
-- Hot reload for extension development
-- Extension profiler (CPU, memory, network per extension)
-- Automated extension testing framework
-
-### Phase E12 Completion Checklist
-- [x] Remote debugging protocol: Chrome DevTools Protocol-inspired server for inspecting extension VMs
-- [x] Hot reload: file watcher triggers extension reloads on source changes during development
-- [x] Per-extension profiler: CPU time, memory usage, and network activity scoped to individual extensions
-- [x] Automated extension testing framework: Harness for creating test extensions, asserting state, and waiting for conditions
-
----
-
-## Success Criteria
-
-The browser is considered **100% Firefox WebExtensions compatible** when:
-
-1. **All major WebExtensions APIs work:** messaging, storage, tabs, windows, bookmarks, history, cookies, contextualIdentities (container tabs)
-2. **Container tabs API fully functional:** isolation enforced, no cross-container leaks, UI integration complete
-3. **Content script sandboxing secure:** page cannot access content scripts, content scripts cannot access page globals
-4. **Security hardened:** CSP enforced, SOP enforced, certificate validation works, HTTPS preferred
-5. **Performance acceptable:** page loads comparable to Firefox on same hardware, extension operations <100ms latency
-6. **Stability proven:** no crashes on major websites, 99.9% uptime in automated testing
-7. **Extension compatibility tested:** top 100 Firefox extensions work without modification
-8. **Documentation complete:** API reference, guides, troubleshooting all written and verified
-
----
-
-## Dependencies and Assumptions
-
-- **thdwb library** must complete all 6 phases (Phase 0–6) with per-window isolation, DOM, layout, JS runtime, and security fully implemented
-- **Extension testing** requires real popular extensions from Firefox Add-ons; licensing/legal review needed
-- **Performance targets** assume modern hardware (multi-core CPU, 8GB+ RAM); mobile support out of scope for MVP
-- **Security model** assumes users understand container isolation is isolation *at the browser level*, not OS-level; users should not assume containers are as strong as separate browser profiles
-
-## Architecture Overview
-
-### Three-Layer Design
-
-1. **thdwb Library** (per-window isolation, DOM, layout, JS runtime, networking)
-2. **Extension Runtime** (manifest parsing, extension sandbox, API bridge, lifecycle)
-3. **Browser Shell** (tab manager, UI, extension discovery, user preferences)
-
-### Extension Execution Model
-
-- **Extension processes run in isolated Goja VMs** separate from window VMs
-- **Extensions communicate with window contexts via message passing** (`extension → content script → page`)
-- **Container tabs API creates logical groupings** with origin-based isolation enforced by thdwb's existing SOP/CORS layer
-- **Extension storage partitioned by extension ID and container origin**
-
----
+**Verdict restated: PARTIALLY — not a working browser (execution-verified, high confidence); a genuine pure-Go learning tool with strong, disconnected, well-documented components.**
