@@ -1,6 +1,7 @@
 package testing
 
 import (
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -53,14 +54,14 @@ func TestHarnessWaitFor(t *testing.T) {
 	h := NewHarness(t)
 	defer h.Cleanup()
 
-	called := false
+	var called atomic.Bool
 	go func() {
 		time.Sleep(20 * time.Millisecond)
-		called = true
+		called.Store(true)
 	}()
 
-	h.WaitFor(func() bool { return called }, 2*time.Second)
-	require.True(t, called)
+	h.WaitFor(func() bool { return called.Load() }, 2*time.Second)
+	require.True(t, called.Load())
 }
 
 func TestHarnessWaitForTimeout(t *testing.T) {
