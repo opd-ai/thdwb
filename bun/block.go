@@ -12,6 +12,12 @@ func paintBlockElement(ctx *gg.Context, node *hotdog.NodeDOM) {
 		return
 	}
 
+	// Skip painting zero-dimension boxes to avoid degenerate draw calls.
+	if node.RenderBox.Width <= 0 || node.RenderBox.Height <= 0 {
+		paintTextWithinBounds(ctx, node, node.Content, 1, 1.5)
+		return
+	}
+
 	ctx.SetRGBA(node.Style.BackgroundColor.R, node.Style.BackgroundColor.G, node.Style.BackgroundColor.B, node.Style.BackgroundColor.A)
 	ctx.DrawRectangle(node.RenderBox.Left, node.RenderBox.Top, node.RenderBox.Width, node.RenderBox.Height)
 	ctx.Fill()

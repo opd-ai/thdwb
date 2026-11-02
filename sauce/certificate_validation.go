@@ -33,6 +33,14 @@ func DefaultTOFUStore() (*TOFUStore, error) {
 }
 
 func newVerifiedTransport(base http.RoundTripper, store *TOFUStore, hostname string) (http.RoundTripper, error) {
+	// Unwrap originCookieTransport if present, mirroring the double-wrap
+	// guard in requestClient(), so the underlying *http.Transport is used.
+	if oc, ok := base.(*originCookieTransport); ok {
+		base = oc.base
+		if base == nil {
+			base = http.DefaultTransport
+		}
+	}
 	transport, ok := base.(*http.Transport)
 	if !ok {
 		return nil, fmt.Errorf("HTTPS requires a configurable *http.Transport, got %T", base)

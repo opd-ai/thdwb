@@ -150,10 +150,15 @@ func (p *ExtensionProcess) Start() error {
 // if it exits unexpectedly.
 func (p *ExtensionProcess) monitorExit() {
 	done := make(chan error, 1)
-	go func() { done <- p.cmd.Wait() }()
+	waitDone := make(chan struct{})
+	go func() {
+		defer close(waitDone)
+		done <- p.cmd.Wait()
+	}()
 
 	select {
 	case err := <-done:
+		<-waitDone // ensure the wait goroutine has finished
 		p.mu.Lock()
 		if p.state == ProcessStopping || p.state == ProcessStopped {
 			p.mu.Unlock()
@@ -170,7 +175,9 @@ func (p *ExtensionProcess) monitorExit() {
 			_ = p.Start()
 		}
 	case <-p.stopChan:
-		// Process was stopped intentionally.
+		// Process was stopped intentionally. The wait goroutine will
+		// complete on its own once the process exits.
+		<-waitDone
 	}
 }
 

@@ -89,9 +89,11 @@ func (window *WindowBase) setActive(active bool) {
 	}
 }
 
-// SetRootFrame - Sets the window root frame
+// SetRootFrame - Sets the window root frame and wires the window reference
+// so the frame tree can access the rendering context during draw.
 func (window *WindowBase) SetRootFrame(frame *Frame) {
 	window.rootFrame = frame
+	frame.SetWindow(window)
 }
 
 // GetSize returns the window dimensions.
