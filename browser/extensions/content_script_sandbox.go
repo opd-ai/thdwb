@@ -235,6 +235,10 @@ func (s *ContentScriptSandbox) PostMessage(msg Message) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if s.closed.Load() {
+		return fmt.Errorf("sandbox is closed")
+	}
+
 	rt := s.runtime
 	chromeVal := rt.Get("chrome")
 	if chromeVal == nil {

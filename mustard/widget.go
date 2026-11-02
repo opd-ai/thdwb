@@ -55,8 +55,10 @@ func calculateChildrenWidgetsLayout(children []*baseWidget, top, left, width, he
 
 			if children[i].fixedHeight {
 				currentLayout.box.height = children[i].box.height
-			} else {
+			} else if len(volatileHeightElements) > 0 {
 				currentLayout.box.height = remainingHeight / float64(len(volatileHeightElements))
+			} else {
+				currentLayout.box.height = 0
 			}
 
 			currentLayout.box.left = left
@@ -73,8 +75,10 @@ func calculateChildrenWidgetsLayout(children []*baseWidget, top, left, width, he
 
 			if children[i].fixedWidth {
 				currentLayout.box.width = children[i].box.width
-			} else {
+			} else if len(volatileWidthElements) > 0 {
 				currentLayout.box.width = remainingWidth / float64(len(volatileWidthElements))
+			} else {
+				currentLayout.box.width = 0
 			}
 
 			currentLayout.box.top = top

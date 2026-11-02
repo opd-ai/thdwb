@@ -956,7 +956,7 @@ func fetchExternalPageWithOptions(client *http.Client, URL *url.URL, method stri
 	}
 	client = requestClient(client, URL, origin)
 	url := URL.String()
-	go Log("sauce", "Downloading page "+url)
+	Log("sauce", "Downloading page "+url)
 
 	cachedResource := cache.GetResource(url)
 	if cachedResource != nil && method == "GET" && body == nil {
@@ -989,7 +989,12 @@ func fetchExternalPageWithOptions(client *http.Client, URL *url.URL, method stri
 	}
 
 	defer func() { _ = resp.Body.Close() }()
-	responseBody, _ := io.ReadAll(resp.Body)
+	responseBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		resource.Code = -1
+		resource.Body = loadErrorPage(err.Error())
+		return resource
+	}
 
 	resource.ContentType = resp.Header.Get("Content-Type")
 	resource.URL = resp.Request.URL

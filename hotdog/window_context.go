@@ -71,7 +71,9 @@ func (m *reentrantMutex) unlock() {
 		m.mu.Unlock()
 		return
 	}
-	m.depth--
+	if m.depth > 0 {
+		m.depth--
+	}
 	if m.depth == 0 {
 		m.owner = 0
 		m.cond.Broadcast()
@@ -918,16 +920,25 @@ func (wc *WindowContext) Destroy() {
 
 // GetSessionStorageManager returns the session storage manager for this window.
 func (wc *WindowContext) GetSessionStorageManager() *SessionStorageManager {
+	if wc == nil {
+		return nil
+	}
 	return wc.sessionStorage
 }
 
 // GetCookieJar returns the cookie jar for this window context.
 func (wc *WindowContext) GetCookieJar() *sauce.ContainerCookieJar {
+	if wc == nil {
+		return nil
+	}
 	return wc.cookieJar
 }
 
 // GetHTTPClient returns the HTTP client for this window context.
 func (wc *WindowContext) GetHTTPClient() *http.Client {
+	if wc == nil {
+		return nil
+	}
 	return wc.httpClient
 }
 
@@ -935,6 +946,9 @@ func (wc *WindowContext) GetHTTPClient() *http.Client {
 // for the given origin from one container to another. This is used when a tab
 // is moved to a different container.
 func (wc *WindowContext) TransferStorage(fromContainer, toContainer string, origin *url.URL) error {
+	if wc == nil {
+		return fmt.Errorf("window context is nil")
+	}
 	if wc.cookieJar != nil {
 		wc.cookieJar.TransferOrigin(fromContainer, toContainer, origin)
 	}
@@ -945,7 +959,9 @@ func (wc *WindowContext) TransferStorage(fromContainer, toContainer string, orig
 	if err := manager.TransferOrigin(fromContainer, toContainer, origin); err != nil {
 		return err
 	}
-	wc.sessionStorage.TransferOrigin(fromContainer, toContainer, origin)
+	if wc.sessionStorage != nil {
+		wc.sessionStorage.TransferOrigin(fromContainer, toContainer, origin)
+	}
 	return nil
 }
 

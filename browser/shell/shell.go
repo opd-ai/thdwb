@@ -454,6 +454,14 @@ func (bs *BrowserShell) Run() {
 func (bs *BrowserShell) Close() {
 	_ = bs.sessionManager.Save(bs)
 
+	if bs.extManager != nil {
+		bs.extManager.Stop()
+	}
+
+	if bs.windowBase != nil {
+		bs.windowBase.Close()
+	}
+
 	if bs.app != nil && bs.windowBase != nil {
 		bs.app.DestroyWindow(bs.windowBase)
 	}

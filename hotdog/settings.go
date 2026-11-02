@@ -33,10 +33,12 @@ var defaultSettings Settings = Settings{
 }
 
 func LoadSettings(path string) *Settings {
+	settings := defaultSettings // copy the global to avoid shared mutable state
+
 	settingsData, err := os.ReadFile(path)
 
 	if err == nil {
-		err = json.Unmarshal(settingsData, &defaultSettings)
+		err = json.Unmarshal(settingsData, &settings)
 		if err != nil {
 			fmt.Println("Error loading settings from file;", err)
 		}
@@ -45,5 +47,5 @@ func LoadSettings(path string) *Settings {
 		fmt.Println("Loading default settings.")
 	}
 
-	return &defaultSettings
+	return &settings
 }
