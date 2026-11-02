@@ -566,6 +566,12 @@ Prepare for public release and establish distribution channels.
 - Extension profiler (CPU, memory, network per extension)
 - Automated extension testing framework
 
+### Phase E12 Completion Checklist
+- [x] Remote debugging protocol: Chrome DevTools Protocol-inspired server for inspecting extension VMs
+- [x] Hot reload: file watcher triggers extension reloads on source changes during development
+- [x] Per-extension profiler: CPU time, memory usage, and network activity scoped to individual extensions
+- [x] Automated extension testing framework: Harness for creating test extensions, asserting state, and waiting for conditions
+
 ---
 
 ## Success Criteria
