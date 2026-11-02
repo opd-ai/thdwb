@@ -6,6 +6,10 @@ import (
 )
 
 func paintListItemElement(ctx *gg.Context, node *hotdog.NodeDOM) {
+	if node.RenderBox == nil || node.Style == nil || node.Style.BackgroundColor == nil {
+		return
+	}
+
 	ctx.DrawRectangle(node.RenderBox.Left, node.RenderBox.Top, node.RenderBox.Width, node.RenderBox.Height)
 	ctx.SetRGBA(node.Style.BackgroundColor.R, node.Style.BackgroundColor.G, node.Style.BackgroundColor.B, node.Style.BackgroundColor.A)
 	ctx.Fill()
@@ -18,6 +22,10 @@ func paintListItemElement(ctx *gg.Context, node *hotdog.NodeDOM) {
 }
 
 func calculateListItemLayout(ctx *gg.Context, node *hotdog.NodeDOM, childIdx int) {
+	if node.Style == nil || node.RenderBox == nil || node.Parent == nil || node.Parent.RenderBox == nil {
+		return
+	}
+
 	if node.Style.Width == 0 {
 		node.RenderBox.Width = node.Parent.RenderBox.Width - 30
 	}

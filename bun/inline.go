@@ -18,8 +18,22 @@ func paintTextWithinBounds(ctx *gg.Context, node *hotdog.NodeDOM, text string, t
 	}
 	ctx.DrawRectangle(box.Left, box.Top, box.Width, box.Height)
 	ctx.Clip()
-	ctx.SetRGBA(node.Style.Color.R, node.Style.Color.G, node.Style.Color.B, node.Style.Color.A)
-	ctx.SetFont(sansSerif[node.Style.FontWeight], node.Style.FontSize)
+
+	color := &hotdog.ColorRGBA{R: 0, G: 0, B: 0, A: 1}
+	if node.Style != nil && node.Style.Color != nil {
+		color = node.Style.Color
+	}
+	ctx.SetRGBA(color.R, color.G, color.B, color.A)
+
+	fontWeight := 0
+	if node.Style != nil {
+		fontWeight = node.Style.FontWeight
+	}
+	fontSize := 16.0
+	if node.Style != nil {
+		fontSize = node.Style.FontSize
+	}
+	ctx.SetFont(sansSerif[fontWeight], fontSize)
 	ctx.DrawStringWrapped(text, box.Left, box.Top+topOffset, 0, 0, box.Width, lineSpacing, gg.AlignLeft)
 	ctx.Fill()
 	ctx.ResetClip()
@@ -29,6 +43,10 @@ func paintInlineElement(ctx *gg.Context, node *hotdog.NodeDOM) {
 	// Text nodes don't have backgrounds or borders, just render their content
 	if node.Type == hotdog.NodeTypeText {
 		paintTextWithinBounds(ctx, node, node.GetTextContent(), 0, 1)
+		return
+	}
+
+	if node.RenderBox == nil || node.Style == nil || node.Style.BackgroundColor == nil {
 		return
 	}
 
@@ -78,6 +96,10 @@ func fetchNodeImage(node *hotdog.NodeDOM) (image.Image, error) {
 }
 
 func calculateInlineLayout(ctx *gg.Context, node *hotdog.NodeDOM, childIdx int) {
+	if node.Style == nil || node.RenderBox == nil || node.Parent == nil || node.Parent.RenderBox == nil {
+		return
+	}
+
 	ctx.SetFont(sansSerif[node.Style.FontWeight], node.Style.FontSize)
 
 	if childIdx > 0 && node.Parent.Children[childIdx-1] != nil {

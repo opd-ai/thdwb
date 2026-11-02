@@ -92,7 +92,9 @@ func walkDOM(TreeDOM *hotdog.NodeDOM, d string) {
 func layoutDOM(ctx *gg.Context, node *hotdog.NodeDOM, childIdx int) {
 	nodeChildren := getNodeChildren(node)
 
-	node.RenderBox = &hotdog.RenderBox{}
+	if node.RenderBox == nil {
+		node.RenderBox = &hotdog.RenderBox{}
+	}
 	calculateNode(ctx, node, childIdx)
 
 	for i := 0; i < len(nodeChildren); i++ {
@@ -102,6 +104,9 @@ func layoutDOM(ctx *gg.Context, node *hotdog.NodeDOM, childIdx int) {
 }
 
 func paintNode(ctx *gg.Context, node *hotdog.NodeDOM) {
+	if node.Style == nil {
+		return
+	}
 	switch node.Style.Display {
 	case "block":
 		paintBlockElement(ctx, node)
@@ -144,6 +149,15 @@ func paintFocusRing(ctx *gg.Context, node *hotdog.NodeDOM) {
 }
 
 func calculateNode(ctx *gg.Context, node *hotdog.NodeDOM, postion int) {
+	if node.Style == nil {
+		node.Style = &hotdog.Stylesheet{
+			Display:        "block",
+			BackgroundColor: &hotdog.ColorRGBA{R: 1, G: 1, B: 1, A: 1},
+			Color:          &hotdog.ColorRGBA{R: 0, G: 0, B: 0, A: 1},
+			FontSize:       16,
+			FontWeight:     0,
+		}
+	}
 	switch node.Style.Display {
 	case "block":
 		calculateBlockLayout(ctx, node, postion)

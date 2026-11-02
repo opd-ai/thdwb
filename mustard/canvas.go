@@ -40,6 +40,12 @@ func (canvas *CanvasWidget) SetHeight(height float64) {
 	canvas.RequestReflow()
 }
 
+// SetBackgroundColor sets the canvas background color.
+func (canvas *CanvasWidget) SetBackgroundColor(color string) {
+	canvas.backgroundColor = color
+	canvas.needsRepaint = true
+}
+
 func (canvas *CanvasWidget) EnableScrolling() {
 	canvas.scrollable = true
 }
@@ -84,6 +90,15 @@ func (canvas *CanvasWidget) SetContext(ctx *gg.Context) {
 
 func (cavas *CanvasWidget) SetDrawingRepaint(repaint bool) {
 	cavas.drawingRepaint = repaint
+}
+
+// Repaint forces a repaint of the canvas widget on the next draw cycle.
+func (canvas *CanvasWidget) Repaint() {
+	canvas.drawingRepaint = true
+	canvas.needsRepaint = true
+	if canvas.window != nil {
+		canvas.window.RequestReflow()
+	}
 }
 
 func (ctx *CanvasWidget) draw() {

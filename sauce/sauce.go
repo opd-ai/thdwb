@@ -954,7 +954,16 @@ func fetchExternalPageWithOptions(client *http.Client, URL *url.URL, method stri
 	if headers != nil {
 		origin = headers["Origin"]
 	}
-	client = requestClient(client, URL, origin)
+	// Only wrap with originCookieTransport if the client's transport is not
+	// already an originCookieTransport (avoid double-wrapping which breaks
+	// the *http.Transport assertion in newVerifiedTransport).
+	if client != nil {
+		if _, ok := client.Transport.(*originCookieTransport); !ok {
+			client = requestClient(client, URL, origin)
+		}
+	} else {
+		client = requestClient(defaultClient(), URL, origin)
+	}
 	url := URL.String()
 	Log("sauce", "Downloading page "+url)
 
@@ -966,6 +975,7 @@ func fetchExternalPageWithOptions(client *http.Client, URL *url.URL, method stri
 	resource := &Resource{Key: url, URL: URL}
 	req, err := http.NewRequest(method, url, body)
 	if err != nil {
+		resource.Code = -1
 		resource.Body = loadErrorPage(err.Error())
 		return resource
 	}

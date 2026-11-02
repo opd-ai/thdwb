@@ -126,6 +126,11 @@ func FindWindowsByOrigin(targetOrigin string) []*WindowContext {
 	return result
 }
 
+// WindowContexts returns all registered window contexts.
+func WindowContexts() []*WindowContext {
+	return FindWindowsByOrigin("*")
+}
+
 type eventHandler struct {
 	key     uintptr
 	handler func(interface{})
@@ -299,6 +304,11 @@ func (wc *WindowContext) LoadHTML(html, baseURL string) error {
 
 	for _, node := range nodes {
 		doc.DOM.appendChildNode(node)
+	}
+
+	// Populate document title from the <title> element if present.
+	if titleNode, err := doc.DOM.FindChildByName("title"); err == nil && titleNode != nil {
+		doc.Title = titleNode.Content
 	}
 
 	wc.ActiveDocument = doc

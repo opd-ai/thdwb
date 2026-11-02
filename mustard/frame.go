@@ -72,6 +72,9 @@ func (frame *Frame) draw() {
 	if !frame.GetVisible() {
 		return
 	}
+	if frame.window == nil {
+		return
+	}
 	top, left, width, height := frame.computedBox.GetCoords()
 	window := frame.window
 	context, ok := window.context.(*gg.Context)

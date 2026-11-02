@@ -6,8 +6,10 @@ import (
 	"strings"
 
 	assets "github.com/danfragoso/thdwb/assets"
+	bun "github.com/danfragoso/thdwb/bun"
 	extensions "github.com/danfragoso/thdwb/browser/extensions"
 	hotdog "github.com/danfragoso/thdwb/hotdog"
+	ketchup "github.com/danfragoso/thdwb/ketchup"
 	mustard "github.com/danfragoso/thdwb/mustard"
 	profiler "github.com/danfragoso/thdwb/profiler"
 	debug "github.com/danfragoso/thdwb/browser/debug"
@@ -45,6 +47,12 @@ type BrowserShell struct {
 	settingsPage     *SettingsPage
 	newTabPage       *NewTabPage
 	menuBar          *MenuBar
+
+	webContent *mustard.CanvasWidget
+
+	// tabWindowContexts maps tab IDs to their hotdog WindowContext for
+	// per-tab rendering and JS isolation.
+	tabWindowContexts map[int]*hotdog.WindowContext
 
 	sessionManager   *SessionManager
 	memoryProfiler   *profiler.MemoryProfiler
@@ -94,6 +102,7 @@ func NewBrowserShell(settings *hotdog.Settings, buildInfo *assets.BuildInfo) *Br
 		containerManager: extensions.NewContainerManager(),
 		browserSettings:  NewBrowserSettings(),
 		injectedScripts:  make(map[int]map[string]bool),
+		tabWindowContexts: make(map[int]*hotdog.WindowContext),
 
 		sessionManager:   NewSessionManager(""),
 		memoryProfiler:   profiler.NewMemoryProfiler(),
@@ -345,10 +354,12 @@ func (bs *BrowserShell) buildUI() {
 	bs.newTabPage.SetVisible(false)
 	rootFrame.AttachWidget(bs.newTabPage.Frame)
 
-	// Content area (placeholder for web content)
-	contentArea := mustard.CreateFrame(mustard.VerticalFrame)
-	contentArea.SetBackgroundColor("#ffffff")
-	rootFrame.AttachWidget(contentArea)
+	// Content area (web content rendered via bun layout engine)
+	bs.webContent = mustard.CreateCanvasWidget(func(cw *mustard.CanvasWidget) {
+		// Rendering is driven by renderWebContent; this is a no-op placeholder.
+	})
+	bs.webContent.SetBackgroundColor("#ffffff")
+	rootFrame.AttachWidget(bs.webContent)
 
 	// Status bar
 	statusBar := mustard.CreateLabelWidget("Ready")
@@ -379,6 +390,13 @@ func (bs *BrowserShell) buildUI() {
 			if err := bs.injectContentScripts(tab); err != nil {
 				// Content script injection failures should not block navigation.
 				bs.errorLogger.Log(errors.SeverityError, "shell", "content_script", fmt.Sprintf("tab %d", tab.ID), err.Error())
+			}
+		}
+
+		// Load the tab's URL into a per-tab WindowContext and render it.
+		if tab != nil {
+			if err := bs.loadTabContent(tab); err != nil {
+				bs.errorLogger.Log(errors.SeverityError, "shell", "load", fmt.Sprintf("tab %d", tab.ID), err.Error())
 			}
 		}
 	})
@@ -434,6 +452,146 @@ func (bs *BrowserShell) handleKeyboardInput(input mustard.KeyboardInput) {
 		case "s":
 			bs.settingsPage.Toggle()
 		}
+	}
+}
+
+// renderWebContent renders the active tab's document into the web content
+// canvas using the bun layout engine. It is called after a successful page
+// load so the shell actually displays web content instead of a blank placeholder.
+func (bs *BrowserShell) renderWebContent(tab *Tab) {
+	if bs.webContent == nil || tab == nil {
+		return
+	}
+
+	wc := bs.tabWindowContext(tab)
+	if wc == nil || wc.ActiveDocument == nil {
+		return
+	}
+
+	ctx := bs.webContent.GetContext()
+	if ctx == nil {
+		return
+	}
+
+	_, _, width, height := bs.webContent.ComputedBox().GetCoords()
+	if width <= 0 || height <= 0 {
+		return
+	}
+
+	ctx.SetRGB(1, 1, 1)
+	ctx.Clear()
+
+	if err := bun.RenderDocument(ctx, wc.ActiveDocument, false); err != nil {
+		bs.errorLogger.Log(errors.SeverityError, "shell", "render", fmt.Sprintf("tab %d", tab.ID), err.Error())
+		return
+	}
+
+	bs.webContent.Repaint()
+}
+
+// tabWindowContext returns the hotdog WindowContext for the given tab, or nil.
+// Each tab owns a WindowContext created when the tab navigates.
+func (bs *BrowserShell) tabWindowContext(tab *Tab) *hotdog.WindowContext {
+	if tab == nil {
+		return nil
+	}
+	return bs.tabWindowContexts[tab.ID]
+}
+
+// loadTabContent loads the tab's URL into a per-tab WindowContext and renders
+// it into the web content canvas.
+func (bs *BrowserShell) loadTabContent(tab *Tab) error {
+	if tab == nil {
+		return fmt.Errorf("tab is nil")
+	}
+
+	wc, ok := bs.tabWindowContexts[tab.ID]
+	if !ok || wc == nil {
+		wc = hotdog.NewWindowContext(bs.settings, bs.buildInfo, nil)
+		bs.tabWindowContexts[tab.ID] = wc
+	}
+
+	if err := wc.LoadURL(tab.URL); err != nil {
+		return fmt.Errorf("load URL %s: %w", tab.URL, err)
+	}
+
+	// Route the loaded HTML through ketchup so HTMLRoot and StyleSheets are
+	// populated, enabling CSS styling and querySelector/querySelectorAll.
+	if wc.ActiveDocument != nil && wc.ActiveDocument.HTMLRoot == nil {
+		if err := bs.applyKetchupParsing(wc, tab.URL); err != nil {
+			bs.errorLogger.Log(errors.SeverityError, "shell", "ketchup", fmt.Sprintf("tab %d", tab.ID), err.Error())
+		}
+	}
+
+	bs.renderWebContent(tab)
+	return nil
+}
+
+// applyKetchupParsing re-parses the active document's HTML through ketchup to
+// populate HTMLRoot and StyleSheets, enabling CSS and selector queries.
+func (bs *BrowserShell) applyKetchupParsing(wc *hotdog.WindowContext, baseURL string) error {
+	if wc.ActiveDocument == nil {
+		return fmt.Errorf("no active document")
+	}
+
+	// Get the raw HTML from the active document's DOM by serializing it.
+	html := wc.ActiveDocument.RawDocument
+	if html == "" {
+		// Re-serialize the DOM tree to HTML.
+		html = serializeDOMToHTML(wc.ActiveDocument.DOM)
+	}
+
+	ketchupDoc := ketchup.ParseHTMLDocument(html, wc)
+	if ketchupDoc == nil {
+		return fmt.Errorf("ketchup parsing returned nil document")
+	}
+
+	// Copy ketchup results into the hotdog document.
+	wc.ActiveDocument.HTMLRoot = ketchupDoc.HTMLRoot
+	wc.ActiveDocument.StyleSheets = ketchupDoc.StyleSheets
+	wc.ActiveDocument.RawDocument = html
+
+	return nil
+}
+
+// serializeDOMToHTML converts a NodeDOM tree back to an HTML string.
+func serializeDOMToHTML(node *hotdog.NodeDOM) string {
+	if node == nil {
+		return ""
+	}
+	var sb strings.Builder
+	serializeDOMNode(node, &sb)
+	return sb.String()
+}
+
+func serializeDOMNode(node *hotdog.NodeDOM, sb *strings.Builder) {
+	if node == nil {
+		return
+	}
+	switch node.Type {
+	case hotdog.NodeTypeElement:
+		sb.WriteString("<")
+		sb.WriteString(node.Element)
+		for _, attr := range node.Attributes {
+			sb.WriteString(" ")
+			sb.WriteString(attr.Name)
+			sb.WriteString("=\"")
+			sb.WriteString(attr.Value)
+			sb.WriteString("\"")
+		}
+		sb.WriteString(">")
+		for _, child := range node.Children {
+			serializeDOMNode(child, sb)
+		}
+		sb.WriteString("</")
+		sb.WriteString(node.Element)
+		sb.WriteString(">")
+	case hotdog.NodeTypeText:
+		sb.WriteString(node.Content)
+	case hotdog.NodeTypeComment:
+		sb.WriteString("<!--")
+		sb.WriteString(node.Content)
+		sb.WriteString("-->")
 	}
 }
 
@@ -529,7 +687,7 @@ func (bs *BrowserShell) injectContentScripts(tab *Tab) error {
 				}
 			}
 
-			sandbox := bs.extManager.SandboxFor(ext.ID)
+			sandbox := bs.extManager.SandboxForTab(ext.ID, tab.ID)
 			// Load and execute each JS file in the sandbox.
 			for _, js := range script.JS {
 				if err := sandbox.LoadScript(ext.Path, js); err != nil {

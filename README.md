@@ -7,7 +7,7 @@
 - CSS parser & style engine (**mayo**)
 - Layout engine (**bun**) — block, inline, and flexbox
 - 2D graphics library (**gg**) — drawing, text shaping, images
-- UI toolkit (**mustard**) — windows, widgets, OpenGL/GLFW
+- UI toolkit (**mustard**) — windows, widgets, Ebitengine-based rendering
 - Network layer (**sauce**) — HTTP, cookies, cache, certificates
 - JavaScript runtime (**hotdog**) — Goja VM, DOM bindings, Fetch API
 
@@ -51,9 +51,8 @@ This repository includes a **textbook-style documentation** explaining browser i
 ## 🚀 Getting Started
 
 ### Prerequisites
-- Go 1.21+
-- OpenGL 3.2+ capable GPU
-- GLFW 3.3 (via `go-gl/glfw`)
+- Go 1.26+
+- Ebitengine (via purego, no CGo required)
 
 ### Running
 

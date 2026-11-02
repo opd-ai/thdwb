@@ -23,6 +23,7 @@ type Manager struct {
 	contentLoader        *ContentScriptLoader
 	dynamicScripting     *DynamicScripting
 	sandboxes            map[string]*ContentScriptSandbox
+	tabSandboxes         map[string]*ContentScriptSandbox
 	messageRouter        *MessageRouter
 	chromeAPIs           map[string]*ChromeAPI
 	tabOps           TabOperations
@@ -436,7 +437,8 @@ func (m *Manager) ChromeAPIFor(extID string) (*ChromeAPI, bool) {
 }
 
 // SandboxFor returns the content script sandbox for the given extension,
-// creating one if it doesn't exist.
+// creating one if it doesn't exist. The sandbox is shared across tabs for the
+// same extension (per-extension isolation, not per-page).
 func (m *Manager) SandboxFor(extID string) *ContentScriptSandbox {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -446,6 +448,50 @@ func (m *Manager) SandboxFor(extID string) *ContentScriptSandbox {
 	s := NewContentScriptSandbox(extID)
 	m.sandboxes[extID] = s
 	return s
+}
+
+// SandboxForTab returns a per-tab content script sandbox for the given
+// extension, creating one if it doesn't exist. This provides per-page
+// isolation as required by PLAN E5.
+func (m *Manager) SandboxForTab(extID string, tabID int) *ContentScriptSandbox {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	key := sandboxKey(extID, tabID)
+	if s, ok := m.tabSandboxes[key]; ok {
+		return s
+	}
+	s := NewContentScriptSandbox(extID)
+	if m.tabSandboxes == nil {
+		m.tabSandboxes = make(map[string]*ContentScriptSandbox)
+	}
+	m.tabSandboxes[key] = s
+	return s
+}
+
+func sandboxKey(extID string, tabID int) string {
+	return extID + ":" + itoa(tabID)
+}
+
+func itoa(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	neg := n < 0
+	if neg {
+		n = -n
+	}
+	var buf [20]byte
+	i := len(buf)
+	for n > 0 {
+		i--
+		buf[i] = byte('0' + n%10)
+		n /= 10
+	}
+	if neg {
+		i--
+		buf[i] = '-'
+	}
+	return string(buf[i:])
 }
 
 // RemoveSandbox removes the content script sandbox for the given extension.
