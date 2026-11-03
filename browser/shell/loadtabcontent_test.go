@@ -15,7 +15,7 @@ import (
 // an inline background-color on a block element and a <style> rule.
 const loadTabHTML = `<!DOCTYPE html><html><head><title>load tab</title></head><body>
 <h1>Load Tab</h1>
-<div id="box" style="background-color: rgb(255, 0, 0); width: 100px; height: 50px;"></div>
+<div id="box" style="background-color: rgb(255, 0, 0);">Panel content that gives the block a measurable height.</div>
 <style>#box { margin: 0; }</style>
 </body></html>`
 
@@ -59,9 +59,11 @@ func TestLoadTabContentKetchupPipeline(t *testing.T) {
 		t.Fatalf(`QuerySelector("#box") = (%v, %v), want a match`, box, err)
 	}
 
-	// bun must lay out and paint the document to a non-white canvas.
-	if got := countNonWhitePixels(t, doc); got == 0 {
-		t.Error("expected bun to paint non-white pixels for the styled page")
+	// bun must lay out and paint the document, and the CSS-declared red
+	// background of #box must reach the canvas (a deterministic, style-driven
+	// signal rather than font-dependent text pixels).
+	if got := countPixels(t, doc, isRed); got == 0 {
+		t.Error("expected bun to paint the red background of #box")
 	}
 }
 
@@ -107,9 +109,9 @@ func activeDocument(t *testing.T, bs *BrowserShell, tab *Tab) *hotdog.Document {
 	return wc.ActiveDocument
 }
 
-// countNonWhitePixels renders doc with bun into a canvas and returns the number
-// of pixels that differ from the white background.
-func countNonWhitePixels(t *testing.T, doc *hotdog.Document) int {
+// countPixels renders doc with bun into a canvas and returns the number of
+// pixels satisfying match, sampled on a 2px grid to keep the loop fast.
+func countPixels(t *testing.T, doc *hotdog.Document, match func(r, g, b uint32) bool) int {
 	t.Helper()
 	ctx := gg.NewContext(1024, 768)
 	if err := bun.RenderDocument(ctx, doc, false); err != nil {
@@ -121,12 +123,18 @@ func countNonWhitePixels(t *testing.T, doc *hotdog.Document) int {
 	for y := bounds.Min.Y; y < bounds.Max.Y; y += 2 {
 		for x := bounds.Min.X; x < bounds.Max.X; x += 2 {
 			r, g, b, _ := img.At(x, y).RGBA()
-			if r < 0xff00 || g < 0xff00 || b < 0xff00 {
+			if match(r, g, b) {
 				n++
 			}
 		}
 	}
 	return n
+}
+
+// isRed matches a pixel whose red channel dominates, i.e. a pixel from the
+// #box element's rgb(255, 0, 0) background.
+func isRed(r, g, b uint32) bool {
+	return r > g && r > b && r > 0x8000
 }
 
 // subtreeText returns the concatenated text of node and its descendants. The
