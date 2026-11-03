@@ -59,7 +59,6 @@ func TestLayoutHelpers(t *testing.T) {
 	if getNodeContent(root) != "root" || getElementName(child) != "child" {
 		t.Fatal("node accessors returned incorrect content")
 	}
-	walkDOM(root, "")
 	paintText(gg.NewContext(10, 10), root)
 	paintTree(gg.NewContext(10, 10), nil)
 }

@@ -78,15 +78,6 @@ func getNodeChildren(NodeDOM *hotdog.NodeDOM) []*hotdog.NodeDOM {
 	return NodeDOM.Children
 }
 
-func walkDOM(TreeDOM *hotdog.NodeDOM, d string) {
-	fmt.Println(d, getElementName(TreeDOM))
-	nodeChildren := getNodeChildren(TreeDOM)
-
-	for i := 0; i < len(nodeChildren); i++ {
-		walkDOM(nodeChildren[i], d+"-")
-	}
-}
-
 func layoutDOM(ctx *gg.Context, node *hotdog.NodeDOM, childIdx int) {
 	nodeChildren := getNodeChildren(node)
 
