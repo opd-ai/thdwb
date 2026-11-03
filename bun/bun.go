@@ -44,8 +44,6 @@ func RenderDocument(ctx *gg.Context, document *hotdog.Document, experimentalLayo
 
 		layoutNode(ctx, renderTree)
 		paintTree(ctx, renderTree)
-
-		renderTree.Print(0)
 	}
 
 	return nil
