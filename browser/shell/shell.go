@@ -534,12 +534,10 @@ func (bs *BrowserShell) applyKetchupParsing(wc *hotdog.WindowContext, baseURL st
 		return fmt.Errorf("no active document")
 	}
 
-	// Get the raw HTML from the active document's DOM by serializing it.
+	// LoadHTML stores the fetched source in RawDocument, so the ketchup
+	// re-parse sees the original markup (including <style> blocks). ketchup
+	// handles an empty string safely, so no fallback serialization is needed.
 	html := wc.ActiveDocument.RawDocument
-	if html == "" {
-		// Re-serialize the DOM tree to HTML.
-		html = serializeDOMToHTML(wc.ActiveDocument.DOM)
-	}
 
 	ketchupDoc := ketchup.ParseHTMLDocument(html, wc)
 	if ketchupDoc == nil {
@@ -562,47 +560,6 @@ func (bs *BrowserShell) applyKetchupParsing(wc *hotdog.WindowContext, baseURL st
 	wc.ActiveDocument.RawDocument = ketchupDoc.RawDocument
 
 	return nil
-}
-
-// serializeDOMToHTML converts a NodeDOM tree back to an HTML string.
-func serializeDOMToHTML(node *hotdog.NodeDOM) string {
-	if node == nil {
-		return ""
-	}
-	var sb strings.Builder
-	serializeDOMNode(node, &sb)
-	return sb.String()
-}
-
-func serializeDOMNode(node *hotdog.NodeDOM, sb *strings.Builder) {
-	if node == nil {
-		return
-	}
-	switch node.Type {
-	case hotdog.NodeTypeElement:
-		sb.WriteString("<")
-		sb.WriteString(node.Element)
-		for _, attr := range node.Attributes {
-			sb.WriteString(" ")
-			sb.WriteString(attr.Name)
-			sb.WriteString("=\"")
-			sb.WriteString(attr.Value)
-			sb.WriteString("\"")
-		}
-		sb.WriteString(">")
-		for _, child := range node.Children {
-			serializeDOMNode(child, sb)
-		}
-		sb.WriteString("</")
-		sb.WriteString(node.Element)
-		sb.WriteString(">")
-	case hotdog.NodeTypeText:
-		sb.WriteString(node.Content)
-	case hotdog.NodeTypeComment:
-		sb.WriteString("<!--")
-		sb.WriteString(node.Content)
-		sb.WriteString("-->")
-	}
 }
 
 // Show makes the window visible.
