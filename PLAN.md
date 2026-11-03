@@ -187,7 +187,7 @@ are execution-verified on this machine, not taken from commit messages.
 | # | Recommendation | Status | Notes |
 |---|---|---|---|
 | 1 | Fix the frame-draw panic (P0) | ✅ **Done this session** | The audited `frame.go` index-out-of-range was fixed by the post-audit `visibleChildren` filter, but the crash **relocated** to `mustard/window.go` `compositeWidget`: the composite pass iterated *all* children and dereferenced a hidden child's nil `Buffer()` → SIGSEGV on the first rendered frame. Fixed with a nil-buffer guard (mirrors the overlay path) + two regression tests (`TestRender_HiddenChildrenDoesNotPanic`, `TestCompositeAll_SkipsHiddenChildren`). `go test -race ./mustard/` clean; **live `bin/thdwb` now runs past frame 1** (previously died on frame 1). Commit `e1e02a3`. |
-| 2 | Fix the sauce transport + stop swallowing fetch errors | ⏳ In progress | Double-wrap guard present in `requestClient`/`newVerifiedTransport`; error codes set on failed requests. **Not re-verified against a real non-localhost host this session.** |
+| 2 | Fix the sauce transport + stop swallowing fetch errors | ✅ **Done this session** | Double-wrap guard present in `requestClient`/`newVerifiedTransport` (unwraps an existing `*originCookieTransport` to its base before re-wrapping, so the `*http.Transport` assertion in `newVerifiedTransport` no longer fails for HTTPS); failed requests set the `-1` sentinel `Resource.Code` and `LoadURL` rejects `Code <= 0`. **Re-verified against a real non-localhost host:** live fetch of `https://example.com` returns `Code 200` (previously `<300 µs` failure), and an unreachable host now surfaces `Code -1` + a non-nil `LoadURL` error. Pinned with regression tests: `sauce/sauce_item2_test.go` (`TestFetchExternalPageDoesNotDoubleWrapTransport`, `TestRequestClientUnwrapsExistingTransport`, `TestFetchExternalPageTransportErrorSurfaces`, opt-in `TestFetchExternalPageRealHostHTTPS`) and `hotdog/window_context_loadurl_test.go` (`TestLoadURLSurfacesTransportError`, `TestLoadURLSurfacesHTTPErrorStatus`, `TestLoadURLLoadsLocalhostPage`, opt-in `TestLoadURLRealHost`). Real-host tests gate on `THDWB_NETWORK=1` so CI stays network-free. `go test -race work` (29 pkgs) + `go vet ./...` clean. Commits `d453e6d`, `fcd4dcc`. |
 | 3 | Connect the pipeline (per-tab WindowContext → bun.RenderDocument) | ⏳ In progress | `renderWebContent`/`loadTabContent` wired in `browser/shell/shell.go`; per-tab `WindowContext` map present. Not pixel-verified end-to-end this session. |
 | 4 | Make bun actually paint + pixel-output tests | ⏳ In progress | Colors set before fills; zero-dimension boxes skipped. No dedicated non-white-pixel render assertions found this session. |
 | 5 | Fix the `document.title` binding | ✅ Done (pre-session) | Now uses `DefineAccessorProperty` (hotdog/js_bindings.go:188). |
@@ -195,6 +195,8 @@ are execution-verified on this machine, not taken from commit messages.
 | 7 | Hygiene pass (dead code, stale files, prereqs, replace block, CI) | ⏳ Partial | `OPTIMIZED_AUDIT_PROMPT.md`/`coverage_*.out` removed; README says Go 1.26+; CI go-version 1.26.0 aligned. **Remaining:** `go.mod` `replace` block is redundant (single module, `go.work` only uses `.`); staticcheck still reports ~21 findings (dead code / style). |
 | 8 | Add one true end-to-end test (opt-in network) | ⏳ Partial | `browser/integration_test.go` covers parse→CSS→DOM against fixtures; `browser/e2e_test.go` covers tab lifecycle/state. **No headless engine→`LoadURL`→rendered-pixel test exists yet.** |
 
-**Blocker for a full "working browser":** items 2–4 and 8 still need end-to-end
-pixel-level verification (fetch a real/localhost host → assert rendered pixels).
-The P0 crash (item 1) that previously prevented *any* frame from rendering is resolved.
+**Blocker for a full "working browser":** items 3, 4, and 8 still need
+end-to-end pixel-level verification (fetch a real/localhost host → assert
+rendered pixels). Item 2 (transport + error surfacing) is resolved and
+re-verified this session. The P0 crash (item 1) that previously prevented
+*any* frame from rendering is also resolved.
