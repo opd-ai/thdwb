@@ -207,12 +207,6 @@ func (ab *AddressBar) hideSuggestions() {
 	ab.suggestionFrame = nil
 }
 
-// clearOverlay removes any existing suggestion overlay without clearing
-// the suggestion list. Used before rebuilding the dropdown.
-func (ab *AddressBar) clearOverlay() {
-	ab.suggestionFrame = nil
-}
-
 // selectSuggestion navigates to the chosen suggestion and hides the dropdown.
 func (ab *AddressBar) selectSuggestion(s suggestion) {
 	ab.navigate(s.URL)

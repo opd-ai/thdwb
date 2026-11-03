@@ -21,9 +21,6 @@ var (
 	// clTag matches closing tags: </tag>
 	clTag = regexp.MustCompile(`\<\/\w+\>`)
 
-	// selfClosingTag matches self-closing tags: <tag/>
-	selfClosingTag = regexp.MustCompile(`\<.+\/\>`)
-
 	// tagContent matches content between opening and closing tags
 	tagContent = regexp.MustCompile(`(.+?)\<\/`)
 

@@ -38,20 +38,6 @@ func waitForCounter(t *testing.T, get func() int, want int, timeout time.Duratio
 	t.Fatalf("timed out waiting for counter to reach %d, last seen %d", want, get())
 }
 
-// waitForJS polls the window's JS runtime until expr evaluates to want.
-func waitForJS(t *testing.T, wc *WindowContext, expr, want string) {
-	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		v, err := wc.RunJS(expr)
-		if err == nil && v.String() == want {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatalf("timed out waiting for %q == %q", expr, want)
-}
-
 func TestWindowContextEvents(t *testing.T) {
 	wc := newBareWindowContext(t)
 

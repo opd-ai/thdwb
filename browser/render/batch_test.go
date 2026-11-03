@@ -39,8 +39,7 @@ func TestBatchFlushEmpty(t *testing.T) {
 
 func TestBatchAddDuringFlush(t *testing.T) {
 	var applied []*Mutation
-	var b *Batch
-	b = NewBatch(func(ms []*Mutation) {
+	b := NewBatch(func(ms []*Mutation) {
 		applied = append(applied, ms...)
 	})
 

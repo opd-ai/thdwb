@@ -80,7 +80,7 @@ func (eo *extensionOps) QueryTabsFiltered(q extensions.TabQuery) []extensions.Ta
 				continue
 			}
 		}
-		if q.WindowID != nil && 1 != *q.WindowID {
+		if q.WindowID != nil && *q.WindowID != 1 {
 			continue
 		}
 		if q.URL != "" && t.URL != q.URL {
@@ -835,41 +835,6 @@ var webRequestMu sync.Mutex
 // webRequestObserverRegistered tracks whether the global sauce observer has been registered.
 var webRequestObserverRegistered bool
 
-// ensureWebRequestObserver registers a single sauce observer that dispatches to
-// all extension webRequest listeners. It is idempotent.
-// Caller must NOT hold webRequestMu.
-func ensureWebRequestObserver(eo *extensionOps) {
-	webRequestMu.Lock()
-	defer webRequestMu.Unlock()
-	if webRequestObserverRegistered {
-		return
-	}
-	sauce.RegisterWebRequestObserver(func(details sauce.WebRequestDetails) (sauce.WebRequestDetails, error) {
-		webRequestMu.Lock()
-		listeners := make([]webRequestListener, len(webRequestListeners))
-		copy(listeners, webRequestListeners)
-		webRequestMu.Unlock()
-
-		for _, l := range listeners {
-			// Map sauce WebRequestDetails to extensions.WebRequestDetails.
-			ed := extensions.WebRequestDetails{
-				RequestID:    details.RequestID,
-				URL:          details.URL,
-				Method:       details.Method,
-				Headers:      details.Headers,
-				StatusCode:   details.StatusCode,
-				StatusLine:   details.StatusLine,
-				ResponseHeaders: details.ResponseHeaders,
-				Initiator:    details.Initiator,
-				TabID:        details.TabID,
-				Timestamp:    details.Timestamp,
-			}
-			eo.bs.extManager.FireWebRequestEvent(l.extID, l.event, ed)
-		}
-		return details, nil
-	})
-	webRequestObserverRegistered = true
-}
 
 // ensureWebRequestObserverLocked assumes the caller already holds webRequestMu.
 func ensureWebRequestObserverLocked(eo *extensionOps) {

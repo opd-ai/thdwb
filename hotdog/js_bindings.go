@@ -1227,7 +1227,6 @@ func (w *JSWindowWrapper) getLocation(call goja.FunctionCall) goja.Value {
 	return locObj
 }
 
-// getLocalStorage returns the localStorage object for this window's origin.
 func (w *JSWindowWrapper) requestAnimationFrame(call goja.FunctionCall) goja.Value {
 	if len(call.Arguments) < 1 {
 		panic(w.runtime.NewGoError(errors.New("requestAnimationFrame requires a callback argument")))
@@ -1249,15 +1248,6 @@ func (w *JSWindowWrapper) cancelAnimationFrame(call goja.FunctionCall) goja.Valu
 	id := uint64(call.Arguments[0].ToInteger())
 	w.windowCtx.CancelAnimationFrame(id)
 	return goja.Undefined()
-}
-
-func (w *JSWindowWrapper) getLocalStorage(call goja.FunctionCall) goja.Value {
-	return w.getStorage("localStorage")
-}
-
-// getSessionStorage returns the sessionStorage object for this window's origin.
-func (w *JSWindowWrapper) getSessionStorage(call goja.FunctionCall) goja.Value {
-	return w.getStorage("sessionStorage")
 }
 
 // getStorage returns a Storage object for the given type.

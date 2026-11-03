@@ -193,15 +193,6 @@ func (bs *BrowserShell) NetworkOptimizer() *optimize.NetworkOptimizer {
 	return bs.networkOptimizer
 }
 
-// mustTelemetry creates a Telemetry instance, panicking on error.
-func mustTelemetry(config *telemetry.Config, storeDir string) *telemetry.Telemetry {
-	t, err := telemetry.New(config, storeDir)
-	if err != nil {
-		panic(err)
-	}
-	return t
-}
-
 // Init creates the mustard app and window and builds the full UI.
 // If a session file exists, it restores tabs and window size from it.
 func (bs *BrowserShell) Init() error {

@@ -2,7 +2,6 @@ package extensions
 
 import (
 	"fmt"
-	"os"
 	"sync"
 
 	goja "github.com/dop251/goja"
@@ -270,15 +269,6 @@ func (sw *ServiceWorker) String() string {
 	defer sw.mu.Unlock()
 	return fmt.Sprintf("ServiceWorker{extID: %s, path: %s, state: %d, running: %v}",
 		sw.extID, sw.path, sw.state, sw.running)
-}
-
-// loadServiceWorkerScript reads the service worker script from disk.
-func loadServiceWorkerScript(path string) (string, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return "", fmt.Errorf("read service worker script %s: %w", path, err)
-	}
-	return string(data), nil
 }
 
 // installSelfGlobal installs the "self" global object on the VM so service

@@ -150,11 +150,7 @@ func parseCSP(policy string) *CSPPolicy {
 		if _, exists := csp.Directives[name]; exists {
 			continue
 		}
-		sources := make([]string, 0, len(parts)-1)
-		for _, src := range parts[1:] {
-			sources = append(sources, src)
-		}
-		csp.Directives[name] = sources
+		csp.Directives[name] = parts[1:]
 	}
 
 	return csp
