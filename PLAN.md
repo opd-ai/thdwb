@@ -1,204 +1,176 @@
-# AUDIT_REPORT.md — thdwb (The Hotdog Web Browser): Comprehensive Technical Audit
+# THDWB Browser Engine Audit Report
 
-**Audit date:** 2026-11-01 · **Auditor:** independent re-audit (this document supersedes prior in-repo audit drafts)
-**Repository:** `github.com/opd-ai/thdwb` (module `github.com/danfragoso/thdwb`)
-**HEAD audited:** `33eebcd` ("fix(extensions): close implementation gaps between PLAN.md and codebase"), 562 commits
-**Environment:** Linux amd64, Go 1.23.10 host → go1.26.0 toolchain (GOTOOLCHAIN=auto), X display :0, staticcheck 2025.1.1 (go1.26 build)
+**Audit date:** 2026-11-03
+**HEAD audited:** `384313d` (branch `master`, `github.com/opd-ai/thdwb` local clone at `~/go/src/github.com/danfragoso/thdwb`)
+**Method:** three parallel debugging passes (memory/DOM/rendering · off-by-one/boundaries · concurrency/JS/error-handling) over 255 Go files / ~61k LOC, with empirical probes against the pinned `goja` (v0.0.0-20261026132650) and `cascadia` (v1.3.5) versions in `go.sum`.
 
-**Method:** All promises extracted from the *current* README.md and PLAN.md; every material claim verified by **execution** (build, full test suite, race detector, static analysis, live GUI runs, headless engine probes against real hosts, pixel-level render measurement, binary linkage inspection) plus file:line code citation. Full evidence: FUNCTIONAL_TEST_RESULTS.md.
+## Executive Summary
 
----
-
-## 1. Executive Summary
-
-**Verdict: PARTIALLY.** thdwb does **not** deliver a "working, usable" browser, but it **does** deliver what its README actually promises for 2026 — a pure-Go, well-tested, well-documented *learning tool* with substantial (if disconnected) browser-engine components and a broad in-process WebExtensions platform.
-
-| Question | Answer | Confidence |
-|---|---|---|
-| Working, usable browser? | **NO** — binary panics on first render frame (2/2 repro); 100% of real-world fetches fail; no code path displays web content | HIGH (execution-verified) |
-| Pure Go? | **YES** — no CGo in source; binary links only libc/libdl/libpthread; Ebitengine via purego; GL dlopen'd at runtime | HIGH |
-| Great learning tool? | **YES** — 7 named subsystems as tested libraries (63–97% cov), 1,023 test functions, real textbook, complete docs | HIGH |
-| "100% Firefox WebExtensions compatible" (PLAN.md)? | **NO** — 18 chrome.* namespaces implemented & unit-tested; 66% of E0–E12 checklist items genuinely delivered, 29% partial/stub/isolated, 5% unverifiable; absolute success criteria (top-100 extensions, 99.9% uptime, no crashes) unmet | HIGH |
-
-**The one-sentence technical finding:** the browser is a collection of individually-tested, individually-reasonable components — network, parser, CSS, layout, graphics, JS, UI, extensions — **whose interconnections are either missing or broken**: the runtime parse path bypasses the "own" HTML parser, CSS and layout are never invoked, the layout engine renders zero pixels even when forced, the network transport fails on every non-local host and swallows the error, the UI crashes on frame 1, and the content area is a literal placeholder.
-
-**Maturity rating: proof-of-concept** for the browser product; **early-alpha quality** for the component libraries and extension platform; **beta quality** for documentation and tooling. (Details: GAP_ANALYSIS.md §4.)
-
-**Why the test suite is green while the product is broken:** tests exercise *library internals* (fixtures, localhost httptest servers, in-process state managers, geometry invariants) — none of the 1,023 test functions launches the binary, fetches a real host, or asserts a rendered pixel. The four critical defects each sit exactly on the seams between components, which no single-component test covers.
-
----
-
-## 2. Project Overview
-
-**What it is (today):** a single-Go-module repository (~28k non-test LOC, 253 Go files) implementing, per its three-layer design (PLAN.md:599-612):
-1. **thdwb library** — engine components: `ketchup` (HTML→DOM adapter, 469 LOC), `mayo` (CSS parse/style, 1,023), `bun` (layout/paint, 795), `gg` (2D graphics, 1,838), `sauce` (network/cookies/HSTS/CORS/TOFU, 2,232), `hotdog` (DOM + goja JS runtime + storage + CSP, 5,495), `mustard` (UI toolkit on Ebitengine, 3,249), plus `webview`/`platform` (dead code) and `profiler`.
-2. **Extension runtime** — `browser/extensions/` (53 files): WebExtensions API facade (18 `chrome.*` namespaces), manifest v2/v3 parser, container manager, sandboxes, xpi/updater, service workers, crash recovery, multiprocess (unwired), CDP-style debug server (unwired), profiler, test harness.
-3. **Browser shell** — `browser/shell/` (40 files): tab manager, address bar (autocomplete + security indicator), menu bar, bookmarks/history sidebars, settings, new-tab page with container selector, extension toolbar, session restore, keyboard shortcuts.
-
-**Stated goals (current README.md):** "from-scratch web browser written entirely in Go" with own ketchup/mayo/bun/gg/mustard/sauce/hotdog; dependencies "primarily Ebitengine, extant third party Go libraries preferred"; **"Not stable, not spec-compliant, not production-ready — but a great learning tool!"** (README.md:16).
-**Stated goals (current PLAN.md):** "freestanding consumer browser … 100% Firefox WebExtensions API compatibility, including the Container Tabs API", phases E0–E12, all checklists `[x]`.
-
-**Evolution note:** the repo has grown far beyond the audit brief's description (which referenced an older 8-phase engine PLAN and an "only OpenGL and GLFW" README). The audit validates the *current* tree; where the brief and the tree disagree, the tree wins (and the discrepancies are recorded in BASELINE.md).
-
----
-
-## 3. Feature Matrix (condensed — full version: FEATURE_MATRIX.md)
-
-### Engine (README R1–R8)
-| Component | Status | Key evidence | Maturity |
-|---|---|---|---|
-| ketchup (own HTML parser) | **Disconnected** — live path uses `x/net/html` (hotdog/node.go:783); 0 non-test importers | 97.3% cov as lib | lib beta / wiring absent |
-| mayo (own CSS engine) | **Disconnected** — reachable only via ketchup; live DOM unstyled; `querySelector` always null (node.go:414) | 95.9% cov as lib | lib beta / wiring absent |
-| bun (own layout) | **Disconnected + non-functional** — 0 importers; **0 visible pixels** when forced (zero-width boxes non-exp; zero-height exp) | 88.0% cov as lib | broken-as-renderer |
-| gg (2D graphics) | Works for UI chrome | 63.5% cov | experimental |
-| mustard (UI toolkit) | **Crashes frame 1** (frame.go:90); orientation branches transposed (widget.go:46-82) | 77.3% cov | broken at runtime |
-| sauce (network) | **Broken for all non-local hosts** (double transport wrap); errors swallowed as success; localhost fine | 78.7% cov | beta (localhost) / broken (web) |
-| hotdog (JS runtime) | Works headlessly; `document.title` = function (js_bindings.go:184); querySelector null; unstyled DOM | 82.8% cov | beta (binding defects) |
-| webview / platform | **Dead code** (0 importers; GPUInfo hardcoded) | — | placeholder |
-
-### WebExtensions (PLAN E0–E12 — all checklists `[x]`)
-| Phase | Delivered | Notes |
-|---|---|---|
-| E0–E3 (arch, messaging, containers, scripting/menus/permissions/alarms/i18n) | 75–82% | in-process, unit-tested, passing; containers proven at map level only |
-| E4 (WebRequest/notifications/downloads) | 57% | downloads write real files (via `http.DefaultClient` — the one working network path); notifications in-memory only |
-| E5 (content-script sandbox) | 50% | per-extension shared VM (not per-page); isolation test simulates page with a second sandbox |
-| E6 (xpi/install/update) | 80% | signature "validation" = META-INF detection only, no crypto verify |
-| E7 (browser UI) | 75% as UI code / **0% usable** | full chrome builds + unit-tests; crashes at runtime; no page display |
-| E8 (perf/testing/stability) | 64% | components real + wired; "major websites render" claim supported only by local fixtures |
-| E9 (release) | 50% | docs excellent; gallery/installer/autoupdate isolated; external infra unverifiable |
-| E10 (Manifest v3/sync/WebDriver) | 44% | SW lifecycle real; **storage.sync = Noop stub**; WebDriver unwired |
-| E11 (scale) | 25% | tab suspension wired; **multiprocess unwired** (13.8% cov, 0 consumers) |
-| E12 (DX) | 50% | hot reload + profiler real; debug server unwired |
-
-**Totals: 67/102 items (66%) fully delivered · 30 (29%) partial/stub/isolated · 5 (5%) unverifiable. "100% compatible": not met.**
-
----
-
-## 4. Critical Gaps and Limitations (prioritized)
-
-**P0 — blocks the product's core purpose (all execution-verified):**
-1. **Startup panic** — `mustard/frame.go:84-92`: child layout computed from visible-only set, indexed by the full child list → `panic: index out of range [6] with length 6` on frame 1, every launch, settings-independent (reproduced 2/2). Fix: iterate the *same* list the layout was computed from (or skip hidden children consistently).
-2. **100% real-world fetch failure** — `sauce/sauce.go:949` + `:968` call `requestClient` twice, so the inner "base" transport is an `*originCookieTransport`; `newVerifiedTransport`'s `*http.Transport` assertion (sauce/certificate_validation.go:36-39) fails for every HTTPS request — and `upgradeHTTPURL` forces every non-localhost `http://` to `https://`. Measured failure: `Get "https://example.com": configure HTTPS transport: HTTPS requires a configurable *http.Transport, got *sauce.originCookieTransport` in <300 µs. Fix: wrap once (drop the second `requestClient` before `.Do`), or make `newVerifiedTransport` accept an already-wrapped base.
-3. **Silent failure swallowing** — on fetch error, `Resource.Code` stays 0 (sauce/sauce.go:965-970); `LoadURL` rejects only `>= 400` (window_context.go:342). DNS/TLS/timeout → "page loaded successfully" with an internal error HTML. Fix: set a sentinel Code (e.g., 0 → propagate error) and surface it to the shell.
-4. **No web content rendering** — shell content area is a placeholder (shell.go:344-347); `bun.RenderDocument` has 0 call sites; `WindowContext` has no render method; `webview` has 0 importers. Fix: create a per-tab `WindowContext`, call `LoadURL`, then `bun.RenderDocument` into the tab's surface (the `webview` package was evidently built for this and can be revived).
-
-**P1 — core subsystem defects (fix required before P0 items are meaningful):**
-5. Live parse path bypasses ketchup; `HTMLRoot`/`StyleSheets` never set → **CSS never applied; `querySelector`/`querySelectorAll` always null in page JS** (node.go:414,448; ketchup/parser.go:20; mayo/mayo.go:397-409). Fix: route `LoadHTML` through ketchup (or set HTMLRoot/StyleSheets in the x/net path).
-6. `bun` renders **0 pixels** on both paths: zero-width boxes (width inheritance from un-laid-out parent, bun/bun.go:11-20), zero-height flex boxes, and `paintBlockElement` sets color after `DrawRectangle` (bun/block.go:13-16). Add pixel-output tests (they would have caught all three).
-7. Mustard orientation branches transposed (widget.go:46-82) — chrome layout wrong even post-panic-fix.
-8. `document.title` bound as a function (js_bindings.go:184) — use `DefineAccessorProperty` as done for `body`.
-9. Content-script sandbox: one shared VM per extension across tabs (manager.go `SandboxFor`) vs PLAN E5's per-page isolation; isolation test simulates the page (content_script_sandbox_test.go:183-198).
-10. `.xpi` signature "validation" does no cryptographic verification (xpi.go:105-111).
-
-**P2 — checklist-vs-reality gaps (stubs/isolated):** storage.sync Noop (storage_sync.go:27-43) · multiprocess unwired · WebDriver/gallery/installer/debug-server unwired · notifications in-memory · webview/platform dead.
-
-**P3 — hygiene:** 25 staticcheck findings (mostly U1000 dead code) · stale README prereqs (GLFW/go-gl, Go 1.21+) · stale Makefile "workspace" comment · go.mod replace block vestigial · CI go-version 1.25 vs go.mod 1.26.0 · `OPTIMIZED_AUDIT_PROMPT.md` + stale `coverage_*.out` committed in tree · textbook doesn't disclose the disconnected pipeline.
-
-**Explicit non-gaps (by design, per README.md:16 / PLAN.md:596-597):** not spec-compliant, not production-ready, mobile out of scope, browser-level (not OS-level) container isolation, unsigned MVP gallery.
-
----
-
-## 5. Code Quality Assessment (full detail: QUALITY.md)
-
-- **Error handling:** sensible typed-error model at library level; four defects break it in the product (crash, swallowed fetch errors, silent layout degeneracy, discarded assignment at extension_ops.go:161).
-- **Static analysis:** `go vet` clean; staticcheck 25 findings (mostly dead code — corroborating the unwired-scaffolding finding); no data races under `-race` (29 packages).
-- **Tests:** 1,023 functions, all green; combined coverage 69.1% (per-package 13.8%–100%). Coverage measures internals, not behavior: no test launches the binary, fetches a real host, or asserts pixels. The "website rendering integration tests" (E8) run local fixtures only.
-- **Logging/debugging:** profiler, console collector, inspector, network monitor, error logger, opt-in telemetry — all real, tested, and wired into the shell; currently low practical value (nothing to observe until P0 is fixed).
-- **Modularity:** clean package boundaries, good interface seams (Driver, TabOperations, SyncProvider…), no import cycles; the *wiring* between layers is where it fails.
-- **Documentation:** genuinely excellent — 8-chapter textbook at claimed reading level, migration guide, release/security/support docs, per-package API comments. Accuracy gap: describes the intended pipeline, not the disconnected reality.
-
----
-
-## 6. Functional Test Results (condensed — full outputs: FUNCTIONAL_TEST_RESULTS.md)
-
-| Check | Result |
+| Severity | Count |
 |---|---|
-| `make build` (CGO_ENABLED=0) | ✅ 21.6 MB binary, ~60 s; `ldd`: libc/libdl/libpthread only |
-| `make test` | ✅ 28 packages ok, 0 fail |
-| `go test -race work` | ✅ 29 packages, no data races |
-| `go vet ./...` | ✅ clean |
-| staticcheck 2025.1.1 (go1.26) | ⚠️ 25 findings |
-| Coverage (fresh) | 69.1% combined |
-| **Live run `bin/thdwb` (×2, ±settings)** | ❌ **panic frame.go:90, first frame, no window** |
-| ketchup→mayo→bun render probe | ❌ **0 non-white pixels** (both layout paths) |
-| hotdog.LoadHTML probe | ⚠️ DOM+JS work; title=function, querySelector=null, unstyled |
-| Real-host fetch probes (example.com, 404, .invalid, self-signed.badssl.com) | ❌ all fail <300 µs (transport bug); **LoadURL returns nil error** for unreachable/404 |
-| Malformed HTML | ✅ no panic, DOM built |
-| SOP/CSP/container-cookie unit suites | ✅ pass (live CORS blocked by transport bug) |
-| Tabbed/multi-window live | ⛔ unverifiable (crash); state-level tests pass |
+| Critical | 1 |
+| High | 18 |
+| Medium | 13 |
+| Low | 3 |
+| **Total** | **35** |
+
+**Rendering/execution stability status:**
+
+- **The live render path is reachable and partially wired** (shell `loadTabContent` → per-tab `WindowContext.LoadURL` → ketchup re-parse → `bun` layout into the web-content canvas), but **layout crashes deterministically on common inputs**: any node with the default style (`FontWeight: 0`) dereferences a nil font face (`bun/fonts.go` only maps 300/400/600/700/800 → `gg.Context` holds a nil face → `MeasureString` panics); `RenderDocument` and `createFlexNodes` nil-deref on fresh documents (`RenderBox`/`Style` unset).
+- **The concurrency model is unsound for multi-window/multi-extension operation.** The one Critical finding is `window.postMessage` delivering into another window's goja VM **without that window's runtime lock**; `chrome.alarms` and the `WebRequest` observer list have the same class of bug. A custom reentrant mutex keyed on goroutine-ID can deadlock permanently if the owner goroutine dies, and `removeEventListener` is a verified silent no-op (closure code-pointers are per-instance in modern Go).
+- **Long-session memory growth is guaranteed**, not possible: per-navigation `Documents`/`nodeWrappers`/window-listener accumulation is never released, tab close never calls `WindowContext.Destroy()`, the global `ResourceCache`/`ImgCache` have no eviction **and no lock** (data race under concurrent fetches), and every `CanvasWidget` allocates a 12000px-tall drawing buffer (~92 MB at 1080p width).
+- **Error handling converts failures into silent success or crashes:** fetch/XHR classify transport errors by `strings.Contains(body, "error")` (any page mentioning "error" fails), JS exceptions in event listeners / rAF / alarm callbacks are discarded with `_, _ =` (and a *non-catchable* Go panic in a timer/network goroutine kills the process — verified against goja's `runWrapped`), and the error page interpolates raw error strings into HTML.
+- Already fixed since the 2026-11-01 architecture audit (verified at this HEAD): double-wrapped HTTPS transport, `Code=0`-on-error swallowing (`Code=-1` now, `LoadURL` rejects `<= 0`), `document.title` accessor binding, first-frame `Frame.draw` index-out-of-range, and the `VerticalFrame`/`HorizontalFrame` orientation swap.
+
+## Findings by Subsystem
+
+### Memory, DOM & Rendering Issues
+
+| # | File:Line:Function | Severity | Root cause | Fix |
+|---|---|---|---|---|
+| 1.1 | `hotdog/window_context.go:315:LoadHTML` (+897-899 `Destroy`) | High | Each navigation appends to `wc.Documents` and re-binds the persistent goja realm, but old DOM trees, `nodeWrappers`, `nodeEventRegistry` and window-level `eventRegistry` entries are never released, so every page load leaks the full previous DOM + JS closures. | Reset per-document state on navigation (clear wrappers/events referencing the old root, or create a fresh goja runtime per document): `func (wc *WindowContext) loadDocument(doc *Document) { wc.clearJSBindingsFor(wc.ActiveDocument); wc.Documents = wc.Documents[:len(wc.Documents)-1]; ... }` |
+| 1.2 | `browser/shell/shell.go:508-511:loadTabContent` | High | Per-tab `WindowContext` is created in `tabWindowContexts[tab.ID]` but no close path deletes the map entry or calls `wc.Destroy()`, so the whole engine state (goja VM, DOM, cookie jar, HTTP client, rAF timer) of every tab ever opened is retained, and pending fetch/XHR goroutines keep it alive. | Wire tab close to `delete(bs.tabWindowContexts, tab.ID); wc.Destroy()` and cancel in-flight network work (see 3.3). |
+| 1.3 | `hotdog/js_bindings.go:1575,1791:fetch/XMLHttpRequest.send` + `sauce/sauce.go:796` (global client) | High | `go func()` network workers use `http.Client`s with **no `Timeout`** and no cancellation context, so a stalled peer leaks a goroutine per request and leaves the JS promise/XHR object unsettled forever, even after the window is destroyed (`ScheduleAnimationFrame` then silently drops the callback). | Set a timeout and propagate cancellation: `wc.httpClient = &http.Client{Jar: ..., Timeout: 60 * time.Second}`; build requests with `http.NewRequestWithContext(wc.ctx, ...)` and `wc.ctx, wc.cancel = context.WithCancel(context.Background())` invoked in `Destroy()`. |
+| 1.4 | `hotdog/js_bindings.go:1132:appendChildNode` (+`node.go:264 MarkDirty`, `xpath.go:6 getXPath`) | High | DOM mutation never checks whether the inserted node is an ancestor of the target, so `el.appendChild(el.parentElement)` creates a Parent/Children cycle that overflows the stack in `MarkDirty`/`Print`/`getXPath` (infinite recursion) and corrupts every tree walk. | Reject cycles before linking: `func (node *NodeDOM) appendChildNode(child *NodeDOM) { for a := node; a != nil; a = a.Parent { if a == child { return } } ... }` |
+| 1.5 | `hotdog/node.go:1003:CloneNode` | Medium | The clone copies the `Style *Stylesheet` **pointer**, so a cloned node aliases the original's stylesheet; later cascade merges (`mergeStylesheet` rewrites fields in place) change the original element's computed style. | Deep-copy the stylesheet: `if node.Style != nil { s := *node.Style; clone.Style = &s }` (also clone `ColorRGBA` sub-pointers). |
+| 1.6 | `hotdog/node.go:851:SetTextContent` | Medium | `SetTextContent` orphans children without the `nodeWrappers` cleanup that `SetInnerHTML`/`removeChildNode` perform, so removed nodes (and their goja wrapper objects) stay reachable in the wrapper map forever. | Reuse the existing cleanup: `if node.WindowCtx != nil && node.WindowCtx.nodeWrappers != nil { delete(node.WindowCtx.nodeWrappers, child) }` in the removal loop. |
+| 1.7 | `mustard/canvas.go:170:ensureContexts` | High | Every canvas resize allocates `gg.NewContext(width, 12000)` — a hard-coded 12000px-tall offscreen buffer (~92 MB per widget at 1920px width) for the scrollable drawing context, which multiplies across tabs/canvases. | Size the drawing buffer to real content: `h := max(viewportHeight, contentHeight)` (or `viewportHeight * 2` as an upper bound) instead of the constant `12000`. |
+| 1.8 | `bun/listItem.go:18:paintListItemElement` | Medium | Only `Style.BackgroundColor` is nil-checked before `node.Style.Color.R` is dereferenced, so a `<li>` without an explicit color panics the paint pass. | `color := node.Style.Color; if color == nil { color = &hotdog.ColorRGBA{R: 0, G: 0, B: 0, A: 1} }`. |
+| 1.9 | `bun/inline.go:134-140:calculateInlineLayout` | Medium | The fallback `im, _, _ = image.Decode(assets.ErrorImage())` ignores the decode error, so on failure `im` is nil and `im.Bounds()` panics inside layout for a broken `<img>`. | `if im, _, err = image.Decode(bytes.NewReader(assets.ErrorImage())); err != nil { return }`. |
+| 1.10 | `gg/context.go:116-119:SetImage` | Medium | `SetImage` swaps the backing `*image.RGBA` and width/height but keeps the old `raster.NewRasterizer(w,h)`, so all later Fill/Stroke rasterize into stale scanline bounds (edges silently unpainted, `Clear()` fills the new image) — a paint-buffer/bounds mismatch (latent: mustard recreates contexts instead). | Recreate the rasterizer: `dc.rasterizer = raster.NewRasterizer(dc.width, dc.height)`. |
+| 1.11 | `hotdog/window_context.go:632:SetLayoutCache` | Medium | `layoutCache` has no size limit, no TTL, and is not cleared on navigation (only `Destroy`), so a long-lived tab grows it without bound with per-element layout entries. | Bound it (e.g., LRU of N entries) and `ClearLayoutCache()` inside the navigation reset of 1.1. |
+| 1.12 | `sauce/sauce.go:799-800,822-834,851-857` (global `cache`/`imageCache`) | Medium | The process-global `ResourceCache`/`ImgCache` append on every GET/image with no eviction, LRU, or dedup (`AddImage` re-appends existing keys), so memory grows for the life of the process on any real browsing session. | Replace the slice with a size-bounded map (LRU or max-count with eviction); dedup by key on add. |
+
+### Off-by-One & Boundary Issues
+
+| # | File:Line:Function | Severity | Root cause | Fix |
+|---|---|---|---|---|
+| 2.1 | `hotdog/structs.go:82-87:History.PopNext` **and** `sauce/sauce.go:698-703:History.PopNext` | High | `PopNext` moves the last forward page to the back stack and then sets `nextPages = nil`, discarding the entire remaining forward history, so forward navigation after multiple backs is destroyed. | `h.previousPages = append(h.previousPages, h.nextPages[len(h.nextPages)-1]); h.nextPages = h.nextPages[:len(h.nextPages)-1]` (identical fix in both copies; better: delete the duplicate `sauce.History` and use one type). |
+| 2.2 | `hotdog/window_context.go:377-386:functionKey` + `js_bindings.go:530,1380:removeEventListener` | High | `functionKey` uses `reflect.Value.Pointer()` on the closure returned by `goja.AssertFunction`; in the current toolchain every closure instance gets a distinct code pointer (empirically verified: register key `4782464` vs remove key `4782432` for the same JS function), so the removal key can never match the registration key and `removeEventListener` is a **silent no-op** — listeners accumulate and double-fire across re-registrations. | Key listeners by goja object identity instead of Go function pointer: `nodeWrapperSymbol`-style symbol on the listener, or keep `map[goja.Value]func` and compare the JS object: `func (w *JSDOMWrapper) removeEventListener(...) { if w.listenerRegistry[eventType][listener] { ... } }`. |
+| 2.3 | `mayo/mayo.go:265:parseInlineStylesheet` | High | `strings.ReplaceAll(styleString, " ", "")` deletes **all** whitespace before splitting declarations, so multi-value inline shorthand collapses: `style="margin: 10px 20px"` becomes `margin:10px20px` and parses as a single value `10px` — every space-bearing inline value (margin/padding/flex-basis/box-shadow) is corrupted. | Split on `;` first, then `strings.SplitN(decl, ":", 2)` per declaration, trimming only the outer whitespace: `for _, decl := range strings.Split(styleString, ";") { if p, v, ok := strings.Cut(decl, ":"); ok { mapPropToStylesheet(sheet, []string{strings.TrimSpace(p), strings.TrimSpace(v)}) } }`. |
+| 2.4 | `mayo/mayo.go:84-112:mapSizeValue/mapIntValue` | Medium | The number regexes `[0-9]+(\.[0-9]+)?` match only unsigned digits, so negative values (`margin-top: -5px`, `z-index: -1`) are silently made positive, and units (`100%`, `2em`) are silently reinterpreted as raw px. | Parse with sign and record units: `f, err := strconv.ParseFloat(strings.TrimSuffix(num, "%"), 64)` then resolve `%`/`em` against the parent box (or, minimum, preserve the sign and reject unknown units explicitly). |
+| 2.5 | `mayo/css.go:31-35:ParseStylesheet` | High | `cascadia.Parse` **rejects comma group selectors** (`Parse("a, b")` → "3 bytes left over", verified), so any rule like `#nav a, .foo {…}` is stored with zero specificity `[0 0 0]` while `cascadia.Compile` in `ApplyStylesheets` still matches it — the group's highest-specificity arm loses to later low-specificity rules (cascade precedence miscalculated). | On parse failure, fall back to `cascadia.Compile` and compute specificity as the max over the group's members, or split on top-level commas and parse each arm: `parts := splitTopLevel(sel, ','); maxSp = max(parse(part).Specificity())`. |
+| 2.6 | `hotdog/node.go:706-709:GetTextContent` | High | For non-text nodes the method returns `node.Content`, which is empty for elements, so `element.textContent` is **always `""`** instead of the concatenated descendant text (violates the DOM spec and breaks page JS that reads text). | Recurse: `func (node *NodeDOM) GetTextContent() string { if node.Type == NodeTypeText { return collapse(node.Content) }; var b strings.Builder; for _, c := range node.Children { b.WriteString(c.GetTextContent()) }; return b.String() }`. |
+| 2.7 | `sauce/sauce.go:1106-1112:GetImage` | High | Data-URL support is hard-coded to the 22-byte prefix `data:image/png;base64,` and decodes with `base64.RawStdEncoding`, so (a) any other `data:` image (`jpeg`, `gif`…) falls through to `http.NewRequest("GET", "data:...")` and fails, and (b) **padded** base64 (the standard, spec-conformant encoding) fails `RawStdEncoding` decode — typical `<img src="data:image/png;base64,iVBOR…=>">` renders the error stand-in. | Detect `strings.HasPrefix(imgUrl, "data:")`, extract the MIME, and decode permissively: `b64 := strings.TrimRight(s, "="); raw, err := base64.StdEncoding.DecodeString(s); if err != nil { raw, err = base64.RawStdEncoding.DecodeString(b64) }`. |
+| 2.8 | `gg/wrap.go:12-26:splitOnSpace` | Low | The `i > 0` guard skips the first space-run boundary, so a line **starting with whitespace** yields a field slice whose word/separator pairing is shifted — the leading space is measured and rendered as part of the first "word". | Strip leading whitespace per line before pairing (`line = strings.TrimLeftFunc(line, unicode.IsSpace)`), or build explicit word/sep pairs. |
+| 2.9 | `bun/listItem.go:30:calculateListItemLayout` | Low | `node.RenderBox.Width = node.Parent.RenderBox.Width - 30` is not clamped, so narrow parents produce **negative** box widths that flow into `DrawRectangle`/`MeasureStringWrapped` as degenerate geometry. | `if w := node.Parent.RenderBox.Width - 30; w > 0 { node.RenderBox.Width = w } else { node.RenderBox.Width = 0 }`. |
+| 2.10 | `gg/context.go:569-571:SetPixel` | Medium | `SetPixel` calls `dc.im.Set(x, y, …)` with no bounds check; `image.RGBA.Set` **panics** on out-of-range points, so any renderer emitting a negative/oversized coordinate (focus-ring offset `box.Left-2`, off-screen nodes) crashes the paint pass. | `if x < 0 || y < 0 || x >= dc.width || y >= dc.height { return }; dc.im.Set(x, y, dc.color)`. |
+| 2.11 | `gg/util.go:89-108:parseHexColor` | Low | Unsupported hex lengths (4/5/7 digits) and malformed input hit no branch (the `Sscanf` errors are discarded), silently yielding `{0,0,0,255}` — any bad color string paints **opaque black** instead of failing loudly. | Validate `len(x) ∈ {3,6,8}` and propagate/ignore-with-log; on `Sscanf` failure fall back to a documented default or return an error to `SetHexColor`. |
+
+### Concurrency, JavaScript & Error Handling Issues
+
+| # | File:Line:Function | Severity | Root cause | Fix |
+|---|---|---|---|---|
+| 3.1 | `hotdog/js_bindings.go:1432-1440:postMessage` | **Critical** | After `eventObj` is built on `targetWC`'s goja runtime, `targetWC.EmitEvent("message", eventObj)` runs the target's JS listeners **without acquiring `targetWC.jsRuntimeMu`**, so two windows posting to each other (or a post racing any target-side RunJS/rAF) drive two goja VMs concurrently — goja is not thread-safe → data race / heap corruption (the in-code comment "Goja is internally synchronized" is false). | Serialize on the target's lock, mirroring `dispatchMouseEventAt`: `targetWC.jsRuntimeMu.lock(); defer targetWC.jsRuntimeMu.unlock(); targetWC.EmitEvent("message", eventObj)` (the lock is reentrant, so same-window posts keep working). |
+| 3.2 | `hotdog/window_context.go:23-82:reentrantMutex` | High | The mutex owner is the parsed **goroutine ID**: if the owner goroutine dies while holding (an unrecovered panic in a JS-bound function re-panics — see 3.7), `owner` is stuck non-zero and every other goroutine blocks in `cond.Wait()` forever; additionally Go **reuses goroutine IDs**, so a future goroutine can be misidentified as the owner; a parse failure returns ID `0`, which is the "unowned" sentinel. | Do not hand-roll reentrancy on goroutine IDs: either (a) route all goja access through one per-window dispatcher goroutine (mailbox) so a plain `sync.Mutex` suffices, or (b) keep a `sync.Mutex` + `owner uintptr` token checked in a `defer func(){ if owner==token { broadcast } }()` that also unlocks on panic. |
+| 3.3 | `hotdog/window_context.go:881-929:Destroy` (vs `468:EmitEvent`, `871:SetInputState`) | High | `Destroy` nils `eventRegistry`/`nodeEventRegistry`/`inputState` **without holding `eventMu`** (and `inputState` has no mutex at all), racing any concurrent `EmitEvent`/`RegisterEvent`/`SetInputState` — concurrent map read/write panics or lost events during tab close. | Take the locks during teardown: `wc.eventMu.Lock(); wc.eventRegistry = nil; wc.nodeEventRegistry = nil; wc.eventMu.Unlock()`; add an `inputMu` for `inputState`; set `destroyed` first under `animationFrameMu` and gate all map writes on it. |
+| 3.4 | `hotdog/window_context.go:434-444,463-474:EmitNodeEvent/EmitEvent` | High | Handlers are read as a slice **header** (shared backing array) and iterated outside the lock, while `RemoveEventByKey`/`RemoveNodeEventByKey` filter in place via `handlers[:0]` — a concurrent removal (or a handler that removes itself) mutates the array mid-iteration: data race, skipped/duplicated handler calls. | Snapshot: `handlers := make([]eventHandler, len(reg[eventName])); copy(handlers, reg[eventName])` before unlocking, and iterate the copy. |
+| 3.5 | `hotdog/js_bindings.go:1655-1667:XMLHttpRequest.updateReadyState` (+`1761:send`) | High | `open()` calls `updateReadyState(OPENED)`, but the "readyState only increases" clamp maps it back to the current state, so after **any** finished or failed request (readyState ≥ DONE) the object can never return to OPENED and the next `send()` throws `InvalidStateError` — every XHR object is single-use, breaking standard retry/reuse patterns. | Reset in `open()` instead of clamping downward transitions: `readyState = OPENED; status = 0; responseText = ""; ...` (keep the monotonic guard only *within* a single send lifecycle). |
+| 3.6 | `hotdog/js_bindings.go:1588,1830:fetch/XHR error detection` | High | Transport failure is detected by `resp.Code == 0 && strings.Contains(resp.Body, "error")`, so any **legitimate** response body containing the substring "error" (error pages, docs, search results) is misclassified as a transport error and rejected. | Use the typed signal instead of body sniffing: `if resp.Code < 0 { scheduleFetchError(...) }` (`sauce` already sets `Code = -1` on transport/read errors). |
+| 3.7 | `hotdog/js_bindings.go:524,1240,1374,1786` (+`browser/extensions/chrome_api.go:2790`) | Medium | Every JS callback invoked from a Go goroutine (event listeners, rAF callbacks, window listeners, XHR listeners, alarm listeners) discards the returned error with `_, _ =`, so JS exceptions in page scripts are **silently swallowed** (no console.error, no report); worse, goja's `runWrapped` **re-panics** non-catchable Go panics, so a nil-deref in any bound Go function running from a timer/network goroutine (outside the VM call stack) kills the whole process. | Route errors to the page and contain panics: `if _, err := listener(...); err != nil { c.error(err) /* console.error */ }; defer func(){ if r := recover(); r != nil { c.error(fmt.Errorf("uncaught in %s: %v", hook, r)) } }()`. |
+| 3.8 | `browser/extensions/chrome_api.go:2783-2793:FireAlarm` (+`manager.go:140` `AfterFunc`) | High | `chrome.alarms` fires the extension's `onAlarm` listeners directly on the timer goroutine — `cb(...)` and `c.vm.ToValue(...)` touch the goja runtime with no `jsRuntimeMu` — racing any concurrent page/extension JS execution on the same VM. | Dispatch through the owning window's serialized path: `wc.jsRuntimeMu.lock(); defer wc.jsRuntimeMu.unlock()` around the listener loop (or queue the fire onto the window's frame queue). |
+| 3.9 | `sauce/sauce.go:758-790:webRequestObservers` | High | The global `webRequestObservers` slice is appended (extension registration), nil-slotted (unregister) and ranged (inside every `RoundTrip`) with **no synchronization**, and unregister never shrinks the slice — a data race under concurrent extension install + fetch, plus unbounded growth of dead slots. | Guard with `sync.RWMutex` (copy under RLock for iteration) and actually remove: `observers = append(observers[:id], observers[id+1:]...)`. |
+| 3.10 | `sauce/sauce.go:723-735:loadErrorPage` | Medium | The error string is interpolated raw into `<h1>` without escaping; `http.Client`/`url.Parse` error text embeds the **attacker-controlled URL**, so a crafted load (`http://x?m="<img src=x onerror=…>"`) injects markup into the browser's own error page (self-XSS on the internal origin). | `"<h1>" + html.EscapeString(err) + "</h1>"` (`html` = `net/url`-style `html.EscapeString` from `golang.org/x/net/html` or a local escaper). |
+| 3.11 | `mustard/frame.go:70-108:Frame.draw` (ebiten frame loop) | Medium | The per-frame draw path (and everything it calls: `bun` layout/paint, `gg` operations) runs with **no panic recovery** anywhere in the UI loop — the only `recover()` in the tree is in `browser/extensions/crash/recovery.go` — so any rendering bug (nil font, nil `Style`, negative box, out-of-bounds pixel — see 1.8/1.9/2.10) becomes a process crash instead of a dropped frame. | Wrap the frame body: `defer func(){ if r := recover(); r != nil { logRenderPanic(r) } }()` in the ebiten `Layout`/`Update`/`Draw` entry, and report to the browser's error logger. |
+| 3.12 | `hotdog/window_context.go:318,144-288:LoadHTML/InitJSRuntime` | Medium | The goja realm is created once per window and **reused across navigations**: `window`-level event listeners, globals and content-script state registered by the previous page survive into the new page (real browsers install a fresh realm per document), so stale handlers fire against the new DOM and state accumulates per navigation. | On navigation, either reset the realm (`wc.jsRuntime = goja.New()` + rebind) or, minimally, clear `eventRegistry`/window listeners and re-run `InitJSRuntime` only after detaching old document references. |
+
+## Critical Findings
+
+### C-1 · `postMessage` cross-window delivery without the target VM lock (heap corruption / crash)
+- **Subsystem:** Concurrency / JavaScript — `hotdog/js_bindings.go:1432-1440` (`postMessage`)
+- **Why critical:** two windows posting to each other (or a post racing a target-side `requestAnimationFrame`/`RunJS`) execute goja on two goroutines against the same (or two) VMs. Goja is explicitly not thread-safe; the observable failures are data races, corrupted VM state, and process crashes — nondeterministic, hard to reproduce, and reachable from any page pair (same-origin or `*`).
+- **Fix:**
+```go
+// postMessage, per-target delivery:
+targetWC.jsRuntimeMu.lock()
+defer targetWC.jsRuntimeMu.unlock()
+targetWC.EmitEvent("message", eventObj)
+```
+  (The lock is reentrant, so the same-window case — where the sender already holds its own lock — remains safe. Delete the incorrect "Goja is internally synchronized" comment at line 1437.)
+
+### C-2 · Deterministic layout crashes on the live render path (nil font / nil Style / nil RenderBox)
+- **Subsystem:** Memory, DOM & Rendering — `bun/bun.go:18` (`RenderDocument`), `bun/layout.go:15,40` (`createFlexNodes`/`createRenderTree`), `bun/fonts.go:9-15` (`sansSerif`), `gg/context.go:702-705,853-859` (`SetFont`/`MeasureString`)
+- **Why critical:** the shipping shell now renders every tab through `bun`. Three independent nil paths panic on ordinary pages: (a) `RenderDocument` writes `document.DOM.RenderBox.Width` on a freshly parsed document whose `RenderBox` is nil; (b) `createFlexNodes`/`createRenderTree` dereference `root.Style.Display` on any node without a stylesheet; (c) `calculateNode` assigns the default style `FontWeight: 0`, and `sansSerif[0]` is a **nil** `font.Face` (only 300/400/600/700/800 are mapped) — `gg.Context` then holds a nil face and `MeasureString`/`drawString` dereference it. With no `recover()` in the ebiten frame loop (3.11), each is a process death.
+- **Fix:**
+```go
+// bun/bun.go — guard the root box:
+if document.DOM.RenderBox == nil { document.DOM.RenderBox = &hotdog.RenderBox{} }
+document.DOM.RenderBox.Width = float64(ctx.Width())
+
+// bun/layout.go — nil-style guard at both entry points:
+if root == nil || root.Style == nil { return nil }
+
+// bun/fonts.go — total map: fall back to 400, never nil:
+face := sansSerif[weight]
+if face == nil { face = sansSerif[400] }
+return face
+```
+
+### C-3 · Guaranteed long-session memory growth (navigation leak + tab leak + unbounded caches)
+- **Subsystem:** Memory — `hotdog/window_context.go:315` (`LoadHTML`), `browser/shell/shell.go:508-511` (`loadTabContent`), `sauce/sauce.go:799-800` (`cache`/`imageCache`), `mustard/canvas.go:170` (`ensureContexts`)
+- **Why critical:** RSS grows monotonically with use, independent of any bug in page code: every navigation leaks the previous DOM + JS wrapper set (1.1/3.12), every tab ever opened leaks its whole engine (1.2), every GET/image accumulates in unbounded global caches (1.12, and racy — 3.9's neighbors), and each canvas widget holds a ~92 MB buffer (1.7). A 30-minute session exhausts RAM.
+- **Fix (minimal viable set):**
+```go
+// shell tab close:
+func (bs *BrowserShell) closeTab(tab *Tab) {
+    if wc := bs.tabWindowContexts[tab.ID]; wc != nil {
+        wc.Destroy()
+        delete(bs.tabWindowContexts, tab.ID)
+    }
+    ...
+}
+// navigation reset (inside LoadHTML):
+wc.eventMu.Lock()
+wc.nodeWrappers = make(map[*NodeDOM]*goja.Object)
+wc.nodeEventRegistry = make(map[*NodeDOM]map[string][]eventHandler)
+wc.eventRegistry = make(map[string][]eventHandler)
+wc.eventMu.Unlock()
+wc.ClearLayoutCache()
+
+// sauce caches: replace unbounded slices with a bounded LRU (max ~256 resources, ~128 images)
+// mustard canvas: drawingContext = gg.NewContext(width, max(viewportHeight, contentHeight))
+```
+
+### C-4 · `removeEventListener` is a silent no-op (listeners accumulate and double-fire)
+- **Subsystem:** Off-by-One & Boundaries / JS — `hotdog/window_context.go:377-386` (`functionKey`), `js_bindings.go:530,1380`
+- **Why critical (for a browser):** verified against the pinned goja: `AssertFunction` returns a fresh Go closure per call and `reflect.Value.Pointer()` yields a **distinct value per closure instance** (probe: register `4782464` vs remove `4782432` for the same JS function). The removal key can never equal the registration key, so no listener is ever removed — memory grows per add/remove cycle and stale listeners fire on later events.
+- **Fix:**
+```go
+// Register keyed by the JS object itself:
+func (w *JSDOMWrapper) addEventListener(call goja.FunctionCall) goja.Value {
+    ...
+    w.windowCtx.registerNodeEventJS(w.node, eventType, listener, wrappedHandler) // map[goja.Value]
+}
+func (w *JSDOMWrapper) removeEventListener(call goja.FunctionCall) goja.Value {
+    ...
+    w.windowCtx.RemoveNodeEventByJSValue(w.node, eventType, call.Arguments[1])
+}
+```
+
+### C-5 · JS errors are invisible and can kill the process
+- **Subsystem:** Concurrency / Error handling — `hotdog/js_bindings.go:524,1240,1374,1786`; goja `runWrapped` (verified: re-panics non-catchable panics when the VM call stack is empty, i.e. for all timer/network-goroutine callbacks)
+- **Why critical:** the debugging surface is broken at both ends — normal JS exceptions in listeners/rAF/fetch/XHR/alarm callbacks vanish (`, _ =`), while *any* Go-level fault in those same paths (the nil-font and nil-Style bugs in C-2 are exactly this shape) is an unrecovered panic in a background goroutine → the entire browser process dies with no report.
+- **Fix:**
+```go
+func runJSListener(name string, log consoleLogger, fn func() error) {
+    defer func() {
+        if r := recover(); r != nil {
+            log.error(fmt.Sprintf("uncaught in %s: %v", name, r))
+        }
+    }()
+    if err := fn(); err != nil {
+        log.error(err) // e.g. "Uncaught TypeError: …"
+    }
+}
+```
+  plus a `recover()` in the ebiten frame entry (3.11) so render faults drop a frame instead of the process.
 
 ---
 
-## 7. Maturity Rating
+## Appendix · Verified-as-fixed since the 2026-11-01 architecture audit
+For completeness, the following previously-known defects were re-verified as **fixed at this HEAD** and are not reported above: double-wrapped `originCookieTransport` (sauce.go:957-963 guard), transport-error swallowing (`Code = -1` at sauce.go:978/996/1004 + `LoadURL` reject at window_context.go:354), `document.title` bound as a function (js_bindings.go:188 now uses `DefineAccessorProperty`), first-frame `Frame.draw` index-out-of-range (visible-children snapshot at frame.go:88-100), and the `VerticalFrame`/`HorizontalFrame` orientation swap (widget.go:46-86 now matches shell usage: root column = `VerticalFrame` stacking top→bottom).
 
-**Overall: proof-of-concept (browser) · early-alpha (component libraries + extension platform) · beta (docs/tooling).**
-
-Justification: an alpha browser must launch and display a page — thdwb's binary does neither (P0 findings 1–4, execution-verified). But it is far beyond a toy: ~28k LOC of real, tested subsystems across all seven named engine components, a broad unit-tested WebExtensions platform, complete documentation, CI with race tests, and zero data races. The gap between "what the libraries can do" and "what the product does" is entirely in the composition layer — which is precisely where the fixes needed (P0/P1) are small, well-localized, and each individually verifiable.
-
----
-
-## 8. Recommendations
-
-**For maintainers (in dependency order — each step unlocks the next):**
-1. **Fix the frame-draw panic** (mustard/frame.go:84-92: iterate the visible-only list the layout was computed from) + **swap the transposed orientation branches** (widget.go:46-82). Add a mustard test that renders a frame with hidden children (would have caught #1).
-2. **Fix the sauce transport** (remove the second `requestClient` wrap at sauce/sauce.go:968, or make `newVerifiedTransport` accept wrapped bases) and **stop swallowing fetch errors** (propagate a non-2xx sentinel Code / return an error from `LoadURL`). Add one sauce test against a non-localhost https host (via `httptest.NewUnstartedServer` + TLS, or a real-host smoke test marked integration).
-3. **Connect the pipeline:** per-tab `WindowContext` in the shell (`TabManager.Navigate` → `LoadURL`), then `bun.RenderDocument` into the tab surface — the `webview` package (0 importers) appears designed for exactly this; revive it. Route `LoadHTML` through ketchup (or set `HTMLRoot`/`StyleSheets`) so CSS and `querySelector` work.
-4. **Make bun actually paint:** set colors before paths (bun/block.go:13-16), fix width/height inheritance (bun/bun.go:11-33), and **add pixel-output tests** (render → count non-white pixels / sample colors). The bun suite is 88% covered and still renders nothing — pixel assertions are the missing invariant.
-5. **Fix the `document.title` binding** (js_bindings.go:184 → `DefineAccessorProperty`, mirroring `body`).
-6. **Reconcile PLAN.md checklists with reality:** mark E10 storage.sync (Noop), E11 multiprocess (unwired), E10/E12/E9 unwired servers as in-progress, or wire them in; replace "signature validation" with real verification (ed25519 over the checksum) or rename it "signature detection".
-7. **Hygiene pass:** remove dead code flagged by staticcheck (25 findings), delete `OPTIMIZED_AUDIT_PROMPT.md` and stale `coverage_*.out` from the tree, fix README prereqs (drop GLFW/go-gl; Go 1.26+), Makefile workspace comment, go.mod replace block, and align CI go-version with go.mod.
-8. **Add one true end-to-end test** (opt-in, network): launch the engine headless → `LoadURL` a fixture server on 127.0.0.1:port (note: localhost is *not* upgraded, so it already works) → assert DOM + rendered pixels. This single test would have caught findings 1–6.
-
-**For potential users:**
-- **Do not use as a browser** — it cannot launch, fetch, or display.
-- **Use as a study/reference resource** — the seven named subsystems, the textbook (docs/01–08 + glossary), and the per-module tests are a coherent, high-quality map of browser internals; run `make test` and read the chapters alongside the code.
-- If you embed the engine: use the **library APIs** (`hotdog.WindowContext` + `ketchup`/`mayo`/`bun` wired as shown in browser/integration_test.go) rather than the `bin/thdwb` app, and expect the P1 defects until fixed.
-
-**For contributors:**
-- The highest-leverage work is P0/P1 (all well-localized, each with an obvious regression test). The extension platform is the most mature surface if you want to contribute there (50.2% coverage in `browser/extensions` is the biggest coverage gap among active code).
-- Match the project's conventions: per-package doc comments, testify, small focused tests, English commit messages with `type(scope):` prefixes.
-
----
-
-## 9. Appendices
-
-The full evidence base for this report (all in repository root):
-
-| Appendix | Contents |
-|---|---|
-| **BASELINE.md** | Master promise checklist (README R1–R17, PLAN P0–P15) with expected locations, validation methods, dependency catalog, pure-Go verification, structural facts |
-| **ARCHITECTURE.md** | Module topology, dependency tree, 3-layer design, advertised-vs-actual request-to-render flow with import-graph evidence, entry points, error-handling & logging assessment |
-| **FEATURE_MATRIX.md** | Per-component and per-phase (E0–E12) status → evidence → maturity, patterns, README cross-reference |
-| **QUALITY.md** | Error-handling review, build/test/static-analysis results, staticcheck findings, coverage tables, documentation assessment, 12-item technical-debt inventory |
-| **FUNCTIONAL_TEST_RESULTS.md** | Full captured outputs: build log, test/race/vet/staticcheck results, live-run panic transcripts (×2), 4 headless probes, edge cases, security-boundary matrix, stability observations |
-| **GAP_ANALYSIS.md** | Quantified promise-vs-working tables, finding categorization (critical/major/moderate/minor), by-design vs incomplete, maturity rating, verdict with confidence |
-
-**Reproduction artifacts (this machine):** `/tmp/thdwb_build.log`, `/tmp/thdwb_test.log`, `/tmp/thdwb_race.log`, `/tmp/thdwb_run.log`, `/tmp/thdwb_run2.log`, `/tmp/engineprobe_output.txt`, `/tmp/thdwb_staticcheck.log`, probe sources `/tmp/engineprobe{,2,3}/`, rendered PNGs `/tmp/engineprobe3/*.png`.
-
-**Verdict restated: PARTIALLY — not a working browser (execution-verified, high confidence); a genuine pure-Go learning tool with strong, disconnected, well-documented components.**
-
----
-
-## 10. Remediation Status (2026-11-02)
-
-Tracking progress against the §8 Recommendations (dependency order). Statuses below
-are execution-verified on this machine, not taken from commit messages.
-
-| # | Recommendation | Status | Notes |
-|---|---|---|---|
-| 1 | Fix the frame-draw panic (P0) | ✅ **Done this session** | The audited `frame.go` index-out-of-range was fixed by the post-audit `visibleChildren` filter, but the crash **relocated** to `mustard/window.go` `compositeWidget`: the composite pass iterated *all* children and dereferenced a hidden child's nil `Buffer()` → SIGSEGV on the first rendered frame. Fixed with a nil-buffer guard (mirrors the overlay path) + two regression tests (`TestRender_HiddenChildrenDoesNotPanic`, `TestCompositeAll_SkipsHiddenChildren`). `go test -race ./mustard/` clean; **live `bin/thdwb` now runs past frame 1** (previously died on frame 1). Commit `e1e02a3`. |
-| 2 | Fix the sauce transport + stop swallowing fetch errors | ✅ **Done this session** | Double-wrap guard present in `requestClient`/`newVerifiedTransport` (unwraps an existing `*originCookieTransport` to its base before re-wrapping, so the `*http.Transport` assertion in `newVerifiedTransport` no longer fails for HTTPS); failed requests set the `-1` sentinel `Resource.Code` and `LoadURL` rejects `Code <= 0`. **Re-verified against a real non-localhost host:** live fetch of `https://example.com` returns `Code 200` (previously `<300 µs` failure), and an unreachable host now surfaces `Code -1` + a non-nil `LoadURL` error. Pinned with regression tests: `sauce/sauce_item2_test.go` (`TestFetchExternalPageDoesNotDoubleWrapTransport`, `TestRequestClientUnwrapsExistingTransport`, `TestFetchExternalPageTransportErrorSurfaces`, opt-in `TestFetchExternalPageRealHostHTTPS`) and `hotdog/window_context_loadurl_test.go` (`TestLoadURLSurfacesTransportError`, `TestLoadURLSurfacesHTTPErrorStatus`, `TestLoadURLLoadsLocalhostPage`, opt-in `TestLoadURLRealHost`). Real-host tests gate on `THDWB_NETWORK=1` so CI stays network-free. `go test -race work` (29 pkgs) + `go vet ./...` clean. Commits `d453e6d`, `fcd4dcc`. |
-| 3 | Connect the pipeline (per-tab WindowContext → bun.RenderDocument) | ✅ **Done this session** | The ketchup DOM was being parsed and then discarded: `LoadHTML` only set `RawDocument`/title on a throwaway doc, and `applyKetchupParsing` replaced the *ketchup* doc fields without touching the shell's `wc.ActiveDocument`, so bun always received an empty root. Fixed by setting `RawDocument: html` in `hotdog/window_context.go:LoadHTML` and swapping the parsed ketchup DOM (`URL`, `Title`, `DOM`, `HTMLRoot`, `StyleSheets`, `RawDocument`) into `wc.ActiveDocument` in place, preserving the `*Document` pointer the JS bindings hold. The dead `serializeDOMToHTML` fallback (unreachable once `RawDocument` is always populated) was removed. Pixel-verified by `browser/shell/loadtabcontent_test.go` (`TestLoadTabContentKetchupPipeline`, `TestLoadTabContentQuerySelector`, plus the item-4 `countPixels` red-background assertion). Commits `093a728`, `879a183`. |
-| 4 | Make bun actually paint + pixel-output tests | ✅ **Done this session** | `renderTree.Print(0)` debug dump removed from `bun/bun.go:RenderDocument`. Added dedicated non-white-pixel render assertions for **both** layout paths: `bun/pixel_test.go` (`TestRenderDocument_paintsNonWhitePixels` — standard path paints a CSS blue background + text, asserting both non-white and blue pixel counts; `TestRenderDocument_experimentalPaintsNonWhitePixels` — experimental/flex path paints the `flexbox-test.html` fixture). The shell pipeline test (`d40c95a`) asserts the CSS background reaches the canvas through `loadTabContent`. Note: the standard layout path still does not paint CSS dimensions on *empty* block elements (probed: w/h collapse to 0), so pixel tests drive background via a CSS `background-color` with text content. Commits `b35afab`, `d40c95a`. |
-| 5 | Fix the `document.title` binding | ✅ Done (pre-session) | Now uses `DefineAccessorProperty` (hotdog/js_bindings.go:188). |
-| 6 | Reconcile PLAN checklists with reality | ✅ Done | This file is now the audit report; E-phase checklist over-claims removed. |
-| 7 | Hygiene pass (dead code, stale files, prereqs, replace block, CI) | ✅ **Done this session** (11 staticcheck findings remain, documented below) | `OPTIMIZED_AUDIT_PROMPT.md`/`coverage_*.out` removed; README says Go 1.26+; CI go-version 1.26.0 aligned. This session: removed the redundant `go.mod` `replace` block (single module; `go.work` only uses `.`; `go mod tidy` no-op) and a dead-code/style pass (staticcheck 24 → 11): deleted `platform/software.go` (dead `softwareRenderer`), `mustTelemetry`, history `contains`, `(*AddressBar).clearOverlay`, `ensureWebRequestObserver`, `loadServiceWorkerScript` (+ `os` import), `(*JSWindowWrapper).getLocalStorage`/`getSessionStorage` (window binds storage via `getStorage` at init), test helper `waitForJS`, ketchup `selfClosingTag`, bun `walkDOM` (fmt.Println debug tree dump, test-only caller, commit `6fe80ef`); fixed ST1017/S1021/S1011. **Remaining 11 findings (intentionally not removed):** the `t` reassignment at `browser/shell/extension_ops.go:164` (SA4006 — deleting it changes `chrome.tabs` container-move behavior) and 10 embedded/shadowed struct fields in `mustard/types.go` + `webview/webview_desktop.go` (U1000 is unreliable for embedded fields — e.g. `baseWidget.selected` *is* used; the flagged `selected` is `ScrollBarWidget`'s shadowing field). Those fields are framework-core surface; dropping them is a separate, deliberate refactor. Commits `194942d`, `5707a2c`, `6fe80ef`. |
-| 8 | Add one true end-to-end test (opt-in network) | ✅ **Done this session** | `browser/shell/e2e_test.go`: `TestEndToEnd_LoadURL_Renders` (always on) fetches from an `httptest` server through the real `loadTabContent → LoadURL(sauce) → ketchup → renderWebContent` pipeline and asserts both the ketchup DOM (`#panel` resolved) and rendered pixels (blue `#panel` background painted by bun). `TestEndToEnd_RealHost` is gated on `THDWB_NETWORK=1` (same opt-in convention as items 2/4) and fetches `https://example.com/`, asserting DOM resolution + non-white pixels. Commit `c406813`. |
-
-**Status for a full "working browser":** all eight recommendations are now
-resolved and pixel-verified (fetch a localhost/real host → assert rendered
-pixels). Item 7 (hygiene) closed out this session: the redundant `go.mod`
-`replace` block is gone, staticcheck findings dropped 24 → 11 (the 11
-remaining are documented on row 7 and intentionally deferred). The
-experimental layout pass is still not the default render path
-(bun/bun.go:61).
+## Appendix · Method notes
+- Parallel subagent passes were executed over the same HEAD; findings were cross-checked across passes (e.g., the fetch goroutines appear in both memory and concurrency findings and are listed once each per class).
+- Empirical probes (scratch dir, throwaway): goja `Callable` closure-pointer behavior, `cascadia.Parse` on group/`:has`/`@media` selectors. Both matched the pinned versions in `go.sum`.
+- Severity scale: **Critical** = data race/crash/corruption reachable from normal use; **High** = crash, guaranteed leak, or spec-breaking functional failure on common inputs; **Medium** = leak/race/incorrect behavior on less common inputs or latent API bugs; **Low** = cosmetic/edge degradation.
