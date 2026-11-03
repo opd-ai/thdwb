@@ -8,6 +8,10 @@ import (
 )
 
 func RenderDocument(ctx *gg.Context, document *hotdog.Document, experimentalLayout bool) error {
+	if document == nil || document.DOM == nil {
+		return fmt.Errorf("document or DOM is nil")
+	}
+
 	if !experimentalLayout {
 		body, err := document.DOM.FindChildByName("body")
 		if err != nil || body == nil {
@@ -15,6 +19,9 @@ func RenderDocument(ctx *gg.Context, document *hotdog.Document, experimentalLayo
 			body = document.DOM
 		}
 
+		if document.DOM.RenderBox == nil {
+			document.DOM.RenderBox = &hotdog.RenderBox{}
+		}
 		document.DOM.RenderBox.Width = float64(ctx.Width())
 		document.DOM.RenderBox.Height = float64(ctx.Height())
 
@@ -35,6 +42,9 @@ func RenderDocument(ctx *gg.Context, document *hotdog.Document, experimentalLayo
 		renderTree := createRenderTree(html)
 		if renderTree == nil {
 			return nil
+		}
+		if renderTree.RenderBox == nil {
+			renderTree.RenderBox = &hotdog.RenderBox{}
 		}
 		renderTree.RenderBox.Width = float64(ctx.Width())
 		renderTree.RenderBox.Height = float64(ctx.Height())

@@ -82,7 +82,7 @@ func (history *History) Last() *url.URL {
 func (history *History) PopNext() {
 	if len(history.nextPages) > 0 {
 		history.previousPages = append(history.previousPages, history.nextPages[len(history.nextPages)-1])
-		history.nextPages = nil
+		history.nextPages = history.nextPages[:len(history.nextPages)-1]
 	}
 }
 

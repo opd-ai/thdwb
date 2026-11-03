@@ -28,6 +28,9 @@ func splitOnSpace(x string) []string {
 func wordWrap(m measureStringer, s string, width float64) []string {
 	var result []string
 	for _, line := range strings.Split(s, "\n") {
+		// Strip leading whitespace so the word/separator pairing isn't
+		// shifted by a leading space run.
+		line = strings.TrimLeftFunc(line, unicode.IsSpace)
 		fields := splitOnSpace(line)
 		if len(fields)%2 == 1 {
 			fields = append(fields, "")

@@ -2,6 +2,7 @@ package hotdog
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -132,7 +133,7 @@ func WindowContexts() []*WindowContext {
 }
 
 type eventHandler struct {
-	key     uintptr
+	key     interface{}
 	handler func(interface{})
 }
 
@@ -172,6 +173,11 @@ type WindowContext struct {
 	layoutCache    map[string]interface{}
 	reflowMu       sync.Mutex
 	pendingReflows map[*NodeDOM]struct{}
+
+	// Context for cancelling in-flight network and timer work when the window
+	// is destroyed.
+	ctx    context.Context
+	cancel context.CancelFunc
 
 	// Focus and input state
 	focusedElement *NodeDOM
@@ -247,10 +253,16 @@ func NewWindowContext(settings *Settings, buildInfo *assets.BuildInfo, profiler 
 	wc.jsRuntimeMu = newReentrantMutex()
 	wc.jsRuntime = goja.New()
 
+	// Create a cancellable context for in-flight network and timer work.
+	wc.ctx, wc.cancel = context.WithCancel(context.Background())
+
 	// Initialize per-window cookie jar and HTTP client for cookie isolation
 	wc.cookieJar = sauce.NewContainerCookieJar()
 	wc.httpClient = &http.Client{
-		Jar: sauce.NewDefaultContainerCookieJar(wc.cookieJar),
+		Jar:  sauce.NewDefaultContainerCookieJar(wc.cookieJar),
+		// Timeout prevents stalled requests from leaking goroutines and
+		// keeping the window context alive after the tab is destroyed.
+		Timeout: 60 * time.Second,
 	}
 
 	// Register this window for cross-window communication
@@ -315,6 +327,15 @@ func (wc *WindowContext) LoadHTML(html, baseURL string) error {
 	wc.ActiveDocument = doc
 	wc.Documents = append(wc.Documents, doc)
 
+	// Reset per-document JS bindings and event registrations from the previous
+	// document to prevent memory leaks across navigations.
+	wc.eventMu.Lock()
+	wc.nodeWrappers = make(map[*NodeDOM]*goja.Object)
+	wc.nodeEventRegistry = make(map[*NodeDOM]map[string][]eventHandler)
+	wc.eventRegistry = make(map[string][]eventHandler)
+	wc.eventMu.Unlock()
+	wc.ClearLayoutCache()
+
 	// Initialize the JS runtime with the window object
 	if err := wc.InitJSRuntime(); err != nil {
 		return fmt.Errorf("init JS runtime: %w", err)
@@ -375,29 +396,29 @@ func (wc *WindowContext) GetContainerID() string {
 	return wc.ContainerID
 }
 
-func functionKey(fn interface{}) uintptr {
+func functionKey(fn interface{}) interface{} {
 	if fn == nil {
-		return 0
+		return nil
 	}
 	value := reflect.ValueOf(fn)
 	if !value.IsValid() || value.Kind() != reflect.Func {
-		return 0
+		return nil
 	}
 	return value.Pointer()
 }
 
 // RegisterEvent registers an event handler for this window context.
 func (wc *WindowContext) RegisterEvent(eventName string, handler func(interface{})) {
-	wc.registerEvent(eventName, functionKey(handler), handler)
+	wc.registerEvent(eventName, handler, handler)
 }
 
-func (wc *WindowContext) registerEvent(eventName string, key uintptr, handler func(interface{})) {
+func (wc *WindowContext) registerEvent(eventName string, key interface{}, handler func(interface{})) {
 	wc.eventMu.Lock()
 	defer wc.eventMu.Unlock()
 	wc.eventRegistry[eventName] = append(wc.eventRegistry[eventName], eventHandler{key: key, handler: handler})
 }
 
-func (wc *WindowContext) registerNodeEvent(node *NodeDOM, eventName string, key uintptr, handler func(interface{})) {
+func (wc *WindowContext) registerNodeEvent(node *NodeDOM, eventName string, key interface{}, handler func(interface{})) {
 	if node == nil {
 		return
 	}
@@ -409,16 +430,16 @@ func (wc *WindowContext) registerNodeEvent(node *NodeDOM, eventName string, key 
 	wc.nodeEventRegistry[node][eventName] = append(wc.nodeEventRegistry[node][eventName], eventHandler{key: key, handler: handler})
 }
 
-func (wc *WindowContext) RemoveNodeEventByKey(node *NodeDOM, eventName string, key uintptr) {
+func (wc *WindowContext) RemoveNodeEventByKey(node *NodeDOM, eventName string, key interface{}) {
 	if node == nil {
 		return
 	}
 	wc.eventMu.Lock()
 	defer wc.eventMu.Unlock()
 	handlers := wc.nodeEventRegistry[node][eventName]
-	filtered := handlers[:0]
+	filtered := make([]eventHandler, 0, len(handlers))
 	for _, handler := range handlers {
-		if handler.key != key {
+		if !keysEqual(handler.key, key) {
 			filtered = append(filtered, handler)
 		}
 	}
@@ -437,20 +458,33 @@ func (wc *WindowContext) EmitNodeEvent(node *NodeDOM, eventName string, data int
 		return
 	}
 	wc.eventMu.Lock()
-	handlers := wc.nodeEventRegistry[node][eventName]
+	handlers := make([]eventHandler, len(wc.nodeEventRegistry[node][eventName]))
+	copy(handlers, wc.nodeEventRegistry[node][eventName])
 	wc.eventMu.Unlock()
 	for _, handler := range handlers {
 		handler.handler(data)
 	}
 }
 
-func (wc *WindowContext) RemoveEventByKey(eventName string, key uintptr) {
+func keysEqual(a, b interface{}) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	af := reflect.ValueOf(a)
+	bf := reflect.ValueOf(b)
+	if af.IsValid() && af.Kind() == reflect.Func && bf.IsValid() && bf.Kind() == reflect.Func {
+		return af.Pointer() == bf.Pointer()
+	}
+	return a == b
+}
+
+func (wc *WindowContext) RemoveEventByKey(eventName string, key interface{}) {
 	wc.eventMu.Lock()
 	defer wc.eventMu.Unlock()
 	handlers := wc.eventRegistry[eventName]
-	filtered := handlers[:0]
+	filtered := make([]eventHandler, 0, len(handlers))
 	for _, handler := range handlers {
-		if handler.key != key {
+		if !keysEqual(handler.key, key) {
 			filtered = append(filtered, handler)
 		}
 	}
@@ -467,7 +501,8 @@ func (wc *WindowContext) EmitEvent(eventName string, data interface{}) {
 		return
 	}
 	wc.eventMu.Lock()
-	handlers := wc.eventRegistry[eventName]
+	handlers := make([]eventHandler, len(wc.eventRegistry[eventName]))
+	copy(handlers, wc.eventRegistry[eventName])
 	wc.eventMu.Unlock()
 	for _, handler := range handlers {
 		handler.handler(data)
@@ -882,6 +917,32 @@ func (wc *WindowContext) GetInputState(key string) (interface{}, bool) {
 func (wc *WindowContext) Destroy() {
 	wc.jsRuntimeMu.lock()
 	defer wc.jsRuntimeMu.unlock()
+
+	// Mark destroyed first under animationFrameMu to gate concurrent map writes.
+	wc.animationFrameMu.Lock()
+	wc.destroyed = true
+	wc.active = false
+	if wc.animationFrameTimer != nil {
+		wc.animationFrameTimer.Stop()
+		wc.animationFrameTimer = nil
+	}
+	for id := range wc.animationFrames {
+		delete(wc.animationFrames, id)
+	}
+	wc.animationFrames = nil
+	wc.animationFrameMu.Unlock()
+
+	// Cancel in-flight network and timer work.
+	if wc.cancel != nil {
+		wc.cancel()
+	}
+
+	wc.eventMu.Lock()
+	wc.eventRegistry = nil
+	wc.nodeEventRegistry = nil
+	wc.nodeWrappers = nil
+	wc.eventMu.Unlock()
+
 	wc.ActiveDocument = nil
 	wc.Documents = nil
 	wc.Viewport = nil
@@ -895,27 +956,12 @@ func (wc *WindowContext) Destroy() {
 	wc.pendingReflows = nil
 	wc.reflowMu.Unlock()
 	wc.inputState = nil
-	wc.eventRegistry = nil
-	wc.nodeEventRegistry = nil
-	wc.nodeWrappers = nil
 	wc.mutationObserverMu.Lock()
 	for observer := range wc.mutationObservers {
 		observer.disconnect()
 	}
 	wc.mutationObservers = nil
 	wc.mutationObserverMu.Unlock()
-	wc.animationFrameMu.Lock()
-	wc.destroyed = true
-	wc.active = false
-	if wc.animationFrameTimer != nil {
-		wc.animationFrameTimer.Stop()
-		wc.animationFrameTimer = nil
-	}
-	for id := range wc.animationFrames {
-		delete(wc.animationFrames, id)
-	}
-	wc.animationFrames = nil
-	wc.animationFrameMu.Unlock()
 	wc.focusedElement = nil
 	wc.jsRuntime = nil // Allow Goja VM to be garbage collected
 	wc.sessionStorage.ClearAllSessionStorage()

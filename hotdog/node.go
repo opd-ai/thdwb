@@ -704,42 +704,47 @@ func CollapseWhitespacePreserveNewlines(text string) string {
 
 // GetTextContent returns the text content of a node, handling whitespace according to CSS white-space property.
 func (node *NodeDOM) GetTextContent() string {
-	if node.Type != NodeTypeText {
-		return node.Content
-	}
-
-	// Get the white-space property from the node's style or inherit from parent
-	whiteSpace := "normal"
-	if node.Style != nil && node.Style.Display != "" {
-		// In a real implementation, we'd compute the cascaded white-space value
-		// For now, use normal as default
-		whiteSpace = "normal"
-	}
-
-	switch whiteSpace {
-	case "pre":
-		return node.Content
-	case "pre-wrap":
-		return CollapseWhitespacePreserveNewlines(node.Content)
-	case "pre-line":
-		// Similar to pre-wrap but collapses spaces/tabs
-		lines := strings.Split(node.Content, "\n")
-		var result []string
-		for _, line := range lines {
-			re := regexp.MustCompile(`\s+`)
-			collapsed := re.ReplaceAllString(line, " ")
-			collapsed = strings.TrimSpace(collapsed)
-			result = append(result, collapsed)
+	if node.Type == NodeTypeText {
+		// Get the white-space property from the node's style or inherit from parent
+		whiteSpace := "normal"
+		if node.Style != nil && node.Style.Display != "" {
+			// In a real implementation, we'd compute the cascaded white-space value
+			// For now, use normal as default
+			whiteSpace = "normal"
 		}
-		return strings.Join(result, "\n")
-	case "nowrap":
-		re := regexp.MustCompile(`\s+`)
-		result := re.ReplaceAllString(node.Content, " ")
-		result = strings.TrimSpace(result)
-		return result
-	default: // "normal"
-		return CollapseWhitespace(node.Content)
+
+		switch whiteSpace {
+		case "pre":
+			return node.Content
+		case "pre-wrap":
+			return CollapseWhitespacePreserveNewlines(node.Content)
+		case "pre-line":
+			// Similar to pre-wrap but collapses spaces/tabs
+			lines := strings.Split(node.Content, "\n")
+			var result []string
+			for _, line := range lines {
+				re := regexp.MustCompile(`\s+`)
+				collapsed := re.ReplaceAllString(line, " ")
+				collapsed = strings.TrimSpace(collapsed)
+				result = append(result, collapsed)
+			}
+			return strings.Join(result, "\n")
+		case "nowrap":
+			re := regexp.MustCompile(`\s+`)
+			result := re.ReplaceAllString(node.Content, " ")
+			result = strings.TrimSpace(result)
+			return result
+		default: // "normal"
+			return CollapseWhitespace(node.Content)
+		}
 	}
+
+	// For element nodes, concatenate the text content of all descendants.
+	var b strings.Builder
+	for _, child := range node.Children {
+		b.WriteString(child.GetTextContent())
+	}
+	return b.String()
 }
 
 // SetInnerHTML sets the HTML content of the node by parsing the HTML string
@@ -854,6 +859,10 @@ func (node *NodeDOM) SetTextContent(text string) {
 		child.Parent = nil
 		child.PrevSibling = nil
 		child.NextSibling = nil
+		// Clean up JS wrapper reference to prevent memory leak
+		if node.WindowCtx != nil && node.WindowCtx.nodeWrappers != nil {
+			delete(node.WindowCtx.nodeWrappers, child)
+		}
 	}
 	node.Children = nil
 	node.FirstChild = nil
@@ -988,7 +997,18 @@ func (node *NodeDOM) CloneNode(deep bool) *NodeDOM {
 		Attributes: make([]*Attribute, 0),
 		Document:   node.Document,
 		WindowCtx:  node.WindowCtx,
-		Style:      node.Style,
+	}
+
+	// Deep-copy the stylesheet so the clone does not alias the original's
+	// Stylesheet pointer (in-place cascade merges would otherwise mutate the
+	// original element's computed style).
+	if node.Style != nil {
+		s := *node.Style
+		if s.Color != nil {
+			c := *s.Color
+			s.Color = &c
+		}
+		clone.Style = &s
 	}
 
 	for _, attr := range node.Attributes {

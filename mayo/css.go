@@ -8,6 +8,33 @@ import (
 	hotdog "github.com/danfragoso/thdwb/hotdog"
 )
 
+// splitTopLevel splits s on the given delimiter, but only at the top level
+// (i.e., not inside parentheses, brackets, or braces). This is used to split
+// comma group selectors without breaking functional pseudo-classes like
+// :not(a, b).
+func splitTopLevel(s string, delim rune) []string {
+	var parts []string
+	depth := 0
+	start := 0
+	for i, c := range s {
+		switch c {
+		case '(', '[', '{':
+			depth++
+		case ')', ']', '}':
+			if depth > 0 {
+				depth--
+			}
+		case delim:
+			if depth == 0 {
+				parts = append(parts, s[start:i])
+				start = i + 1
+			}
+		}
+	}
+	parts = append(parts, s[start:])
+	return parts
+}
+
 // ParseStylesheet parses a CSS stylesheet string and returns a slice of StyleElement
 func ParseStylesheet(cssString string) []*hotdog.StyleElement {
 	var styleSheet []*hotdog.StyleElement
@@ -27,11 +54,21 @@ func ParseStylesheet(cssString string) []*hotdog.StyleElement {
 		selector := strings.TrimSpace(match[1])
 		declarations := strings.TrimSpace(match[2])
 
-		// Parse selector to get specificity
-		sel, err := cascadia.Parse(selector)
+		// Parse selector to get specificity. cascadia.Parse rejects comma
+		// group selectors (e.g. "a, b"), so split on top-level commas and
+		// take the maximum specificity across the group's arms.
 		var specificity cascadia.Specificity
-		if err == nil {
-			specificity = sel.Specificity()
+		for _, arm := range splitTopLevel(selector, ',') {
+			arm = strings.TrimSpace(arm)
+			if arm == "" {
+				continue
+			}
+			if sel, err := cascadia.Parse(arm); err == nil {
+				s := sel.Specificity()
+				if specificity.Less(s) {
+					specificity = s
+				}
+			}
 		}
 
 		styleElement := &hotdog.StyleElement{

@@ -86,25 +86,34 @@ func imageToRGBA(src image.Image) *image.RGBA {
 	return dst
 }
 
-func parseHexColor(x string) (r, g, b, a int) {
+func parseHexColor(x string) (r, g, b, a int, ok bool) {
 	x = strings.TrimPrefix(x, "#")
 	a = 255
-	if len(x) == 3 {
+
+	switch len(x) {
+	case 3:
 		format := "%1x%1x%1x"
-		_, _ = fmt.Sscanf(x, format, &r, &g, &b)
+		if _, err := fmt.Sscanf(x, format, &r, &g, &b); err != nil {
+			return 0, 0, 0, 255, false
+		}
 		r |= r << 4
 		g |= g << 4
 		b |= b << 4
-	}
-	if len(x) == 6 {
+	case 6:
 		format := "%02x%02x%02x"
-		_, _ = fmt.Sscanf(x, format, &r, &g, &b)
-	}
-	if len(x) == 8 {
+		if _, err := fmt.Sscanf(x, format, &r, &g, &b); err != nil {
+			return 0, 0, 0, 255, false
+		}
+	case 8:
 		format := "%02x%02x%02x%02x"
-		_, _ = fmt.Sscanf(x, format, &r, &g, &b, &a)
+		if _, err := fmt.Sscanf(x, format, &r, &g, &b, &a); err != nil {
+			return 0, 0, 0, 255, false
+		}
+	default:
+		// Unsupported hex length (4, 5, 7 digits, etc.) — fail loudly.
+		return 0, 0, 0, 255, false
 	}
-	return r, g, b, a
+	return r, g, b, a, true
 }
 
 func fixp(x, y float64) fixed.Point26_6 {

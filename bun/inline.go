@@ -33,7 +33,7 @@ func paintTextWithinBounds(ctx *gg.Context, node *hotdog.NodeDOM, text string, t
 	if node.Style != nil {
 		fontSize = node.Style.FontSize
 	}
-	ctx.SetFont(sansSerif[fontWeight], fontSize)
+	ctx.SetFont(getFontFace(fontWeight), fontSize)
 	ctx.DrawStringWrapped(text, box.Left, box.Top+topOffset, 0, 0, box.Width, lineSpacing, gg.AlignLeft)
 	ctx.Fill()
 	ctx.ResetClip()
@@ -100,7 +100,7 @@ func calculateInlineLayout(ctx *gg.Context, node *hotdog.NodeDOM, childIdx int) 
 		return
 	}
 
-	ctx.SetFont(sansSerif[node.Style.FontWeight], node.Style.FontSize)
+	ctx.SetFont(getFontFace(node.Style.FontWeight), node.Style.FontSize)
 
 	if childIdx > 0 && node.Parent.Children[childIdx-1] != nil {
 		prev := node.Parent.Children[childIdx-1]
@@ -135,7 +135,10 @@ func calculateInlineLayout(ctx *gg.Context, node *hotdog.NodeDOM, childIdx int) 
 		if err != nil {
 			fmt.Println(err)
 			// Use the stand-in error image.
-			im, _, _ = image.Decode(bytes.NewReader(assets.ErrorImage()))
+			im, _, err = image.Decode(bytes.NewReader(assets.ErrorImage()))
+			if err != nil {
+				return
+			}
 		}
 		imgSize := im.Bounds().Size()
 

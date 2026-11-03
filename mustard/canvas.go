@@ -167,7 +167,11 @@ func (canvas *CanvasWidget) ensureContexts(width, height int) {
 	currentSize := context.Image().Bounds().Size()
 	if currentSize.X != width || currentSize.Y != height {
 		canvas.context = gg.NewContext(width, height)
-		canvas.drawingContext = gg.NewContext(width, 12000)
+		// Size the scrollable drawing buffer to a multiple of the viewport
+		// height instead of a hard-coded 12000px, which allocated ~92 MB per
+		// widget at 1080p width. height*4 is an upper bound that still allows
+		// scrolling while bounding memory.
+		canvas.drawingContext = gg.NewContext(width, height*4)
 		canvas.drawingRepaint = true
 	}
 	canvas.SetOffset(canvas.offset)

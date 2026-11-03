@@ -12,6 +12,9 @@ import (
 // createFlexNodes creates flex.Nodes for each DOM element and attaches them to the FlexNode field.
 // Returns the root flex node.
 func createFlexNodes(root *hotdog.NodeDOM) *flex.Node {
+	if root == nil || root.Style == nil {
+		return nil
+	}
 	if root.Style.Display == "none" {
 		return nil
 	}
@@ -37,6 +40,9 @@ func createFlexNodes(root *hotdog.NodeDOM) *flex.Node {
 // createRenderTree creates a parallel tree of flex.Nodes mirroring the DOM structure.
 // Each DOM node gets a corresponding flex.Node stored in its FlexNode field.
 func createRenderTree(root *hotdog.NodeDOM) *hotdog.NodeDOM {
+	if root == nil || root.Style == nil {
+		return nil
+	}
 	if root.Style.Display == "none" {
 		return nil
 	}

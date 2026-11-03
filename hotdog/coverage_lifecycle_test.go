@@ -50,7 +50,7 @@ func TestWindowContextEvents(t *testing.T) {
 	}
 
 	// Removing the handler should stop delivery.
-	wc.RemoveEventByKey("test", functionKey(handler))
+	wc.RemoveEventByKey("test", handler)
 	got = nil
 	wc.EmitEvent("test", "again")
 	if got != nil {
@@ -270,16 +270,16 @@ func TestGetOriginNilAndDestroy(t *testing.T) {
 }
 
 func TestFunctionKey(t *testing.T) {
-	if functionKey(nil) != 0 {
-		t.Fatal("functionKey(nil) != 0")
+	if functionKey(nil) != nil {
+		t.Fatal("functionKey(nil) != nil")
 	}
-	if functionKey(42) != 0 {
-		t.Fatal("functionKey(non-func) != 0")
+	if functionKey(42) != nil {
+		t.Fatal("functionKey(non-func) != nil")
 	}
 	a := func() {}
 	b := func() {}
-	if functionKey(a) == 0 {
-		t.Fatal("functionKey(func) == 0")
+	if functionKey(a) == nil {
+		t.Fatal("functionKey(func) == nil")
 	}
 	// A deterministic key must be stable across separate invocations.
 	first, second := functionKey(a), functionKey(a)

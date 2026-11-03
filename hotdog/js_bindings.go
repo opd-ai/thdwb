@@ -21,6 +21,30 @@ import (
 // nodeWrapperSymbol is a unique symbol used to store the JSDOMWrapper reference on JS objects.
 var nodeWrapperSymbol = goja.NewSymbol("thdwb.nodeWrapper")
 
+// runJSListener invokes a JS callback, logging any returned error or recovered
+// panic to the page's console so JS failures are visible instead of silently
+// swallowed or crashing the process.
+func runJSListener(name string, c *JSConsoleWrapper, fn func() error) {
+	defer func() {
+		if r := recover(); r != nil {
+			msg := fmt.Sprintf("uncaught in %s: %v", name, r)
+			if c != nil {
+				Log(fmt.Sprintf("[console.error] [origin: %s]", c.windowCtx.GetOrigin().String()), msg)
+			} else {
+				Log("js", msg)
+			}
+		}
+	}()
+	if err := fn(); err != nil {
+		msg := err.Error()
+		if c != nil {
+			Log(fmt.Sprintf("[console.error] [origin: %s]", c.windowCtx.GetOrigin().String()), msg)
+		} else {
+			Log("js", msg)
+		}
+	}
+}
+
 // JSDOMWrapper wraps a NodeDOM for JavaScript access
 type JSDOMWrapper struct {
 	node      *NodeDOM
@@ -518,10 +542,17 @@ func (w *JSDOMWrapper) addEventListener(call goja.FunctionCall) goja.Value {
 	if !ok {
 		panic(w.runtime.NewGoError(errors.New("event listener must be a function")))
 	}
-	w.windowCtx.registerNodeEvent(w.node, eventType, functionKey(listener), func(data interface{}) {
+	// Key the listener by the JS object value (call.Arguments[1]) rather than
+	// the Go function pointer. goja.AssertFunction returns a fresh Go closure
+	// per call, so reflect.Value.Pointer() yields a distinct value each time
+	// and removeEventListener could never match the registration key.
+	w.windowCtx.registerNodeEvent(w.node, eventType, call.Arguments[1], func(data interface{}) {
 		event, ok := data.(*goja.Object)
 		if ok {
-			_, _ = listener(w.runtime.ToValue(event.Get("currentTarget")), w.runtime.ToValue(event))
+			runJSListener("event listener", &JSConsoleWrapper{windowCtx: w.windowCtx, runtime: w.runtime}, func() error {
+				_, err := listener(w.runtime.ToValue(event.Get("currentTarget")), w.runtime.ToValue(event))
+				return err
+			})
 		}
 	})
 	return goja.Undefined()
@@ -534,9 +565,12 @@ func (w *JSDOMWrapper) removeEventListener(call goja.FunctionCall) goja.Value {
 	if err := w.node.checkOrigin(); err != nil {
 		panic(w.runtime.NewGoError(err))
 	}
-	listener, ok := goja.AssertFunction(call.Arguments[1])
-	if ok {
-		w.windowCtx.RemoveNodeEventByKey(w.node, call.Arguments[0].String(), functionKey(listener))
+	listener := call.Arguments[1]
+	if goja.IsNull(listener) || goja.IsUndefined(listener) {
+		return goja.Undefined()
+	}
+	if _, ok := goja.AssertFunction(listener); ok {
+		w.windowCtx.RemoveNodeEventByKey(w.node, call.Arguments[0].String(), listener)
 	}
 	return goja.Undefined()
 }
@@ -1133,6 +1167,14 @@ func (node *NodeDOM) appendChildNode(child *NodeDOM) {
 	if err := node.checkCrossOriginMutation(child); err != nil {
 		return
 	}
+	// Reject cycles: a node cannot be inserted into one of its own ancestors,
+	// which would create a Parent/Children loop and overflow the stack in
+	// MarkDirty, Print, getXPath, and every tree walk.
+	for a := node; a != nil; a = a.Parent {
+		if a == child {
+			return
+		}
+	}
 	child.Parent = node
 	child.Document = node.Document
 	child.WindowCtx = node.WindowCtx
@@ -1236,7 +1278,10 @@ func (w *JSWindowWrapper) requestAnimationFrame(call goja.FunctionCall) goja.Val
 		panic(w.runtime.NewGoError(errors.New("requestAnimationFrame callback must be a function")))
 	}
 	id := w.windowCtx.ScheduleAnimationFrame(func() {
-		_, _ = listener(goja.Undefined(), w.runtime.ToValue(float64(time.Now().UnixNano())/1e6))
+		runJSListener("requestAnimationFrame callback", &JSConsoleWrapper{windowCtx: w.windowCtx, runtime: w.runtime}, func() error {
+			_, err := listener(goja.Undefined(), w.runtime.ToValue(float64(time.Now().UnixNano())/1e6))
+			return err
+		})
 	})
 	return w.runtime.ToValue(int64(id))
 }
@@ -1360,8 +1405,12 @@ func (w *JSWindowWrapper) addEventListener(call goja.FunctionCall) goja.Value {
 	if !ok {
 		panic(w.runtime.NewGoError(errors.New("addEventListener listener must be a function")))
 	}
-	w.windowCtx.registerEvent(eventType, functionKey(listenerFunc), func(data interface{}) {
-		_, _ = listenerFunc(goja.Undefined(), w.runtime.ToValue(data))
+	// Key by the JS object value so removeEventListener can match.
+	w.windowCtx.registerEvent(eventType, listener, func(data interface{}) {
+		runJSListener("window event listener", &JSConsoleWrapper{windowCtx: w.windowCtx, runtime: w.runtime}, func() error {
+			_, err := listenerFunc(goja.Undefined(), w.runtime.ToValue(data))
+			return err
+		})
 	})
 	return goja.Undefined()
 }
@@ -1376,11 +1425,9 @@ func (w *JSWindowWrapper) removeEventListener(call goja.FunctionCall) goja.Value
 	if goja.IsNull(listener) || goja.IsUndefined(listener) {
 		return goja.Undefined()
 	}
-	listenerFunc, ok := goja.AssertFunction(listener)
-	if !ok {
-		return goja.Undefined()
+	if _, ok := goja.AssertFunction(listener); ok {
+		w.windowCtx.RemoveEventByKey(eventType, listener)
 	}
-	w.windowCtx.RemoveEventByKey(eventType, functionKey(listenerFunc))
 	return goja.Undefined()
 }
 
@@ -1424,9 +1471,12 @@ func (w *JSWindowWrapper) postMessage(call goja.FunctionCall) goja.Value {
 		_ = eventObj.Set("origin", windowOrigin)
 		_ = eventObj.Set("source", w.windowCtx.GetJSRuntime().Get("window")) // reference to sender's window
 
-		// Emit message event on the target window. jsRuntimeMu is not held
-		// during RunJS/SetJSValue (Goja is internally synchronized), so this
-		// does not deadlock when the target is the same window.
+		// Serialize on the target window's Goja runtime lock. Goja is not
+		// thread-safe, so we must hold targetWC.jsRuntimeMu while emitting
+		// events into the target VM. The lock is reentrant, so same-window
+		// posts (where the sender already holds its own lock) remain safe.
+		targetWC.jsRuntimeMu.lock()
+		defer targetWC.jsRuntimeMu.unlock()
 		targetWC.EmitEvent("message", eventObj)
 	}
 
@@ -1575,7 +1625,7 @@ func (w *JSWindowWrapper) fetch(call goja.FunctionCall) goja.Value {
 
 		// Make actual request
 		resp := sauce.MakeCORSRequestWithClient(httpClient, parsedURL, origin, method, body, headers)
-		if resp.Code == 0 && resp.Body != "" && strings.Contains(resp.Body, "error") {
+		if resp.Code < 0 {
 			scheduleFetchError(errors.New(resp.Body))
 			return
 		}
@@ -1638,7 +1688,10 @@ func (w *JSWindowWrapper) XMLHttpRequest(call goja.ConstructorCall) *goja.Object
 		if !w.windowCtx.IsActive() {
 			return
 		}
-		_, _ = listener(goja.Undefined(), w.runtime.ToValue(eventObj))
+		runJSListener("XHR listener", &JSConsoleWrapper{windowCtx: w.windowCtx, runtime: w.runtime}, func() error {
+			_, err := listener(goja.Undefined(), w.runtime.ToValue(eventObj))
+			return err
+		})
 	}
 
 	// Helper to update readyState and fire event
@@ -1705,19 +1758,21 @@ func (w *JSWindowWrapper) XMLHttpRequest(call goja.ConstructorCall) *goja.Object
 		requestMethod = strings.ToUpper(call.Arguments[0].String())
 		requestURL = call.Arguments[1].String()
 
-		// Reset state
+		// Reset state. Per the XHR spec, open() resets the object to the OPENED
+		// state regardless of its previous state, so XHR objects can be reused.
 		requestHeaders = make(map[string]string)
 		requestBody = nil
 		status = 0
 		statusText = ""
 		responseText = ""
 		response = nil
+		readyState = OPENED
+		_ = xhrObj.Set("readyState", OPENED)
 		_ = xhrObj.Set("status", 0)
 		_ = xhrObj.Set("statusText", "")
 		_ = xhrObj.Set("responseText", "")
 		_ = xhrObj.Set("response", nil)
 
-		updateReadyState(OPENED)
 		return goja.Undefined()
 	})
 
@@ -1817,7 +1872,7 @@ func (w *JSWindowWrapper) XMLHttpRequest(call goja.ConstructorCall) *goja.Object
 			// Make actual request
 			resp := sauce.MakeCORSRequestWithClient(httpClient, parsedURL, origin, requestMethod, requestBody, requestHeaders)
 
-			if resp.Code == 0 && resp.Body != "" && strings.Contains(resp.Body, "error") {
+			if resp.Code < 0 {
 				dispatchNetworkEvent("error")
 				return
 			}

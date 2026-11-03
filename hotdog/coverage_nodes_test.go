@@ -55,9 +55,13 @@ func attachNode(t *testing.T, parent, child *NodeDOM) {
 }
 
 func TestGetTextContentWhitespaceModes(t *testing.T) {
-	// Non-text nodes return raw content.
-	el := &NodeDOM{Type: NodeTypeElement, Element: "div", Content: "  raw  "}
-	if el.GetTextContent() != "  raw  " {
+	// Non-text (element) nodes return concatenated descendant text.
+	el := &NodeDOM{Type: NodeTypeElement, Element: "div", Content: "  raw  ",
+		Children: []*NodeDOM{
+			{Type: NodeTypeText, Content: "hello"},
+			{Type: NodeTypeText, Content: " world"},
+		}}
+	if el.GetTextContent() != "helloworld" {
 		t.Fatalf("element GetTextContent = %q", el.GetTextContent())
 	}
 

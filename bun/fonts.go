@@ -14,6 +14,16 @@ var sansSerif = map[int]font.Face{
 	800: parseFont(800),
 }
 
+// getFontFace returns the font face for the given weight, falling back to 400
+// if the weight is not present in the map (prevents nil face dereference).
+func getFontFace(weight int) font.Face {
+	face := sansSerif[weight]
+	if face == nil {
+		face = sansSerif[400]
+	}
+	return face
+}
+
 func parseFont(weight int) font.Face {
 	fontBytes := assets.OpenSans(weight)
 	f, err := opentype.Parse(fontBytes)

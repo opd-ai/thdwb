@@ -77,29 +77,31 @@ func getDefaultElementFontWeight(element string) int {
 }
 
 // mapSizeValue converts a CSS size string to a float64 pixel value.
-// Extracts the numeric portion from strings like "16px", "1.5em", "100%".
-// For relative units (em, rem, %), returns the numeric part only.
-// Layout engine resolves relative units against parent context.
-// Returns 14 (default font size) if no number found.
-func mapSizeValue(sizeValue string) float64 {
-	re := regexp.MustCompile(`[0-9]+(\.[0-9]+)?`)
+// Extracts the numeric portion from strings like "16px", "1.5em", "100%", "-5px".
+// Returns the numeric value and the unit suffix ("px", "%", "em", ...).
+// Returns 14 and "px" if no number found.
+func mapSizeValue(sizeValue string) (float64, string) {
+	re := regexp.MustCompile(`[+-]?[0-9]+(\.[0-9]+)?`)
 	valueString := re.FindString(sizeValue)
 	if valueString == "" {
-		return float64(14)
+		return float64(14), "px"
 	}
 	value, err := strconv.ParseFloat(valueString, 64)
 	if err != nil {
-		return float64(14)
+		return float64(14), "px"
 	}
 
-	return value
+	// Extract the unit suffix after the number.
+	unit := strings.TrimPrefix(sizeValue, valueString)
+	unit = strings.TrimSpace(unit)
+	return value, unit
 }
 
 // mapIntValue extracts an integer from a CSS value string.
 // Used for properties like z-index, font-weight (numeric).
 // Returns 0 if no number found.
 func mapIntValue(intValue string) int {
-	re := regexp.MustCompile(`[0-9]+`)
+	re := regexp.MustCompile(`[+-]?[0-9]+`)
 	valueString := re.FindString(intValue)
 	if valueString == "" {
 		return 0
@@ -131,7 +133,7 @@ func mapPropToStylesheet(parsedStyleSheet *hotdog.Stylesheet, propSlice []string
 	case "background-color":
 		parsedStyleSheet.BackgroundColor = MapCSSColor(propValue)
 	case "font-size":
-		parsedStyleSheet.FontSize = mapSizeValue(propValue)
+		parsedStyleSheet.FontSize, _ = mapSizeValue(propValue)
 	case "font-weight":
 		parsedStyleSheet.FontWeight = mapIntValue(propValue)
 	case "font-family":
@@ -139,9 +141,9 @@ func mapPropToStylesheet(parsedStyleSheet *hotdog.Stylesheet, propSlice []string
 	case "font-style":
 		parsedStyleSheet.FontStyle = propValue
 	case "line-height":
-		parsedStyleSheet.LineHeight = mapSizeValue(propValue)
+		parsedStyleSheet.LineHeight, _ = mapSizeValue(propValue)
 	case "letter-spacing":
-		parsedStyleSheet.LetterSpacing = mapSizeValue(propValue)
+		parsedStyleSheet.LetterSpacing, _ = mapSizeValue(propValue)
 	case "text-align":
 		parsedStyleSheet.TextAlign = propValue
 	case "text-decoration":
@@ -163,9 +165,9 @@ func mapPropToStylesheet(parsedStyleSheet *hotdog.Stylesheet, propSlice []string
 	case "align-content":
 		parsedStyleSheet.AlignContent = propValue
 	case "flex-grow":
-		parsedStyleSheet.FlexGrow = mapSizeValue(propValue)
+		parsedStyleSheet.FlexGrow, _ = mapSizeValue(propValue)
 	case "flex-shrink":
-		parsedStyleSheet.FlexShrink = mapSizeValue(propValue)
+		parsedStyleSheet.FlexShrink, _ = mapSizeValue(propValue)
 	case "flex-basis":
 		parsedStyleSheet.FlexBasis = propValue
 	case "order":
@@ -173,55 +175,55 @@ func mapPropToStylesheet(parsedStyleSheet *hotdog.Stylesheet, propSlice []string
 	case "align-self":
 		parsedStyleSheet.AlignSelf = propValue
 	case "width":
-		parsedStyleSheet.Width = mapSizeValue(propValue)
+		parsedStyleSheet.Width, _ = mapSizeValue(propValue)
 	case "height":
-		parsedStyleSheet.Height = mapSizeValue(propValue)
+		parsedStyleSheet.Height, _ = mapSizeValue(propValue)
 	case "min-width":
-		parsedStyleSheet.MinWidth = mapSizeValue(propValue)
+		parsedStyleSheet.MinWidth, _ = mapSizeValue(propValue)
 	case "min-height":
-		parsedStyleSheet.MinHeight = mapSizeValue(propValue)
+		parsedStyleSheet.MinHeight, _ = mapSizeValue(propValue)
 	case "max-width":
-		parsedStyleSheet.MaxWidth = mapSizeValue(propValue)
+		parsedStyleSheet.MaxWidth, _ = mapSizeValue(propValue)
 	case "max-height":
-		parsedStyleSheet.MaxHeight = mapSizeValue(propValue)
+		parsedStyleSheet.MaxHeight, _ = mapSizeValue(propValue)
 	case "top":
-		parsedStyleSheet.Top = mapSizeValue(propValue)
+		parsedStyleSheet.Top, _ = mapSizeValue(propValue)
 	case "right":
-		parsedStyleSheet.Right = mapSizeValue(propValue)
+		parsedStyleSheet.Right, _ = mapSizeValue(propValue)
 	case "bottom":
-		parsedStyleSheet.Bottom = mapSizeValue(propValue)
+		parsedStyleSheet.Bottom, _ = mapSizeValue(propValue)
 	case "left":
-		parsedStyleSheet.Left = mapSizeValue(propValue)
+		parsedStyleSheet.Left, _ = mapSizeValue(propValue)
 	case "z-index":
 		parsedStyleSheet.ZIndex = mapIntValue(propValue)
 	case "margin":
 		parseMargin(propValue, parsedStyleSheet)
 	case "margin-top":
-		parsedStyleSheet.MarginTop = mapSizeValue(propValue)
+		parsedStyleSheet.MarginTop, _ = mapSizeValue(propValue)
 	case "margin-right":
-		parsedStyleSheet.MarginRight = mapSizeValue(propValue)
+		parsedStyleSheet.MarginRight, _ = mapSizeValue(propValue)
 	case "margin-bottom":
-		parsedStyleSheet.MarginBottom = mapSizeValue(propValue)
+		parsedStyleSheet.MarginBottom, _ = mapSizeValue(propValue)
 	case "margin-left":
-		parsedStyleSheet.MarginLeft = mapSizeValue(propValue)
+		parsedStyleSheet.MarginLeft, _ = mapSizeValue(propValue)
 	case "padding":
 		parsePadding(propValue, parsedStyleSheet)
 	case "padding-top":
-		parsedStyleSheet.PaddingTop = mapSizeValue(propValue)
+		parsedStyleSheet.PaddingTop, _ = mapSizeValue(propValue)
 	case "padding-right":
-		parsedStyleSheet.PaddingRight = mapSizeValue(propValue)
+		parsedStyleSheet.PaddingRight, _ = mapSizeValue(propValue)
 	case "padding-bottom":
-		parsedStyleSheet.PaddingBottom = mapSizeValue(propValue)
+		parsedStyleSheet.PaddingBottom, _ = mapSizeValue(propValue)
 	case "padding-left":
-		parsedStyleSheet.PaddingLeft = mapSizeValue(propValue)
+		parsedStyleSheet.PaddingLeft, _ = mapSizeValue(propValue)
 	case "border-width", "border-top-width":
-		parsedStyleSheet.BorderTopWidth = mapSizeValue(propValue)
+		parsedStyleSheet.BorderTopWidth, _ = mapSizeValue(propValue)
 	case "border-right-width":
-		parsedStyleSheet.BorderRightWidth = mapSizeValue(propValue)
+		parsedStyleSheet.BorderRightWidth, _ = mapSizeValue(propValue)
 	case "border-bottom-width":
-		parsedStyleSheet.BorderBottomWidth = mapSizeValue(propValue)
+		parsedStyleSheet.BorderBottomWidth, _ = mapSizeValue(propValue)
 	case "border-left-width":
-		parsedStyleSheet.BorderLeftWidth = mapSizeValue(propValue)
+		parsedStyleSheet.BorderLeftWidth, _ = mapSizeValue(propValue)
 	case "border-style", "border-top-style":
 		parsedStyleSheet.BorderTopStyle = propValue
 	case "border-right-style":
@@ -262,13 +264,16 @@ func parseInlineStylesheet(attributes []*hotdog.Attribute, elementStylesheet *ho
 		if attributeName == "style" {
 
 			styleString := attributes[i].Value
-			styleProps := strings.Split(strings.ReplaceAll(styleString, " ", ""), ";")
-
-			for i := 0; i < len(styleProps); i++ {
-				styledProperty := strings.Split(styleProps[i], ":")
-				if len(styledProperty) >= 2 {
-					elementStylesheet = mapPropToStylesheet(elementStylesheet, styledProperty)
+			// Split on ';' first, then on ':' per declaration, trimming only
+			// outer whitespace. Deleting all whitespace (the old behavior)
+			// collapses multi-value shorthand like "margin: 10px 20px" into
+			// "margin:10px20px".
+			for _, decl := range strings.Split(styleString, ";") {
+				prop, val, ok := strings.Cut(decl, ":")
+				if !ok {
+					continue
 				}
+				elementStylesheet = mapPropToStylesheet(elementStylesheet, []string{strings.TrimSpace(prop), strings.TrimSpace(val)})
 			}
 		}
 	}
@@ -337,28 +342,28 @@ func parseMargin(value string, sheet *hotdog.Stylesheet) {
 	values := strings.Fields(value)
 	switch len(values) {
 	case 1:
-		v := mapSizeValue(values[0])
+		v, _ := mapSizeValue(values[0])
 		sheet.MarginTop = v
 		sheet.MarginRight = v
 		sheet.MarginBottom = v
 		sheet.MarginLeft = v
 	case 2:
-		v1 := mapSizeValue(values[0])
-		v2 := mapSizeValue(values[1])
+		v1, _ := mapSizeValue(values[0])
+		v2, _ := mapSizeValue(values[1])
 		sheet.MarginTop = v1
 		sheet.MarginBottom = v1
 		sheet.MarginRight = v2
 		sheet.MarginLeft = v2
 	case 3:
-		sheet.MarginTop = mapSizeValue(values[0])
-		sheet.MarginRight = mapSizeValue(values[1])
-		sheet.MarginBottom = mapSizeValue(values[2])
+		sheet.MarginTop, _ = mapSizeValue(values[0])
+		sheet.MarginRight, _ = mapSizeValue(values[1])
+		sheet.MarginBottom, _ = mapSizeValue(values[2])
 		sheet.MarginLeft = sheet.MarginRight
 	case 4:
-		sheet.MarginTop = mapSizeValue(values[0])
-		sheet.MarginRight = mapSizeValue(values[1])
-		sheet.MarginBottom = mapSizeValue(values[2])
-		sheet.MarginLeft = mapSizeValue(values[3])
+		sheet.MarginTop, _ = mapSizeValue(values[0])
+		sheet.MarginRight, _ = mapSizeValue(values[1])
+		sheet.MarginBottom, _ = mapSizeValue(values[2])
+		sheet.MarginLeft, _ = mapSizeValue(values[3])
 	}
 }
 
@@ -366,28 +371,28 @@ func parsePadding(value string, sheet *hotdog.Stylesheet) {
 	values := strings.Fields(value)
 	switch len(values) {
 	case 1:
-		v := mapSizeValue(values[0])
+		v, _ := mapSizeValue(values[0])
 		sheet.PaddingTop = v
 		sheet.PaddingRight = v
 		sheet.PaddingBottom = v
 		sheet.PaddingLeft = v
 	case 2:
-		v1 := mapSizeValue(values[0])
-		v2 := mapSizeValue(values[1])
+		v1, _ := mapSizeValue(values[0])
+		v2, _ := mapSizeValue(values[1])
 		sheet.PaddingTop = v1
 		sheet.PaddingBottom = v1
 		sheet.PaddingRight = v2
 		sheet.PaddingLeft = v2
 	case 3:
-		sheet.PaddingTop = mapSizeValue(values[0])
-		sheet.PaddingRight = mapSizeValue(values[1])
-		sheet.PaddingBottom = mapSizeValue(values[2])
+		sheet.PaddingTop, _ = mapSizeValue(values[0])
+		sheet.PaddingRight, _ = mapSizeValue(values[1])
+		sheet.PaddingBottom, _ = mapSizeValue(values[2])
 		sheet.PaddingLeft = sheet.PaddingRight
 	case 4:
-		sheet.PaddingTop = mapSizeValue(values[0])
-		sheet.PaddingRight = mapSizeValue(values[1])
-		sheet.PaddingBottom = mapSizeValue(values[2])
-		sheet.PaddingLeft = mapSizeValue(values[3])
+		sheet.PaddingTop, _ = mapSizeValue(values[0])
+		sheet.PaddingRight, _ = mapSizeValue(values[1])
+		sheet.PaddingBottom, _ = mapSizeValue(values[2])
+		sheet.PaddingLeft, _ = mapSizeValue(values[3])
 	}
 }
 

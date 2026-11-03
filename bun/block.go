@@ -34,7 +34,7 @@ func calculateBlockLayout(ctx *gg.Context, node *hotdog.NodeDOM, childIdx int) {
 	// Text nodes are inline by nature, but if they're rendered as block, handle them
 	if node.Type == hotdog.NodeTypeText {
 		textContent := node.GetTextContent()
-		ctx.SetFont(sansSerif[node.Style.FontWeight], node.Style.FontSize)
+		ctx.SetFont(getFontFace(node.Style.FontWeight), node.Style.FontSize)
 		if node.Style.Width == 0 {
 			parentWidth := float64(ctx.Width())
 			if node.Parent != nil && node.Parent.RenderBox != nil && node.Parent.RenderBox.Width > 0 {
@@ -64,7 +64,7 @@ func calculateBlockLayout(ctx *gg.Context, node *hotdog.NodeDOM, childIdx int) {
 	}
 
 	if node.Style.Height == 0 {
-		ctx.SetFont(sansSerif[node.Style.FontWeight], node.Style.FontSize)
+		ctx.SetFont(getFontFace(node.Style.FontWeight), node.Style.FontSize)
 		node.RenderBox.Height = ctx.MeasureStringWrapped(node.Content, node.RenderBox.Width, 1.5) + 2 + ctx.FontHeight()*.5
 	}
 

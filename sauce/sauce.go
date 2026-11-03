@@ -3,6 +3,7 @@ package sauce
 import (
 	"encoding/base64"
 	"fmt"
+	"html"
 	"io"
 	"net"
 	"net/http"
@@ -692,13 +693,12 @@ func (h *History) Last() *url.URL {
 	return h.previousPages[len(h.previousPages)-1]
 }
 
-// PopNext moves forward in history (not fully implemented).
 // PopNext moves forward in history.
 // Moves the last nextPage to previousPages.
 func (h *History) PopNext() {
 	if len(h.nextPages) > 0 {
 		h.previousPages = append(h.previousPages, h.nextPages[len(h.nextPages)-1])
-		h.nextPages = nil
+		h.nextPages = h.nextPages[:len(h.nextPages)-1]
 	}
 }
 
@@ -729,7 +729,7 @@ func loadErrorPage(err string) string {
 			</title>
 		</head>
 		<body>
-			<h1>` + err + `</h1>
+			<h1>` + html.EscapeString(err) + `</h1>
 		</body>
 	</html>`
 }
@@ -755,28 +755,41 @@ type WebRequestDetails struct {
 type WebRequestObserver func(details WebRequestDetails) (WebRequestDetails, error)
 
 // webRequestObservers holds the registered WebRequest API observers.
-var webRequestObservers []WebRequestObserver
+var (
+	webRequestObserversMu sync.RWMutex
+	webRequestObservers   []WebRequestObserver
+)
 
 // RegisterWebRequestObserver registers a callback for WebRequest API events.
 // Returns an ID that can be used with UnregisterWebRequestObserver.
 func RegisterWebRequestObserver(obs WebRequestObserver) int {
+	webRequestObserversMu.Lock()
+	defer webRequestObserversMu.Unlock()
 	webRequestObservers = append(webRequestObservers, obs)
 	return len(webRequestObservers) - 1
 }
 
 // UnregisterWebRequestObserver removes a previously registered observer by ID.
 func UnregisterWebRequestObserver(id int) {
+	webRequestObserversMu.Lock()
+	defer webRequestObserversMu.Unlock()
 	if id < 0 || id >= len(webRequestObservers) {
 		return
 	}
-	webRequestObservers[id] = nil
+	// Actually remove the entry (not just nil-slot it) to prevent unbounded
+	// growth of dead slots.
+	webRequestObservers = append(webRequestObservers[:id], webRequestObservers[id+1:]...)
 }
 
 // notifyWebRequestObservers invokes all registered observers with the given details.
 // If any observer returns a modified details, the last non-nil modification wins.
 // Returns the (possibly modified) details and an error if the request should be blocked.
 func notifyWebRequestObservers(details WebRequestDetails) (WebRequestDetails, error) {
-	for _, obs := range webRequestObservers {
+	webRequestObserversMu.RLock()
+	observers := make([]WebRequestObserver, len(webRequestObservers))
+	copy(observers, webRequestObservers)
+	webRequestObserversMu.RUnlock()
+	for _, obs := range observers {
 		if obs == nil {
 			continue
 		}
@@ -812,26 +825,51 @@ type Resource struct {
 }
 
 // ResourceCache caches HTTP responses in memory.
-// Simple linear search cache; not optimized for large scale.
-// Implements basic HTTP caching semantics (ETag/Last-Modified not yet implemented).
+// Bounded map-based cache with a maximum entry count to prevent unbounded
+// memory growth during long browsing sessions.
 type ResourceCache struct {
-	cachedResources []*Resource
+	mu      sync.RWMutex
+	entries map[string]*Resource
+	order   []string // insertion order for eviction
+	max     int
 }
 
-// AddResource adds a resource to the cache.
+const maxResourceCacheEntries = 256
+
+// AddResource adds a resource to the cache, evicting the oldest entry if full.
 func (c *ResourceCache) AddResource(resource *Resource) {
-	c.cachedResources = append(c.cachedResources, resource)
+	if resource == nil || resource.Key == "" {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.entries == nil {
+		c.entries = make(map[string]*Resource)
+		c.order = make([]string, 0, maxResourceCacheEntries)
+	}
+	// Dedup by key: replace existing entry.
+	if _, exists := c.entries[resource.Key]; exists {
+		c.entries[resource.Key] = resource
+		return
+	}
+	c.entries[resource.Key] = resource
+	c.order = append(c.order, resource.Key)
+	if len(c.order) > maxResourceCacheEntries {
+		oldest := c.order[0]
+		c.order = c.order[1:]
+		delete(c.entries, oldest)
+	}
 }
 
 // GetResource retrieves a resource from cache by key.
 // Returns nil if not found.
 func (c *ResourceCache) GetResource(resourceKey string) *Resource {
-	for _, resource := range c.cachedResources {
-		if resource.Key == resourceKey {
-			return resource
-		}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.entries == nil {
+		return nil
 	}
-	return nil
+	return c.entries[resourceKey]
 }
 
 // CachedImage represents a cached image (raw bytes).
@@ -842,30 +880,51 @@ type CachedImage struct {
 
 // ImgCache caches decoded images in memory.
 // Avoids re-decoding images on subsequent loads.
-// Uses simple linear search; LRU eviction not yet implemented.
+// Bounded map-based cache with a maximum entry count.
 type ImgCache struct {
-	cachedImages []*CachedImage
+	mu      sync.RWMutex
+	entries map[string]*CachedImage
+	order   []string
+	max     int
 }
 
-// AddImage adds an image to the cache.
+const maxImgCacheEntries = 128
+
+// AddImage adds an image to the cache, deduping by key and evicting the oldest
+// entry if full.
 func (c *ImgCache) AddImage(key string, value []byte) {
-	c.cachedImages = append(c.cachedImages,
-		&CachedImage{
-			Key:   key,
-			Image: value,
-		},
-	)
+	if key == "" {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.entries == nil {
+		c.entries = make(map[string]*CachedImage)
+		c.order = make([]string, 0, maxImgCacheEntries)
+	}
+	// Dedup by key: replace existing entry.
+	if _, exists := c.entries[key]; exists {
+		c.entries[key] = &CachedImage{Key: key, Image: value}
+		return
+	}
+	c.entries[key] = &CachedImage{Key: key, Image: value}
+	c.order = append(c.order, key)
+	if len(c.order) > maxImgCacheEntries {
+		oldest := c.order[0]
+		c.order = c.order[1:]
+		delete(c.entries, oldest)
+	}
 }
 
 // GetImage retrieves an image from cache by key.
 // Returns nil if not found.
 func (c *ImgCache) GetImage(imageKey string) *CachedImage {
-	for _, image := range c.cachedImages {
-		if image.Key == imageKey {
-			return image
-		}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.entries == nil {
+		return nil
 	}
-	return nil
+	return c.entries[imageKey]
 }
 
 // GetResource fetches a resource for the given URL.
@@ -1103,15 +1162,31 @@ func GetImage(URL *url.URL) ([]byte, error) {
 	}
 
 	var img []byte
-	if len(imgUrl) >= 22 && imgUrl[:22] == "data:image/png;base64," {
-		imgData := imgUrl[strings.IndexByte(imgUrl, ',')+1:]
-
-		decodedData, err := base64.RawStdEncoding.DecodeString(imgData)
-		if err != nil {
-			return nil, fmt.Errorf("failed to decode base64 data (%s)", err)
+	if strings.HasPrefix(imgUrl, "data:") {
+		// Parse data URL: data:[<mediatype>][;base64],<data>
+		commaIdx := strings.IndexByte(imgUrl, ',')
+		if commaIdx < 0 {
+			return nil, fmt.Errorf("malformed data URL: %s", imgUrl)
 		}
+		header := imgUrl[5:commaIdx]
+		data := imgUrl[commaIdx+1:]
+		isBase64 := strings.HasSuffix(header, ";base64")
 
-		img = decodedData
+		var decoded []byte
+		var err error
+		if isBase64 {
+			// Try standard base64 first (with padding), then raw (no padding).
+			decoded, err = base64.StdEncoding.DecodeString(data)
+			if err != nil {
+				decoded, err = base64.RawStdEncoding.DecodeString(strings.TrimRight(data, "="))
+				if err != nil {
+					return nil, fmt.Errorf("failed to decode base64 data (%s)", err)
+				}
+			}
+		} else {
+			decoded = []byte(data)
+		}
+		img = decoded
 	} else {
 		req, err := http.NewRequest("GET", imgUrl, nil)
 		if err != nil {

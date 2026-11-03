@@ -1,6 +1,8 @@
 package mustard
 
 import (
+	"log"
+
 	gg "github.com/danfragoso/thdwb/gg"
 )
 
@@ -69,6 +71,14 @@ func drawRootFrame(window *WindowBase) {
 }
 
 func (frame *Frame) draw() {
+	// Recover from panics during rendering so a single bad frame drops the
+	// frame instead of crashing the whole browser process.
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("render panic in frame draw: %v", r)
+		}
+	}()
+
 	if !frame.GetVisible() {
 		return
 	}

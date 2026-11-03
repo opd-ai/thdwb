@@ -470,7 +470,7 @@ func TestMapSizeValue(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		result := mapSizeValue(tc.input)
+		result, _ := mapSizeValue(tc.input)
 		assert.Equal(t, tc.expected, result, "Input: %s", tc.input)
 	}
 }

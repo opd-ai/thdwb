@@ -116,6 +116,7 @@ func NewContextForRGBA(im *image.RGBA) *Context {
 func (dc *Context) SetImage(image *image.RGBA) {
 	dc.im = image
 	dc.width, dc.height = image.Bounds().Size().X, image.Bounds().Size().Y
+	dc.rasterizer = raster.NewRasterizer(dc.width, dc.height)
 }
 
 // GetCurrentPoint will return the current point and if there is a current point.
@@ -252,7 +253,12 @@ func (dc *Context) SetColor(c color.Color) {
 // sign (#) is optional. Both 3- and 6-digit variations are supported. 8 digits
 // may be provided to set the alpha value as well.
 func (dc *Context) SetHexColor(x string) {
-	r, g, b, a := parseHexColor(x)
+	r, g, b, a, ok := parseHexColor(x)
+	if !ok {
+		// Unsupported hex length — leave the current color unchanged rather
+		// than silently painting opaque black.
+		return
+	}
 	dc.SetRGBA255(r, g, b, a)
 }
 
@@ -567,6 +573,9 @@ func (dc *Context) Clear() {
 
 // SetPixel sets the color of the specified pixel using the current color.
 func (dc *Context) SetPixel(x, y int) {
+	if x < 0 || y < 0 || x >= dc.width || y >= dc.height {
+		return
+	}
 	dc.im.Set(x, y, dc.color)
 }
 

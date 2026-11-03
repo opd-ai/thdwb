@@ -435,7 +435,7 @@ func (bs *BrowserShell) handleKeyboardInput(input mustard.KeyboardInput) {
 		case "t":
 			bs.tabManager.Add("New Tab", bs.settings.Homepage, "", "", "")
 		case "w":
-			bs.tabManager.CloseActive()
+			bs.closeTab(bs.tabManager.ActiveTab())
 		case "b":
 			bs.bookmarksSidebar.Toggle()
 		case "h":
@@ -516,6 +516,19 @@ func (bs *BrowserShell) loadTabContent(tab *Tab) error {
 
 	bs.renderWebContent(tab)
 	return nil
+}
+
+// closeTab destroys the tab's WindowContext and removes it from the shell's
+// tab context map, releasing all engine state (goja VM, DOM, cookie jar,
+// HTTP client, rAF timer) for that tab.
+func (bs *BrowserShell) closeTab(tab *Tab) {
+	if tab == nil {
+		return
+	}
+	if wc := bs.tabWindowContexts[tab.ID]; wc != nil {
+		wc.Destroy()
+		delete(bs.tabWindowContexts, tab.ID)
+	}
 }
 
 // applyKetchupParsing re-parses the active document's HTML through ketchup to
