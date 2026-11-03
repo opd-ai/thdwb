@@ -546,10 +546,20 @@ func (bs *BrowserShell) applyKetchupParsing(wc *hotdog.WindowContext, baseURL st
 		return fmt.Errorf("ketchup parsing returned nil document")
 	}
 
-	// Copy ketchup results into the hotdog document.
+	// Preserve the loaded URL and title on the ketchup document. Its DOM nodes
+	// carry a Document back-pointer to ketchupDoc, so they need correct origin
+	// and title metadata for querySelector and document.title.
+	ketchupDoc.URL = wc.ActiveDocument.URL
+	ketchupDoc.Title = wc.ActiveDocument.Title
+
+	// Swap the fully-populated ketchup DOM into the active document in place.
+	// Keeping the *Document pointer stable preserves the JS runtime's document
+	// binding and the wc.Documents history, while replacing the x/net fragment
+	// DOM (which lacks RenderBox/Style) with one bun can lay out and paint.
+	wc.ActiveDocument.DOM = ketchupDoc.DOM
 	wc.ActiveDocument.HTMLRoot = ketchupDoc.HTMLRoot
 	wc.ActiveDocument.StyleSheets = ketchupDoc.StyleSheets
-	wc.ActiveDocument.RawDocument = html
+	wc.ActiveDocument.RawDocument = ketchupDoc.RawDocument
 
 	return nil
 }

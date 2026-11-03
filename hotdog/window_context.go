@@ -284,9 +284,10 @@ func (wc *WindowContext) LoadHTML(html, baseURL string) error {
 	}
 
 	doc := &Document{
-		Title: "",
-		URL:   &url.URL{},
-		DOM:   &NodeDOM{Type: NodeTypeElement, Element: "html", Children: make([]*NodeDOM, 0)},
+		Title:       "",
+		URL:         &url.URL{},
+		RawDocument: html,
+		DOM:         &NodeDOM{Type: NodeTypeElement, Element: "html", Children: make([]*NodeDOM, 0)},
 	}
 
 	if baseURL != "" {
