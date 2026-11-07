@@ -389,6 +389,12 @@ type ChromeAPI struct {
 	mu            sync.Mutex
 	ext           *Extension
 	vm            *goja.Runtime
+	// vmMu serializes every access to the background goja runtime. goja is not
+	// goroutine-safe, and Fire* methods run on timer/HTTP goroutines while the
+	// extension's own code runs elsewhere. It is reentrant because a listener
+	// invoked under this lock can call chrome.tabs.create (and similar), which
+	// fires another event on the same VM from the same goroutine.
+	vmMu          *reentrantMutex
 	router        *MessageRouter
 	tabOps        TabOperations
 	winOps        WindowOperations
@@ -436,6 +442,7 @@ func NewChromeAPI(ext *Extension, vm *goja.Runtime, router *MessageRouter) *Chro
 	return &ChromeAPI{
 		ext:    ext,
 		vm:     vm,
+		vmMu:   newReentrantMutex(),
 		router: router,
 		platform: PlatformInfo{
 			OS:           runtime.GOOS,
@@ -843,6 +850,9 @@ func (c *ChromeAPI) FireRuntimeInstalled(reason string) {
 	copy(listeners, c.runtimeEventListeners["onInstalled"])
 	c.mu.Unlock()
 
+	c.vmMu.lock()
+	defer c.vmMu.unlock()
+
 	for _, cb := range listeners {
 		_, _ = cb(goja.Undefined(), c.vm.ToValue(map[string]interface{}{
 			"reason": reason,
@@ -857,6 +867,9 @@ func (c *ChromeAPI) FireRuntimeStartup() {
 	listeners := make([]goja.Callable, len(c.runtimeEventListeners["onStartup"]))
 	copy(listeners, c.runtimeEventListeners["onStartup"])
 	c.mu.Unlock()
+
+	c.vmMu.lock()
+	defer c.vmMu.unlock()
 
 	for _, cb := range listeners {
 		_, _ = cb(goja.Undefined(), c.vm.ToValue(map[string]interface{}{
@@ -1343,6 +1356,9 @@ func (c *ChromeAPI) FireTabCreated(tab *TabInfo) {
 	copy(listeners, c.tabEventListeners["onCreated"])
 	c.mu.Unlock()
 
+	c.vmMu.lock()
+	defer c.vmMu.unlock()
+
 	for _, cb := range listeners {
 		_, _ = cb(goja.Undefined(), c.vm.ToValue(map[string]interface{}{
 			"id":             tab.ID,
@@ -1366,6 +1382,9 @@ func (c *ChromeAPI) FireTabRemoved(tabID int) {
 	copy(listeners, c.tabEventListeners["onRemoved"])
 	c.mu.Unlock()
 
+	c.vmMu.lock()
+	defer c.vmMu.unlock()
+
 	for _, cb := range listeners {
 		_, _ = cb(goja.Undefined(), c.vm.ToValue(float64(tabID)))
 	}
@@ -1378,6 +1397,9 @@ func (c *ChromeAPI) FireTabActivated(tabID int) {
 	listeners := make([]goja.Callable, len(c.tabEventListeners["onActivated"]))
 	copy(listeners, c.tabEventListeners["onActivated"])
 	c.mu.Unlock()
+
+	c.vmMu.lock()
+	defer c.vmMu.unlock()
 
 	for _, cb := range listeners {
 		_, _ = cb(goja.Undefined(), c.vm.ToValue(map[string]interface{}{
@@ -1393,6 +1415,9 @@ func (c *ChromeAPI) FireTabUpdated(tabID int, changes map[string]interface{}) {
 	listeners := make([]goja.Callable, len(c.tabEventListeners["onUpdated"]))
 	copy(listeners, c.tabEventListeners["onUpdated"])
 	c.mu.Unlock()
+
+	c.vmMu.lock()
+	defer c.vmMu.unlock()
 
 	for _, cb := range listeners {
 		_, _ = cb(goja.Undefined(), c.vm.ToValue(map[string]interface{}{
@@ -1411,6 +1436,9 @@ func (c *ChromeAPI) FireWebRequestEvent(event string, details WebRequestDetails)
 	listeners := make([]goja.Callable, len(c.webRequestEventListeners[event]))
 	copy(listeners, c.webRequestEventListeners[event])
 	c.mu.Unlock()
+
+	c.vmMu.lock()
+	defer c.vmMu.unlock()
 
 	for _, cb := range listeners {
 		_, _ = cb(goja.Undefined(), c.vm.ToValue(map[string]interface{}{
@@ -1436,6 +1464,9 @@ func (c *ChromeAPI) FireDownloadEvent(event string, item DownloadItem) {
 	listeners := make([]goja.Callable, len(c.downloadEventListeners[event]))
 	copy(listeners, c.downloadEventListeners[event])
 	c.mu.Unlock()
+
+	c.vmMu.lock()
+	defer c.vmMu.unlock()
 
 	for _, cb := range listeners {
 		if event == "onErased" {
@@ -1465,6 +1496,9 @@ func (c *ChromeAPI) FireCookieChanged(change CookieChange) {
 	listeners := make([]goja.Callable, len(c.cookieEventListeners))
 	copy(listeners, c.cookieEventListeners)
 	c.mu.Unlock()
+
+	c.vmMu.lock()
+	defer c.vmMu.unlock()
 
 	for _, cb := range listeners {
 		_, _ = cb(goja.Undefined(), c.vm.ToValue(map[string]interface{}{
@@ -1805,6 +1839,9 @@ func (c *ChromeAPI) FireContainerCreated(container *ContainerInfo) {
 	copy(listeners, c.containerEventListeners["onCreated"])
 	c.mu.Unlock()
 
+	c.vmMu.lock()
+	defer c.vmMu.unlock()
+
 	for _, cb := range listeners {
 		_, _ = cb(goja.Undefined(), c.vm.ToValue(map[string]interface{}{
 			"id":    container.ID,
@@ -1822,6 +1859,9 @@ func (c *ChromeAPI) FireContainerRemoved(containerID string) {
 	copy(listeners, c.containerEventListeners["onRemoved"])
 	c.mu.Unlock()
 
+	c.vmMu.lock()
+	defer c.vmMu.unlock()
+
 	for _, cb := range listeners {
 		_, _ = cb(goja.Undefined(), c.vm.ToValue(map[string]interface{}{
 			"id": containerID,
@@ -1835,6 +1875,9 @@ func (c *ChromeAPI) FireContainerUpdated(container *ContainerInfo) {
 	listeners := make([]goja.Callable, len(c.containerEventListeners["onUpdated"]))
 	copy(listeners, c.containerEventListeners["onUpdated"])
 	c.mu.Unlock()
+
+	c.vmMu.lock()
+	defer c.vmMu.unlock()
 
 	for _, cb := range listeners {
 		_, _ = cb(goja.Undefined(), c.vm.ToValue(map[string]interface{}{
@@ -1853,6 +1896,9 @@ func (c *ChromeAPI) FireContextMenuClicked(itemID string) {
 	copy(listeners, c.contextMenuEventListeners)
 	c.mu.Unlock()
 
+	c.vmMu.lock()
+	defer c.vmMu.unlock()
+
 	for _, cb := range listeners {
 		_, _ = cb(goja.Undefined(), c.vm.ToValue(map[string]interface{}{
 			"menuItemId": itemID,
@@ -1867,6 +1913,9 @@ func (c *ChromeAPI) FirePermissionAdded(permissions []string) {
 	copy(listeners, c.permissionAddedListeners)
 	c.mu.Unlock()
 
+	c.vmMu.lock()
+	defer c.vmMu.unlock()
+
 	for _, cb := range listeners {
 		_, _ = cb(goja.Undefined(), c.vm.ToValue(permissions))
 	}
@@ -1878,6 +1927,9 @@ func (c *ChromeAPI) FirePermissionRemoved(permissions []string) {
 	listeners := make([]goja.Callable, len(c.permissionRemovedListeners))
 	copy(listeners, c.permissionRemovedListeners)
 	c.mu.Unlock()
+
+	c.vmMu.lock()
+	defer c.vmMu.unlock()
 
 	for _, cb := range listeners {
 		_, _ = cb(goja.Undefined(), c.vm.ToValue(permissions))
@@ -2786,6 +2838,9 @@ func (c *ChromeAPI) FireAlarm(name string) {
 	copy(listeners, c.alarmEventListeners["onAlarm"])
 	c.mu.Unlock()
 
+	c.vmMu.lock()
+	defer c.vmMu.unlock()
+
 	for _, cb := range listeners {
 		_, _ = cb(goja.Undefined(), c.vm.ToValue(map[string]interface{}{
 			"name": name,
@@ -3228,6 +3283,9 @@ func (c *ChromeAPI) FireNotificationClicked(notificationID string) {
 	copy(listeners, c.notificationClickedListeners)
 	c.mu.Unlock()
 
+	c.vmMu.lock()
+	defer c.vmMu.unlock()
+
 	for _, cb := range listeners {
 		_, _ = cb(goja.Undefined(), c.vm.ToValue(notificationID))
 	}
@@ -3239,6 +3297,9 @@ func (c *ChromeAPI) FireNotificationClosed(notificationID string) {
 	listeners := make([]goja.Callable, len(c.notificationClosedListeners))
 	copy(listeners, c.notificationClosedListeners)
 	c.mu.Unlock()
+
+	c.vmMu.lock()
+	defer c.vmMu.unlock()
 
 	for _, cb := range listeners {
 		_, _ = cb(goja.Undefined(), c.vm.ToValue(notificationID))
