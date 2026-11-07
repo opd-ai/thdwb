@@ -54,18 +54,32 @@ func (window *WindowBase) render() *image.RGBA {
 
 // compositeOverlays blits each overlay's buffer onto frame at its position,
 // copying the current frame first so a static overlay never bleeds into the
-// live context image.
+// live context image. The private copy is a per-window scratch buffer reused
+// across render passes (audit R-16); it is only reallocated when the frame
+// size changes.
 func compositeOverlays(window *WindowBase, frame *image.RGBA, overlays []*Overlay) {
 	if len(overlays) == 0 {
 		return
 	}
-	nBuffer := image.NewRGBA(frame.Bounds())
-	draw.Draw(nBuffer, frame.Bounds(), frame, image.Point{}, draw.Over)
-	window.frameBuffer = nBuffer
+	dest := frame
+	if frame != window.overlayScratch {
+		// First pass of this render: copy the live context image into the
+		// scratch so overlays never mutate it. A second pass receives the
+		// scratch back (already a private copy) and blits straight onto it,
+		// avoiding a redundant full-frame copy and a self-overlap.
+		if window.overlayScratch == nil || window.overlayScratch.Bounds() != frame.Bounds() {
+			window.overlayScratch = image.NewRGBA(frame.Bounds())
+		} else {
+			clear(window.overlayScratch.Pix)
+		}
+		draw.Draw(window.overlayScratch, frame.Bounds(), frame, image.Point{}, draw.Over)
+		dest = window.overlayScratch
+	}
+	window.frameBuffer = dest
 	for _, overlay := range overlays {
 		if overlay.buffer == nil {
 			continue
 		}
-		draw.Draw(window.frameBuffer, overlay.buffer.Bounds().Add(overlay.position), overlay.buffer, image.Point{}, draw.Over)
+		draw.Draw(dest, overlay.buffer.Bounds().Add(overlay.position), overlay.buffer, image.Point{}, draw.Over)
 	}
 }

@@ -198,8 +198,15 @@ func (a *ebitenApp) activeVisibleWindow() *WindowBase {
 
 // ebitenGame is the Ebitengine game loop that drives thdwb rendering.
 type ebitenGame struct {
-	app   *ebitenApp
+	app *ebitenApp
+	// frame is the CPU buffer produced by the last Update.
 	frame *image.RGBA
+	// gpuFrame is a persistent GPU texture reused across frames. Uploading a
+	// brand-new texture with NewImageFromImage every frame churned GPU memory
+	// (finalizers reclaimed it, so churn not a leak -- audit R-16). We keep one
+	// texture and WritePixels into it, recreating only when the frame size
+	// changes.
+	gpuFrame *ebiten.Image
 }
 
 // Update runs the per-frame application callback and renders the active
@@ -238,6 +245,19 @@ func (g *ebitenGame) Draw(screen *ebiten.Image) {
 		}
 	}()
 	if g.frame == nil {
+		return
+	}
+	// Reuse a persistent GPU texture sized to the frame instead of allocating
+	// and uploading a new one each frame (audit R-16). WritePixels needs a
+	// tightly-packed RGBA byte slice (stride == width*4); gg frames satisfy
+	// this. For any other layout fall back to the one-shot upload path.
+	b := g.frame.Bounds()
+	if g.frame.Stride == b.Dx()*4 && len(g.frame.Pix) >= b.Dx()*b.Dy()*4 {
+		if g.gpuFrame == nil || g.gpuFrame.Bounds().Dx() != b.Dx() || g.gpuFrame.Bounds().Dy() != b.Dy() {
+			g.gpuFrame = ebiten.NewImage(b.Dx(), b.Dy())
+		}
+		g.gpuFrame.WritePixels(g.frame.Pix)
+		screen.DrawImage(g.gpuFrame, nil)
 		return
 	}
 	screen.DrawImage(ebiten.NewImageFromImage(g.frame), nil)

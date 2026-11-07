@@ -35,6 +35,10 @@ type WindowBase struct {
 
 	context     interface{}
 	frameBuffer *image.RGBA
+	// overlayScratch is a persistent composite buffer reused whenever overlays
+	// are present, so a window with overlays no longer allocates a full-frame
+	// RGBA copy on every render pass (audit R-16). Reallocated on resize.
+	overlayScratch *image.RGBA
 
 	cursor Cursor
 
