@@ -196,7 +196,11 @@ type WindowContext struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	// Focus and input state
+	// Focus and input state. inputMu guards both fields: paintFocusRing reads
+	// the focused element from the render goroutine while keyboard/mouse
+	// handlers update it, and concurrent SetInputState calls used to race on
+	// the plain map (fatal "concurrent map writes", unrecoverable).
+	inputMu        sync.Mutex
 	focusedElement *NodeDOM
 	inputState     map[string]interface{}
 
@@ -962,7 +966,12 @@ func (wc *WindowContext) DispatchTextInput(char rune) *NodeDOM {
 }
 
 func (wc *WindowContext) focusedDOMNode() *NodeDOM {
-	if wc == nil || wc.focusedElement == nil || wc.focusedElement.WindowCtx != wc {
+	if wc == nil {
+		return nil
+	}
+	wc.inputMu.Lock()
+	defer wc.inputMu.Unlock()
+	if wc.focusedElement == nil || wc.focusedElement.WindowCtx != wc {
 		return nil
 	}
 	return wc.focusedElement
@@ -987,13 +996,23 @@ func (wc *WindowContext) dispatchKeyboardEventAt(target *NodeDOM, eventType stri
 
 // SetFocusedElement sets the currently focused DOM element.
 func (wc *WindowContext) SetFocusedElement(el *NodeDOM) {
-	if wc.focusedElement == el {
+	if wc == nil {
 		return
 	}
-	if wc.focusedElement != nil {
-		wc.focusedElement.RequestRepaint()
+	wc.inputMu.Lock()
+	if wc.focusedElement == el {
+		wc.inputMu.Unlock()
+		return
 	}
+	prev := wc.focusedElement
 	wc.focusedElement = el
+	wc.inputMu.Unlock()
+
+	// Repaint outside the lock: RequestRepaint walks the subtree and queues
+	// work that may take other window locks.
+	if prev != nil {
+		prev.RequestRepaint()
+	}
 	if el != nil {
 		el.RequestRepaint()
 	}
@@ -1001,16 +1020,37 @@ func (wc *WindowContext) SetFocusedElement(el *NodeDOM) {
 
 // GetFocusedElement returns the currently focused DOM element.
 func (wc *WindowContext) GetFocusedElement() *NodeDOM {
+	if wc == nil {
+		return nil
+	}
+	wc.inputMu.Lock()
+	defer wc.inputMu.Unlock()
 	return wc.focusedElement
 }
 
 // SetInputState sets a value in the input state map.
 func (wc *WindowContext) SetInputState(key string, value interface{}) {
+	if wc == nil {
+		return
+	}
+	wc.inputMu.Lock()
+	defer wc.inputMu.Unlock()
+	if wc.inputState == nil {
+		return // window destroyed
+	}
 	wc.inputState[key] = value
 }
 
 // GetInputState retrieves a value from the input state map.
 func (wc *WindowContext) GetInputState(key string) (interface{}, bool) {
+	if wc == nil {
+		return nil, false
+	}
+	wc.inputMu.Lock()
+	defer wc.inputMu.Unlock()
+	if wc.inputState == nil {
+		return nil, false
+	}
 	val, ok := wc.inputState[key]
 	return val, ok
 }
@@ -1057,14 +1097,18 @@ func (wc *WindowContext) Destroy() {
 	wc.reflowMu.Lock()
 	wc.pendingReflows = nil
 	wc.reflowMu.Unlock()
+	wc.inputMu.Lock()
 	wc.inputState = nil
+	wc.inputMu.Unlock()
 	wc.mutationObserverMu.Lock()
 	for observer := range wc.mutationObservers {
 		observer.disconnect()
 	}
 	wc.mutationObservers = nil
 	wc.mutationObserverMu.Unlock()
+	wc.inputMu.Lock()
 	wc.focusedElement = nil
+	wc.inputMu.Unlock()
 	wc.jsRuntime = nil // Allow Goja VM to be garbage collected
 	wc.sessionStorage.ClearAllSessionStorage()
 	wc.sessionStorage = nil
