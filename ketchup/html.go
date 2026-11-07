@@ -12,6 +12,15 @@ import (
 // These patterns identify tags, attributes, and content in HTML text.
 // Note: This is a simplified parser for learning purposes. A full HTML5 parser
 // would use a state machine per the HTML spec.
+//
+// DEAD/TEST-ONLY (audit O-17): the live document path is ParseHTMLDocument,
+// which delegates to x/net/html. ParseHTML below (and these regexes) has no
+// non-test callers. The xmlTag pattern `\<.+?\>` stops at the first ">" inside
+// a quoted attribute value, so it cannot correctly tokenize real-world HTML;
+// do NOT revive this path for production parsing -- route callers to
+// ParseHTMLDocument / x/net/html instead. The attribute split is fixed to
+// SplitN(...,2) so values containing "=" survive, but the tag tokenizer
+// remains fundamentally limited.
 // See: https://html.spec.whatwg.org/multipage/parsing.html
 // See: https://searchfox.org/mozilla-central/source/parser/html/HTMLTokenizer.cpp
 var (
@@ -39,7 +48,13 @@ func extractAttributes(tag string) []*hotdog.Attribute {
 	elementAttrs := []*hotdog.Attribute{}
 
 	for i := 0; i < len(rawAttrArray); i++ {
-		attrStringSlice := strings.Split(rawAttrArray[i], "=")
+		// Split on the FIRST "=" only: an attribute value can itself contain
+		// "=" (e.g. href="a?b=c"), and strings.Split would truncate the value
+		// at it (audit O-17).
+		attrStringSlice := strings.SplitN(rawAttrArray[i], "=", 2)
+		if len(attrStringSlice) < 2 {
+			continue
+		}
 		attr := &hotdog.Attribute{
 			Name:  attrStringSlice[0],
 			Value: strings.Trim(attrStringSlice[1], "\""),
