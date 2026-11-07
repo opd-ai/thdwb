@@ -1,6 +1,8 @@
 package mayo
 
 import (
+	"errors"
+	"math"
 	"regexp"
 	"sort"
 	"strconv"
@@ -99,18 +101,28 @@ func mapSizeValue(sizeValue string) (float64, string) {
 
 // mapIntValue extracts an integer from a CSS value string.
 // Used for properties like z-index, font-weight (numeric).
-// Returns 0 if no number found.
+// Returns 0 if no number found. A number that overflows int32 saturates to
+// +/-MaxInt32 instead of collapsing to 0: z-index: 99999999999999 must keep its
+// "topmost" meaning, and dropping it to 0 put the element BELOW everything
+// (audit O-15).
 func mapIntValue(intValue string) int {
 	re := regexp.MustCompile(`[+-]?[0-9]+`)
 	valueString := re.FindString(intValue)
 	if valueString == "" {
 		return 0
 	}
-	value, err := strconv.Atoi(valueString)
+	value, err := strconv.ParseInt(valueString, 10, 32)
 	if err != nil {
+		// Range error on a non-empty numeric token: saturate, don't drop.
+		if errors.Is(err, strconv.ErrRange) {
+			if strings.HasPrefix(valueString, "-") {
+				return math.MinInt32
+			}
+			return math.MaxInt32
+		}
 		return 0
 	}
-	return value
+	return int(value)
 }
 
 // mapPropToStylesheet applies a single CSS property:value pair to a Stylesheet.
