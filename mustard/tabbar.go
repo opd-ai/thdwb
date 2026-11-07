@@ -162,7 +162,13 @@ func (tb *TabBar) closeButtonAt(x, y float64, tab *Tab) bool {
 			continue
 		}
 		closeX := offsetX + tb.tabWidth - tb.closeSize - 4
-		closeY := tb.tabHeight - tb.closeSize - 4
+		// The X glyph is painted vertically centered (draw: top +
+		// (height-closeSize)/2). The hit box used to sit at the bottom
+		// (tabHeight-closeSize-4), so clicks on the visible glyph missed and
+		// clicks in the empty bottom strip closed the tab (audit O-13).
+		// Coordinates here are already tab-bar-relative (OnTabClick subtracts
+		// the computed top), so the center is (height-closeSize)/2.
+		closeY := (tb.tabHeight - tb.closeSize) / 2
 		if t == tab && x >= closeX && x <= closeX+tb.closeSize && y >= closeY && y <= closeY+tb.closeSize {
 			return true
 		}
