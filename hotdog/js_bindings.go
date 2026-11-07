@@ -1456,7 +1456,17 @@ func (w *JSWindowWrapper) postMessage(call goja.FunctionCall) goja.Value {
 	if len(call.Arguments) < 2 {
 		panic(w.runtime.NewGoError(errors.New("postMessage requires message and targetOrigin arguments")))
 	}
-	message := call.Arguments[0].Export()
+	// Structured clone: a raw Export() of an object containing a function
+	// yields a Go closure bound to the *sender's* runtime. The target VM
+	// re-wraps it as a callable, so receiver code invoking event.data.f
+	// drives the sender's VM without holding its lock (audit C-14, probe P16:
+	// 87 DATA RACE blocks). A JSON round-trip gives a deep copy of plain data
+	// and drops functions, which matches the spec's structured-clone
+	// semantics for the supported value types.
+	message, err := structuredClone(call.Arguments[0].Export())
+	if err != nil {
+		panic(w.runtime.NewGoError(err))
+	}
 	targetOrigin := call.Arguments[1].String()
 
 	// Validate targetOrigin format
@@ -1530,6 +1540,22 @@ func (wc *WindowContext) deliverMessage(message interface{}, origin string) {
 	// converted by the target VM (Set throws and the error was previously
 	// discarded, leaving source undefined). See AUDIT.md C-13.
 	wc.EmitEvent("message", eventObj)
+}
+
+// structuredClone deep-copies a postMessage payload through a JSON round-trip.
+// Plain data survives as fresh values with no connection to the sender's VM;
+// functions, symbols and undefined-valued keys are dropped, matching the
+// WebIDL structured-clone rules for the value types goja exports.
+func structuredClone(v interface{}) (interface{}, error) {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return nil, fmt.Errorf("postMessage could not clone the message: %w", err)
+	}
+	var out interface{}
+	if err := json.Unmarshal(b, &out); err != nil {
+		return nil, fmt.Errorf("postMessage clone failed: %w", err)
+	}
+	return out, nil
 }
 
 // isValidTargetOrigin validates that targetOrigin is either "*" or a valid origin (scheme://host:port)
