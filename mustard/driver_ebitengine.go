@@ -3,6 +3,8 @@ package mustard
 import (
 	"image"
 	"image/color"
+	"log"
+	"runtime/debug"
 
 	"github.com/hajimehoshi/ebiten/v2"
 )
@@ -200,7 +202,21 @@ type ebitenGame struct {
 	frame *image.RGBA
 }
 
-func (g *ebitenGame) Update() error {
+// Update runs the per-frame application callback and renders the active
+// window. Only Frame.draw had a recover; the leaf widget redraws, compositeAll,
+// compositeOverlays and the app callback all run on the Ebitengine game
+// goroutine, and a panic there aborts the entire process (audit C-12, probe
+// P20). We contain it here so one bad frame is dropped instead of crashing the
+// browser. Returning nil (not an error) keeps the game loop alive.
+func (g *ebitenGame) Update() (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("frame update panic (dropped frame): %v\n%s", r, debug.Stack())
+			g.frame = nil
+			err = nil // never terminate the loop on a paint panic
+		}
+	}()
+
 	if g.app.callback != nil {
 		g.app.callback()
 	}
@@ -213,7 +229,14 @@ func (g *ebitenGame) Update() error {
 	return nil
 }
 
+// Draw blits the last rendered frame. A panic here (e.g. a malformed frame
+// image) is likewise contained so it cannot abort the game goroutine.
 func (g *ebitenGame) Draw(screen *ebiten.Image) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("frame draw panic (dropped frame): %v", r)
+		}
+	}()
 	if g.frame == nil {
 		return
 	}
