@@ -164,8 +164,16 @@ func newJSEvent(runtime *goja.Runtime, call goja.ConstructorCall) *goja.Object {
 	return event
 }
 
-// InitJSRuntime initializes the JavaScript runtime with DOM bindings
+// InitJSRuntime initializes the JavaScript runtime with DOM bindings.
+// jsRuntimeMu is held for the entire realm (re)binding because Goja is not
+// thread-safe: navigation can run while rAF/timer goroutines are executing
+// page JS that already holds this lock, and driving one VM from two goroutines
+// corrupts the heap. The mutex is reentrant, so callers already inside a JS
+// callback remain safe.
 func (wc *WindowContext) InitJSRuntime() error {
+	wc.jsRuntimeMu.lock()
+	defer wc.jsRuntimeMu.unlock()
+
 	runtime := wc.GetJSRuntime()
 	if runtime == nil {
 		return fmt.Errorf("no JavaScript runtime available")

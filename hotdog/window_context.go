@@ -336,6 +336,19 @@ func (wc *WindowContext) LoadHTML(html, baseURL string) error {
 	wc.eventMu.Unlock()
 	wc.ClearLayoutCache()
 
+	// Drop pending animation-frame callbacks scheduled by the previous
+	// document: their closures capture the old realm's goja objects, and
+	// letting them fire after the realm is rebound drives stale values on the
+	// new VM. Stop the armed timer so a queued drain cannot interleave with
+	// the rebinding below.
+	wc.animationFrameMu.Lock()
+	if wc.animationFrameTimer != nil {
+		wc.animationFrameTimer.Stop()
+		wc.animationFrameTimer = nil
+	}
+	clear(wc.animationFrames)
+	wc.animationFrameMu.Unlock()
+
 	// Initialize the JS runtime with the window object
 	if err := wc.InitJSRuntime(); err != nil {
 		return fmt.Errorf("init JS runtime: %w", err)
