@@ -30,6 +30,23 @@ func paintBlockElement(ctx *gg.Context, node *hotdog.NodeDOM) {
 	paintTextWithinBounds(ctx, node, node.Content, 1, 1.5)
 }
 
+// resolveBlockTop computes the vertical origin of a block at index childIdx
+// within its parent: it stacks below the previous sibling when one exists,
+// otherwise it aligns with the parent's top. A nil parent (the layout root on
+// body-less/frameset documents) or a missing sibling box yields 0 rather than
+// dereferencing nil.
+func resolveBlockTop(node *hotdog.NodeDOM, childIdx int) float64 {
+	if node.Parent == nil || node.Parent.RenderBox == nil {
+		return 0
+	}
+	if childIdx > 0 && childIdx <= len(node.Parent.Children) {
+		if prev := node.Parent.Children[childIdx-1]; prev != nil && prev.RenderBox != nil {
+			return prev.RenderBox.Top + prev.RenderBox.Height
+		}
+	}
+	return node.Parent.RenderBox.Top
+}
+
 func calculateBlockLayout(ctx *gg.Context, node *hotdog.NodeDOM, childIdx int) {
 	// Text nodes are inline by nature, but if they're rendered as block, handle them
 	if node.Type == hotdog.NodeTypeText {
@@ -46,12 +63,7 @@ func calculateBlockLayout(ctx *gg.Context, node *hotdog.NodeDOM, childIdx int) {
 			node.RenderBox.Height = ctx.MeasureStringWrapped(textContent, node.RenderBox.Width, 1.5) + 2 + ctx.FontHeight()*.5
 		}
 
-		if childIdx > 0 {
-			prev := node.Parent.Children[childIdx-1]
-			node.RenderBox.Top = prev.RenderBox.Top + prev.RenderBox.Height
-		} else {
-			node.RenderBox.Top = node.Parent.RenderBox.Top
-		}
+		node.RenderBox.Top = resolveBlockTop(node, childIdx)
 		return
 	}
 
@@ -68,11 +80,5 @@ func calculateBlockLayout(ctx *gg.Context, node *hotdog.NodeDOM, childIdx int) {
 		node.RenderBox.Height = ctx.MeasureStringWrapped(node.Content, node.RenderBox.Width, 1.5) + 2 + ctx.FontHeight()*.5
 	}
 
-	if childIdx > 0 {
-		prev := node.Parent.Children[childIdx-1]
-
-		node.RenderBox.Top = prev.RenderBox.Top + prev.RenderBox.Height
-	} else {
-		node.RenderBox.Top = node.Parent.RenderBox.Top
-	}
+	node.RenderBox.Top = resolveBlockTop(node, childIdx)
 }

@@ -43,12 +43,7 @@ func calculateListItemLayout(ctx *gg.Context, node *hotdog.NodeDOM, childIdx int
 		node.RenderBox.Height = ctx.MeasureStringWrapped(node.Content, node.RenderBox.Width, 1.5) + 2 + ctx.FontHeight()*.5
 	}
 
-	if childIdx > 0 {
-		prev := node.Parent.Children[childIdx-1]
-		node.RenderBox.Top = prev.RenderBox.Top + prev.RenderBox.Height
-	} else {
-		node.RenderBox.Top = node.Parent.RenderBox.Top
-	}
+	node.RenderBox.Top = resolveBlockTop(node, childIdx)
 
 	node.RenderBox.Left = 30
 }
