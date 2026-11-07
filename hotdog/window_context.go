@@ -784,11 +784,14 @@ func (wc *WindowContext) queueReflow(node *NodeDOM) (*NodeDOM, bool) {
 
 // DrainReflowQueue returns unique DOM roots invalidated since the previous drain.
 func (wc *WindowContext) DrainReflowQueue() []*NodeDOM {
-	wc.reflowMu.Lock()
-	defer wc.reflowMu.Unlock()
-	if !wc.active {
+	// `active` is guarded by animationFrameMu everywhere else; read it through
+	// IsActive() before taking reflowMu instead of touching it under the wrong
+	// lock (audit C-15, probe P24: race SetActive vs DrainReflowQueue).
+	if !wc.IsActive() {
 		return nil
 	}
+	wc.reflowMu.Lock()
+	defer wc.reflowMu.Unlock()
 	roots := make([]*NodeDOM, 0, len(wc.pendingReflows))
 	for root := range wc.pendingReflows {
 		roots = append(roots, root)
