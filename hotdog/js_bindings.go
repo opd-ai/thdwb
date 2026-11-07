@@ -1216,12 +1216,11 @@ func (node *NodeDOM) checkCrossOriginMutation(child *NodeDOM) error {
 	if node.WindowCtx == nil || child.WindowCtx == nil {
 		return nil
 	}
-	if node.WindowCtx != child.WindowCtx {
-		// Different window contexts - check origin isolation.
-		if node.WindowCtx.IsCrossOrigin(child.WindowCtx.GetOrigin()) {
-			// Cross-origin mutation blocked.
-			return nil
-		}
+	if node.WindowCtx != child.WindowCtx &&
+		node.WindowCtx.IsCrossOrigin(child.WindowCtx.GetOrigin()) {
+		// The previous version fell through to `return nil` here, so the
+		// guard never rejected anything (audit R-8).
+		return SecurityError("cross-origin DOM mutation blocked")
 	}
 	return nil
 }
