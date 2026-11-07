@@ -601,7 +601,29 @@ func (bs *BrowserShell) Run() {
 	if bs.app == nil {
 		return
 	}
-	bs.app.Run(func() {})
+	bs.app.Run(bs.frameTick)
+}
+
+// frameTick runs once per animation frame on the game goroutine. JS DOM
+// mutations call RequestReflow, which queues invalidated roots, but nothing
+// drained that queue or repainted, so a page changed by script stayed stale
+// until the next navigation (audit C-16, probe P13). When the active tab has
+// pending reflows, re-render it. The callback runs on the same goroutine as
+// the mustard render pass, so it touches shell UI state directly; the DOM walk
+// inside renderWebContent still takes jsRuntimeMu to serialize against rAF
+// callbacks running on timer goroutines.
+func (bs *BrowserShell) frameTick() {
+	tab := bs.tabManager.ActiveTab()
+	if tab == nil {
+		return
+	}
+	wc := bs.tabWindowContext(tab)
+	if wc == nil {
+		return
+	}
+	if roots := wc.DrainReflowQueue(); len(roots) > 0 {
+		bs.renderWebContent(tab)
+	}
 }
 
 // Close destroys the browser shell's window and app, saving the session
