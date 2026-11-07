@@ -60,8 +60,14 @@ func paintInlineElement(ctx *gg.Context, node *hotdog.NodeDOM) {
 		im, err := fetchNodeImage(node)
 		if err != nil {
 			fmt.Println(err)
-			// Use the stand-in error image.
-			im, _, _ = image.Decode(bytes.NewReader(assets.ErrorImage()))
+			// Use the stand-in error image. Mirror the layout twin: if even the
+			// placeholder fails to decode, leave the box empty rather than
+			// passing a nil image to DrawImage, which dereferences
+			// src.Bounds() and panics (audit R-13).
+			im, _, err = image.Decode(bytes.NewReader(assets.ErrorImage()))
+			if err != nil || im == nil {
+				return
+			}
 		}
 		ctx.DrawImage(im, int(node.RenderBox.Left), int(node.RenderBox.Top))
 	}
