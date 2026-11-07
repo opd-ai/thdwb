@@ -149,13 +149,18 @@ func (mp *MemoryProfiler) DetectLeaks(allocThreshold uint64, goroutineThreshold 
 
 	var reports []LeakReport
 	for name, profile := range mp.profiles {
+		// Read the snapshot count and endpoints entirely under the lock: the
+		// old code called len(profile.snapshots) again after unlocking, an
+		// unsynchronized read that raced concurrent Record() appends (audit
+		// R-19) and could report a count inconsistent with first/last.
 		profile.mu.Lock()
-		if len(profile.snapshots) < 2 {
+		n := len(profile.snapshots)
+		if n < 2 {
 			profile.mu.Unlock()
 			continue
 		}
 		first := profile.snapshots[0]
-		last := profile.snapshots[len(profile.snapshots)-1]
+		last := profile.snapshots[n-1]
 		profile.mu.Unlock()
 
 		deltaAlloc := uint64(0)
@@ -169,7 +174,7 @@ func (mp *MemoryProfiler) DetectLeaks(allocThreshold uint64, goroutineThreshold 
 				Name:            name,
 				DeltaAlloc:      deltaAlloc,
 				DeltaGoroutines: deltaGoroutines,
-				SnapshotCount:   len(profile.snapshots),
+				SnapshotCount:   n,
 			})
 		}
 	}
