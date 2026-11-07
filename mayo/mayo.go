@@ -127,6 +127,15 @@ func mapPropToStylesheet(parsedStyleSheet *hotdog.Stylesheet, propSlice []string
 	propName := strings.TrimSpace(strings.ToLower(propSlice[0]))
 	propValue := strings.TrimSpace(propSlice[1])
 
+	// Strip the !important flag before value parsing. It must not leak into the
+	// stored value: "display: none !important" used to store "none !important",
+	// which matches no dispatch case, so the display was silently dropped and
+	// the element stayed visible. !important priority ordering across rules is
+	// not yet implemented; stripping at least makes the value itself correct.
+	if i := strings.Index(strings.ToLower(propValue), "!important"); i >= 0 {
+		propValue = strings.TrimSpace(propValue[:i])
+	}
+
 	switch propName {
 	case "color":
 		parsedStyleSheet.Color = MapCSSColor(propValue)
@@ -422,8 +431,10 @@ func ApplyStylesheets(document *hotdog.Document) {
 		entries = append(entries, styleEntry{element: styleElement, selector: sel})
 	}
 
-	// Sort by cascade order: origin priority, then specificity, then source order
-	sort.Slice(entries, func(i, j int) bool {
+	// Sort by cascade order: origin priority, then specificity, then source
+	// order. SliceStable keeps equal-keyed rules in their original relative
+	// order so the result is deterministic even if Index values collide.
+	sort.SliceStable(entries, func(i, j int) bool {
 		a := entries[i].element
 		b := entries[j].element
 

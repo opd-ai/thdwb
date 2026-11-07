@@ -35,8 +35,18 @@ func splitTopLevel(s string, delim rune) []string {
 	return parts
 }
 
-// ParseStylesheet parses a CSS stylesheet string and returns a slice of StyleElement
+// ParseStylesheet parses a CSS stylesheet string and returns a slice of StyleElement.
+// Index values start at 0; use ParseStylesheetFrom when appending several sheets to a
+// document so source order is preserved across <style> blocks.
 func ParseStylesheet(cssString string) []*hotdog.StyleElement {
+	return ParseStylesheetFrom(cssString, 0)
+}
+
+// ParseStylesheetFrom parses CSS and assigns cascade Index values starting at
+// indexBase. ApplyStylesheets uses Index as the final source-order tiebreak, so
+// every rule in a document must get a globally increasing index; restarting at
+// 0 per <style> block let an earlier block's rule win a later block's rule.
+func ParseStylesheetFrom(cssString string, indexBase int) []*hotdog.StyleElement {
 	var styleSheet []*hotdog.StyleElement
 
 	// Remove comments
@@ -46,7 +56,12 @@ func ParseStylesheet(cssString string) []*hotdog.StyleElement {
 	ruleRegex := regexp.MustCompile(`([^{]+)\{([^}]+)\}`)
 	matches := ruleRegex.FindAllStringSubmatch(cssString, -1)
 
-	for idx, match := range matches {
+	// emitted counts rules actually produced, so Index stays contiguous from
+	// indexBase. Using the raw match index would leave gaps when a malformed
+	// rule is skipped, and those gaps could collide with the next <style>
+	// block's base index.
+	emitted := 0
+	for _, match := range matches {
 		if len(match) < 3 {
 			continue
 		}
@@ -76,7 +91,7 @@ func ParseStylesheet(cssString string) []*hotdog.StyleElement {
 			Style:       &hotdog.Stylesheet{},
 			Specificity: specificity,
 			Origin:      "author",
-			Index:       idx,
+			Index:       indexBase + emitted,
 		}
 
 		// Parse declarations
@@ -93,6 +108,7 @@ func ParseStylesheet(cssString string) []*hotdog.StyleElement {
 		}
 
 		styleSheet = append(styleSheet, styleElement)
+		emitted++
 	}
 
 	return styleSheet

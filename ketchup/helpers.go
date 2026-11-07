@@ -86,7 +86,10 @@ func buildNodeDOMFromHTML(node *html.Node, document *hotdog.Document, windowCtx 
 	if node.Type == html.ElementNode && node.Data == "style" {
 		cssContent := extractStyleContent(node)
 		if cssContent != "" {
-			styleElements := mayo.ParseStylesheet(cssContent)
+			// Continue the document-wide source-order sequence so a rule in a
+			// later <style> block outranks an equal-specificity rule in an
+			// earlier one (ApplyStylesheets tiebreaks on Index).
+			styleElements := mayo.ParseStylesheetFrom(cssContent, len(document.StyleSheets))
 			document.StyleSheets = append(document.StyleSheets, styleElements...)
 		}
 		// Style elements don't render
