@@ -265,15 +265,19 @@ func (tb *TabBar) OnTabClick(x, y float64) (*Tab, bool) {
 		return tab, false
 	}
 
-	openCount := 0
+	// Clicked past the last tab: activate the last OPEN tab. Indexing
+	// tabs[openCount-1] conflated the open-tab count with an index into the
+	// full slice, so with any closed tab interleaved it could activate a
+	// closed tab or the wrong one (audit O-14).
+	var last *Tab
 	for _, t := range tb.tabs {
 		if !t.Closed {
-			openCount++
+			last = t
 		}
 	}
-	if openCount > 0 {
-		tb.activeTab = tb.tabs[openCount-1]
+	if last != nil {
+		tb.activeTab = last
+		tb.needsRepaint = true
 	}
-	tb.needsRepaint = true
 	return nil, false
 }
