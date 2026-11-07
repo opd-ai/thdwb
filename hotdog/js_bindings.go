@@ -1677,7 +1677,7 @@ func (w *JSWindowWrapper) fetch(call goja.FunctionCall) goja.Value {
 	if sendCredentials {
 		httpClient = w.windowCtx.GetHTTPClient()
 	} else {
-		httpClient = &http.Client{} // No cookie jar
+		httpClient = &http.Client{Timeout: networkClientTimeout} // No cookie jar
 	}
 
 	// Execute request asynchronously
@@ -1686,11 +1686,15 @@ func (w *JSWindowWrapper) fetch(call goja.FunctionCall) goja.Value {
 			_ = reject(w.runtime.NewGoError(err))
 		})
 	}
+	// Snapshot the window context on the JS thread (same discipline as the
+	// C-6 XHR fix) so the goroutine aborts when the window is destroyed
+	// (audit R-6/R-11).
+	fetchCtx := w.windowCtx.Context()
 	go func() {
 		if needsPreflight {
 			// Send OPTIONS preflight request (never sends credentials)
-			preflightClient := &http.Client{}
-			preflightResp := sauce.MakeCORSRequestWithClient(preflightClient, parsedURL, origin, "OPTIONS", nil, getPreflightHeaders(method, headers))
+			preflightClient := &http.Client{Timeout: networkClientTimeout}
+			preflightResp := sauce.MakeCORSRequestWithClientCtx(fetchCtx, preflightClient, parsedURL, origin, "OPTIONS", nil, getPreflightHeaders(method, headers))
 			if !isCORSPreflightSuccessful(preflightResp, origin, method, headers) {
 				scheduleFetchError(errors.New("CORS preflight failed"))
 				return
@@ -1698,7 +1702,7 @@ func (w *JSWindowWrapper) fetch(call goja.FunctionCall) goja.Value {
 		}
 
 		// Make actual request
-		resp := sauce.MakeCORSRequestWithClient(httpClient, parsedURL, origin, method, body, headers)
+		resp := sauce.MakeCORSRequestWithClientCtx(fetchCtx, httpClient, parsedURL, origin, method, body, headers)
 		if resp.Code < 0 {
 			scheduleFetchError(errors.New(resp.Body))
 			return
@@ -1918,6 +1922,9 @@ func (w *JSWindowWrapper) XMLHttpRequest(call goja.ConstructorCall) *goja.Object
 			origin = "null"
 		}
 		snapshotClient := w.windowCtx.GetHTTPClient()
+		// Snapshot the window context too so a Destroy aborts the in-flight
+		// request instead of leaking this goroutine (audit R-6/R-11).
+		snapshotCtx := w.windowCtx.Context()
 
 		go func() {
 			parsedURL, err := url.Parse(requestURL)
@@ -1937,12 +1944,12 @@ func (w *JSWindowWrapper) XMLHttpRequest(call goja.ConstructorCall) *goja.Object
 			needsPreflight := isCrossOrigin && !isSimpleRequest(requestMethod, requestHeaders)
 			httpClient := snapshotClient
 			if !withCredentials {
-				httpClient = &http.Client{}
+				httpClient = &http.Client{Timeout: networkClientTimeout}
 			}
 
 			if needsPreflight {
 				// Send OPTIONS preflight request
-				preflightResp := sauce.MakeCORSRequestWithClient(httpClient, parsedURL, origin, "OPTIONS", nil, getPreflightHeaders(requestMethod, requestHeaders))
+				preflightResp := sauce.MakeCORSRequestWithClientCtx(snapshotCtx, httpClient, parsedURL, origin, "OPTIONS", nil, getPreflightHeaders(requestMethod, requestHeaders))
 				if !isCORSPreflightSuccessful(preflightResp, origin, requestMethod, requestHeaders) {
 					dispatchNetworkEvent("error")
 					return
@@ -1950,7 +1957,7 @@ func (w *JSWindowWrapper) XMLHttpRequest(call goja.ConstructorCall) *goja.Object
 			}
 
 			// Make actual request
-			resp := sauce.MakeCORSRequestWithClient(httpClient, parsedURL, origin, requestMethod, requestBody, requestHeaders)
+			resp := sauce.MakeCORSRequestWithClientCtx(snapshotCtx, httpClient, parsedURL, origin, requestMethod, requestBody, requestHeaders)
 
 			if resp.Code < 0 {
 				dispatchNetworkEvent("error")

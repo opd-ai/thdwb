@@ -161,6 +161,12 @@ type eventHandler struct {
 // sessions (audit R-9).
 const maxDocumentHistory = 50
 
+// networkClientTimeout bounds every HTTP client this package creates (the
+// per-window client and the ad-hoc no-cookie clients used by fetch/XHR). A
+// stalled peer used to keep the request goroutine -- and everything it
+// captures -- alive forever (audit R-6/R-11).
+const networkClientTimeout = 60 * time.Second
+
 // WindowContext holds all state for a single browser window/tab instance.
 // This enables multiple independent windows to run without memory interference.
 type WindowContext struct {
@@ -290,7 +296,7 @@ func NewWindowContext(settings *Settings, buildInfo *assets.BuildInfo, profiler 
 		Jar: sauce.NewDefaultContainerCookieJar(wc.cookieJar),
 		// Timeout prevents stalled requests from leaking goroutines and
 		// keeping the window context alive after the tab is destroyed.
-		Timeout: 60 * time.Second,
+		Timeout: networkClientTimeout,
 	}
 
 	// Register this window for cross-window communication
@@ -425,7 +431,10 @@ func (wc *WindowContext) LoadURL(rawURL string) error {
 		return fmt.Errorf("parse URL: %w", err)
 	}
 
-	resource := sauce.FetchExternalPageWithOptions(u, "GET", nil, nil)
+	// Attach wc.ctx so a Destroy (or a navigation that cancels the previous
+	// load) aborts the in-flight request instead of leaking the goroutine and
+	// the whole window context it pins (audit R-6).
+	resource := sauce.FetchExternalPageWithOptionsCtx(wc.Context(), u, "GET", nil, nil)
 	if resource.Code <= 0 {
 		return fmt.Errorf("transport error: %s", resource.Body)
 	}
@@ -1201,6 +1210,16 @@ func (wc *WindowContext) GetHTTPClient() *http.Client {
 		return nil
 	}
 	return wc.httpClient
+}
+
+// Context returns the window's cancellation context, which Destroy cancels.
+// Network calls attach it to their requests so an in-flight fetch aborts when
+// the tab is destroyed (audit R-6). Returns background context when unset.
+func (wc *WindowContext) Context() context.Context {
+	if wc == nil || wc.ctx == nil {
+		return context.Background()
+	}
+	return wc.ctx
 }
 
 // TransferStorage moves all storage (cookies, localStorage, sessionStorage)

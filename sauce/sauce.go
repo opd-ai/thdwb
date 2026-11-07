@@ -1,6 +1,7 @@
 package sauce
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
 	"html"
@@ -804,10 +805,17 @@ func notifyWebRequestObservers(details WebRequestDetails) (WebRequestDetails, er
 
 // Shared HTTP client with origin-partitioned cookie jar.
 // This is the default global client; per-window clients should use their own.
+// defaultClientTimeout bounds every request made through the shared global
+// client. Without it a stalled peer kept the connection goroutine alive
+// indefinitely (audit R-6). Per-window clients set their own timeout in
+// hotdog.NewWindowContext.
+const defaultClientTimeout = 60 * time.Second
+
 var (
 	cookieJar = NewOriginCookieJar()
 	client    = &http.Client{
-		Jar: cookieJar,
+		Jar:     cookieJar,
+		Timeout: defaultClientTimeout,
 	}
 	cache      = &ResourceCache{}
 	imageCache = &ImgCache{}
@@ -988,7 +996,11 @@ func fetchInternalPage(URL *url.URL, history *History, buildInfo *assets.BuildIn
 // Uses the default global client with shared cookie jar.
 // For per-window isolation, use fetchExternalPageWithOptions with a custom client.
 func fetchExternalPage(URL *url.URL) *Resource {
-	return fetchExternalPageWithOptions(nil, URL, "GET", nil, nil)
+	return fetchExternalPageCtx(context.Background(), URL)
+}
+
+func fetchExternalPageCtx(ctx context.Context, URL *url.URL) *Resource {
+	return fetchExternalPageWithOptionsCtx(ctx, nil, URL, "GET", nil, nil)
 }
 
 // fetchExternalPageWithOptions makes an HTTP request with custom method, headers, and body.
@@ -1004,6 +1016,17 @@ func fetchExternalPage(URL *url.URL) *Resource {
 //
 // Returns a Resource with response data.
 func fetchExternalPageWithOptions(client *http.Client, URL *url.URL, method string, body io.Reader, headers map[string]string) *Resource {
+	return fetchExternalPageWithOptionsCtx(context.Background(), client, URL, method, body, headers)
+}
+
+// fetchExternalPageWithOptionsCtx is the context-aware core. ctx is attached to
+// the outgoing request so a cancelled window context aborts the in-flight
+// fetch (audit R-6): without it, wc.cancel() cancelled nothing because no
+// request ever read wc.ctx.
+func fetchExternalPageWithOptionsCtx(ctx context.Context, client *http.Client, URL *url.URL, method string, body io.Reader, headers map[string]string) *Resource {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	URL = cloneURL(URL)
 	upgradeHTTPURL(URL, hstsStore)
 	if client == nil {
@@ -1032,7 +1055,7 @@ func fetchExternalPageWithOptions(client *http.Client, URL *url.URL, method stri
 	}
 
 	resource := &Resource{Key: url, URL: URL}
-	req, err := http.NewRequest(method, url, body)
+	req, err := http.NewRequestWithContext(ctx, method, url, body)
 	if err != nil {
 		resource.Code = -1
 		resource.Body = loadErrorPage(err.Error())
@@ -1093,6 +1116,13 @@ func FetchExternalPageWithOptions(URL *url.URL, method string, body io.Reader, h
 	return fetchExternalPageWithOptions(nil, URL, method, body, headers)
 }
 
+// FetchExternalPageWithOptionsCtx is FetchExternalPageWithOptions with the
+// request bound to ctx. hotdog.LoadURL passes wc.ctx so navigating away (or
+// Destroy) aborts the in-flight page fetch (audit R-6).
+func FetchExternalPageWithOptionsCtx(ctx context.Context, URL *url.URL, method string, body io.Reader, headers map[string]string) *Resource {
+	return fetchExternalPageWithOptionsCtx(ctx, nil, URL, method, body, headers)
+}
+
 // MakeCORSRequest makes an HTTP request with CORS handling using the default global client.
 // Sends Origin header. Does NOT automatically send preflight (OPTIONS) - caller must handle.
 // Deprecated: Use MakeCORSRequestWithClient for per-window cookie isolation.
@@ -1116,6 +1146,12 @@ func MakeCORSRequest(URL *url.URL, origin, method string, body io.Reader, header
 // Returns a Resource with response data.
 // See: https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS
 func MakeCORSRequestWithClient(client *http.Client, URL *url.URL, origin, method string, body io.Reader, headers map[string]string) *Resource {
+	return MakeCORSRequestWithClientCtx(context.Background(), client, URL, origin, method, body, headers)
+}
+
+// MakeCORSRequestWithClientCtx is MakeCORSRequestWithClient with the request
+// bound to ctx, so a cancelled window aborts an in-flight fetch/XHR (audit R-6).
+func MakeCORSRequestWithClientCtx(ctx context.Context, client *http.Client, URL *url.URL, origin, method string, body io.Reader, headers map[string]string) *Resource {
 	// Add Origin header to all CORS requests
 	if headers == nil {
 		headers = make(map[string]string)
@@ -1127,7 +1163,7 @@ func MakeCORSRequestWithClient(client *http.Client, URL *url.URL, origin, method
 	// For now, we just make the request with Origin header
 	// The server should respond with Access-Control-Allow-Origin
 
-	return fetchExternalPageWithOptions(client, URL, method, body, headers)
+	return fetchExternalPageWithOptionsCtx(ctx, client, URL, method, body, headers)
 }
 
 // ParseURL parses a URL string, returning a *url.URL.
