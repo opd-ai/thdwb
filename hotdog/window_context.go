@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"reflect"
 	"runtime"
+	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -608,9 +609,11 @@ func (wc *WindowContext) scheduleAnimationFrameLocked() {
 }
 
 func (wc *WindowContext) runAnimationFrame() {
-	wc.jsRuntimeMu.lock()
-	defer wc.jsRuntimeMu.unlock()
-
+	// Snapshot the callbacks queued for *this* frame. Callbacks that page code
+	// schedules from within a callback (the canonical self-re-arming animation
+	// loop) are left queued for the next frame instead of being consumed here.
+	// Draining until the map was empty held jsRuntimeMu forever, so RunJS and
+	// Destroy blocked on it indefinitely and tab close hung the UI thread.
 	wc.animationFrameMu.Lock()
 	if !wc.active || wc.jsRuntime == nil {
 		wc.animationFrameTimer = nil
@@ -618,36 +621,39 @@ func (wc *WindowContext) runAnimationFrame() {
 		return
 	}
 	wc.animationFrameTimer = nil
+	thisFrame := make([]uint64, 0, len(wc.animationFrames))
+	for id := range wc.animationFrames {
+		thisFrame = append(thisFrame, id)
+	}
 	wc.animationFrameMu.Unlock()
+	sort.Slice(thisFrame, func(i, j int) bool { return thisFrame[i] < thisFrame[j] })
 
-	// Run callbacks one at a time, re-checking active after each so that
-	// SetActive(false) during a callback defers remaining callbacks.
 	// jsRuntimeMu is held during callback execution because Goja is not
 	// thread-safe. The mutex is reentrant, so callbacks that call RunJS or
 	// SetJSValue do not deadlock.
-	for {
+	wc.jsRuntimeMu.lock()
+	for _, id := range thisFrame {
+		// Re-check per callback so SetActive(false)/Destroy during a callback
+		// defers the remaining ones; they stay queued rather than being lost.
 		wc.animationFrameMu.Lock()
-		if !wc.active || len(wc.animationFrames) == 0 {
+		if !wc.active || wc.jsRuntime == nil {
 			wc.animationFrameMu.Unlock()
 			break
 		}
-		// Get the lowest ID to maintain insertion order.
-		var minID uint64
-		first := true
-		for id := range wc.animationFrames {
-			if first || id < minID {
-				minID = id
-				first = false
-			}
-		}
-		callback := wc.animationFrames[minID]
-		delete(wc.animationFrames, minID)
+		callback := wc.animationFrames[id]
+		delete(wc.animationFrames, id)
 		wc.animationFrameMu.Unlock()
 
 		if callback != nil {
 			callback()
 		}
 	}
+	wc.jsRuntimeMu.unlock()
+
+	// Re-arm so callbacks scheduled during this frame run on the next tick.
+	wc.animationFrameMu.Lock()
+	wc.scheduleAnimationFrameLocked()
+	wc.animationFrameMu.Unlock()
 }
 
 // IsActive reports whether this window is allowed to run scripts and drain layout work.
