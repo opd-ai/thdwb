@@ -124,6 +124,12 @@ func (m *Manager) ScheduleAlarm(extID, name string, when float64) {
 	m.alarmMu.Lock()
 	defer m.alarmMu.Unlock()
 
+	// A stopped manager must not schedule new timers: alarmTimers is nil after
+	// Stop and writing to a nil map panics.
+	if m.alarmStopped {
+		return
+	}
+
 	key := extID + ":" + name
 	// Cancel any existing timer for this alarm.
 	if existing, ok := m.alarmTimers[key]; ok && existing != nil {
@@ -191,9 +197,18 @@ func (m *Manager) Stop() {
 	}
 	m.alarmStopped = true
 	close(m.alarmStop)
+	// Snapshot the timers under the lock: ScheduleAlarm and the timer
+	// callbacks mutate alarmTimers concurrently, and ranging the live map
+	// outside the lock is a data race that can escalate to a fatal
+	// "concurrent map iteration and map write".
+	timers := make([]*time.Timer, 0, len(m.alarmTimers))
+	for _, t := range m.alarmTimers {
+		timers = append(timers, t)
+	}
+	m.alarmTimers = nil
 	m.alarmMu.Unlock()
 
-	for _, timer := range m.alarmTimers {
+	for _, timer := range timers {
 		if timer != nil {
 			timer.Stop()
 		}
