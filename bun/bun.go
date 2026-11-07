@@ -94,6 +94,16 @@ func layoutDOM(ctx *gg.Context, node *hotdog.NodeDOM, childIdx int) {
 	if node.RenderBox == nil {
 		node.RenderBox = &hotdog.RenderBox{}
 	}
+
+	// display:none removes the node and its subtree from the layout entirely
+	// (the experimental path already prunes in createFlexNodes). Without this
+	// the live path laid hidden nodes out and added their children's height to
+	// the parent, so hidden content still consumed space (audit R-10).
+	if node.Style != nil && node.Style.Display == "none" {
+		node.RenderBox = &hotdog.RenderBox{}
+		return
+	}
+
 	calculateNode(ctx, node, childIdx)
 
 	for i := 0; i < len(nodeChildren); i++ {
@@ -118,6 +128,11 @@ func paintNode(ctx *gg.Context, node *hotdog.NodeDOM) {
 
 func paintTree(ctx *gg.Context, node *hotdog.NodeDOM) {
 	if node == nil {
+		return
+	}
+	// Skip display:none subtrees in the paint pass too, mirroring the layout
+	// prune above: a hidden node must not paint and neither may its children.
+	if node.Style != nil && node.Style.Display == "none" {
 		return
 	}
 	paintNode(ctx, node)
