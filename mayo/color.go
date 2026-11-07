@@ -125,9 +125,14 @@ func HexStringToColor(colorString string) *hotdog.ColorRGBA {
 	}
 }
 
-// MapCSSColor - Transforms css color strings to #hotdog.ColorRGBA
+// MapCSSColor - Transforms css color strings to #hotdog.ColorRGBA.
+// Returns nil for an empty or unrecognized value, matching the colorTable-miss
+// path: an empty declaration value (e.g. "color: ;") must not index [0].
 func MapCSSColor(colorString string) *hotdog.ColorRGBA {
-	if string(colorString[0]) == "#" {
+	if colorString == "" {
+		return nil
+	}
+	if colorString[0] == '#' {
 		return HexStringToColor(colorString)
 	} else if rgba.MatchString(colorString) {
 		return RGBAToColor(colorString)

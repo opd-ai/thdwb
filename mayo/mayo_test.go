@@ -65,6 +65,21 @@ func TestMapCSSColor(t *testing.T) {
 		expected := &hotdog.ColorRGBA{R: 0, G: 0, B: 1, A: 1}
 		assert.Equal(t, expected, result, "Expecting: &hotdog.ColorRGBA{0, 0, 1, 1}")
 	}
+
+	// Empty and unrecognized values must return nil rather than panic indexing
+	// [0]. "color: ;" in a stylesheet yields an empty declaration value.
+	for _, empty := range []string{"", "   ", "not-a-color"} {
+		assert.NotPanics(t, func() { MapCSSColor(empty) }, "MapCSSColor(%q) panicked", empty)
+	}
+	assert.Nil(t, MapCSSColor(""), "empty color should map to nil")
+}
+
+// TestParseStylesheetEmptyColorValueDoesNotPanic guards the live navigation
+// path: an empty CSS value used to index colorString[0] and crash the parse.
+func TestParseStylesheetEmptyColorValueDoesNotPanic(t *testing.T) {
+	assert.NotPanics(t, func() {
+		ParseStylesheet("div { color: ; background-color: ; }")
+	}, "parsing an empty color declaration panicked")
 }
 
 func TestCSSInheritance(t *testing.T) {
