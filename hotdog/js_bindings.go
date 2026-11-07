@@ -1178,10 +1178,8 @@ func (node *NodeDOM) appendChildNode(child *NodeDOM) {
 	// Reject cycles: a node cannot be inserted into one of its own ancestors,
 	// which would create a Parent/Children loop and overflow the stack in
 	// MarkDirty, Print, getXPath, and every tree walk.
-	for a := node; a != nil; a = a.Parent {
-		if a == child {
-			return
-		}
+	if node.wouldCreateCycle(child) {
+		return
 	}
 	child.Parent = node
 	child.Document = node.Document

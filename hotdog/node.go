@@ -885,9 +885,30 @@ func (node *NodeDOM) SetTextContent(text string) {
 
 // InsertBefore inserts a new child node before an existing child node.
 // If referenceNode is nil, the new node is appended at the end.
+// wouldCreateCycle reports whether attaching newChild under node would create a
+// Parent/Children loop: newChild is node itself or one of node's ancestors.
+// Such a loop makes MarkDirty, ClearDirty, Print, getXPath and every tree walk
+// recurse forever, and a Go stack overflow is fatal (not recoverable), so the
+// mutation must be rejected before any pointer is linked.
+func (node *NodeDOM) wouldCreateCycle(newChild *NodeDOM) bool {
+	if newChild == nil {
+		return false
+	}
+	for a := node; a != nil; a = a.Parent {
+		if a == newChild {
+			return true
+		}
+	}
+	return false
+}
+
 func (node *NodeDOM) InsertBefore(newChild, referenceChild *NodeDOM) error {
 	if newChild == nil {
 		return fmt.Errorf("newChild cannot be nil")
+	}
+	// Reject cycles: a node cannot be inserted into one of its own ancestors.
+	if node.wouldCreateCycle(newChild) {
+		return fmt.Errorf("insertBefore: newChild is an ancestor of the parent")
 	}
 
 	if newChild.Parent != nil {
@@ -942,6 +963,11 @@ func (node *NodeDOM) ReplaceChild(newChild, oldChild *NodeDOM) (*NodeDOM, error)
 	}
 	if !found {
 		return nil, fmt.Errorf("oldChild is not a child of this node")
+	}
+
+	// Reject cycles: a node cannot be used to replace one of its own ancestors.
+	if node.wouldCreateCycle(newChild) {
+		return nil, fmt.Errorf("ReplaceChild: newChild is an ancestor of the parent")
 	}
 
 	if newChild.Parent != nil {
