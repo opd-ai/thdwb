@@ -788,11 +788,68 @@ func (dc *Context) DrawStringAnchored(s string, x, y, ax, ay float64) {
 	y += ay * h
 	if dc.mask == nil {
 		dc.drawString(dc.im, s, x, y)
+		return
+	}
+	// Masked draws composite through a scratch layer so glyph antialiasing can
+	// be multiplied by the clip. It used to be context-sized: a 1024x768 clip
+	// allocated ~3 MB per wrapped text LINE (audit R-14 -- one page pass
+	// allocated 2.38 GB for 33 KB of text). The scratch only needs to cover the
+	// glyph footprint of this string; pixels outside it are zero either way, so
+	// compositing the same sub-image over the same destination rectangle is
+	// pixel-identical. Fall back to full size when the transform could draw
+	// beyond the estimated band.
+	if r, ok := dc.glyphScratch(s, x, y, w, h); ok {
+		dc.drawString(r, s, x, y)
+		// dstBounds is the sub-rect, so both src and mask points must be offset
+		// by r.Rect.Min: draw samples src at (srcPt + delta) and mask at
+		// (maskPt + delta) where delta = dst - r.Rect.Min. The mask is
+		// context-sized, so maskPt = r.Rect.Min re-aligns it to absolute coords.
+		draw.DrawMask(dc.im, r.Bounds(), r, r.Rect.Min, dc.mask, r.Rect.Min, draw.Over)
 	} else {
 		im := image.NewRGBA(image.Rect(0, 0, dc.width, dc.height))
 		dc.drawString(im, s, x, y)
 		draw.DrawMask(dc.im, dc.im.Bounds(), im, image.Point{}, dc.mask, image.Point{}, draw.Over)
 	}
+}
+
+// glyphScratch sizes a scratch layer around the rasterized footprint of s
+// drawn at (x, y) with the current font and transform. It reports false when
+// the estimate is not safe (non-identity matrix) or the band is not smaller
+// than the full context.
+func (dc *Context) glyphScratch(s string, x, y, w, h float64) (*image.RGBA, bool) {
+	if dc.matrix != Identity() || dc.fontFace == nil {
+		return nil, false
+	}
+	m := dc.fontFace.Metrics()
+	dy := fixp(x, y)
+	// Vertical extent: ascent above the baseline, descent below, plus the line
+	// height for multi-line callers. Horizontal: advance width plus generous
+	// side-bearing slack.
+	minX := int(dy.X>>6) - 64
+	minY := int(dy.Y>>6) - int(m.Ascent) - 64
+	maxX := int(dy.X>>6) + int(w) + 64
+	maxY := int(dy.Y>>6) + int(m.Descent) + int(h) + 64
+
+	b := dc.im.Bounds()
+	if minX < b.Min.X {
+		minX = b.Min.X
+	}
+	if minY < b.Min.Y {
+		minY = b.Min.Y
+	}
+	if maxX > b.Max.X {
+		maxX = b.Max.X
+	}
+	if maxY > b.Max.Y {
+		maxY = b.Max.Y
+	}
+	if minX >= maxX || minY >= maxY {
+		return nil, false
+	}
+	if (maxX-minX)*(maxY-minY) >= dc.width*dc.height {
+		return nil, false
+	}
+	return image.NewRGBA(image.Rect(minX, minY, maxX, maxY)), true
 }
 
 // DrawStringWrapped word-wraps the specified string to the given max width
