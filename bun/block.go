@@ -58,9 +58,13 @@ func calculateBlockLayout(ctx *gg.Context, node *hotdog.NodeDOM, childIdx int) {
 				parentWidth = node.Parent.RenderBox.Width
 			}
 			node.RenderBox.Width = parentWidth
+		} else {
+			node.RenderBox.Width = node.Style.Width
 		}
 		if node.Style.Height == 0 {
 			node.RenderBox.Height = ctx.MeasureStringWrapped(textContent, node.RenderBox.Width, 1.5) + 2 + ctx.FontHeight()*.5
+		} else {
+			node.RenderBox.Height = node.Style.Height
 		}
 
 		node.RenderBox.Top = resolveBlockTop(node, childIdx)
@@ -73,11 +77,18 @@ func calculateBlockLayout(ctx *gg.Context, node *hotdog.NodeDOM, childIdx int) {
 			parentWidth = node.Parent.RenderBox.Width
 		}
 		node.RenderBox.Width = parentWidth
+	} else {
+		// An explicit CSS width must reach the render box. Previously Style.Width
+		// was only used as a "skip sizing" predicate, so a box with width:100px
+		// kept RenderBox.Width == 0 and paintBlockElement skipped it entirely.
+		node.RenderBox.Width = node.Style.Width
 	}
 
 	if node.Style.Height == 0 {
 		ctx.SetFont(getFontFace(node.Style.FontWeight), node.Style.FontSize)
 		node.RenderBox.Height = ctx.MeasureStringWrapped(node.Content, node.RenderBox.Width, 1.5) + 2 + ctx.FontHeight()*.5
+	} else {
+		node.RenderBox.Height = node.Style.Height
 	}
 
 	node.RenderBox.Top = resolveBlockTop(node, childIdx)
