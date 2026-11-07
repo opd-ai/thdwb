@@ -91,7 +91,7 @@ func NewBrowserShell(settings *hotdog.Settings, buildInfo *assets.BuildInfo) *Br
 		}
 	}
 
-	return &BrowserShell{
+	sh := &BrowserShell{
 		settings:         settings,
 		buildInfo:        buildInfo,
 		tabManager:       NewTabManager(),
@@ -116,6 +116,21 @@ func NewBrowserShell(settings *hotdog.Settings, buildInfo *assets.BuildInfo) *Br
 		renderer:         render.NewRenderer(nil),
 		networkOptimizer: optimize.NewNetworkOptimizer(),
 	}
+
+	// Destroy the tab's engine state on EVERY close path (Ctrl+W, session
+	// restore, extension tabs.remove), not just the keyboard shortcut. The
+	// WindowContext pins a goja VM, the full DOM, cookie jar and an rAF
+	// timer, so a close that bypassed this destroyed nothing until the
+	// process exited (audit R-5). Registered here rather than in the UI
+	// setup so headless shells clean up too.
+	sh.tabManager.OnClosed(func(tabID int) {
+		if wc := sh.tabWindowContexts[tabID]; wc != nil {
+			wc.Destroy()
+			delete(sh.tabWindowContexts, tabID)
+		}
+	})
+
+	return sh
 }
 
 // NewBrowserShellWithConfigDir creates a BrowserShell that persists containers
@@ -525,17 +540,17 @@ func (bs *BrowserShell) loadTabContent(tab *Tab) error {
 	return nil
 }
 
-// closeTab destroys the tab's WindowContext and removes it from the shell's
-// tab context map, releasing all engine state (goja VM, DOM, cookie jar,
-// HTTP client, rAF timer) for that tab.
+// closeTab removes the tab from the tab manager, which fires the OnClosed
+// callback that destroys the tab's WindowContext and drops it from the shell's
+// tab context map, releasing all engine state (goja VM, DOM, cookie jar, HTTP
+// client, rAF timer). Routing through TabManager.Close keeps the tab strip and
+// the engine state consistent: the old version destroyed the context but left
+// the tab alive in the manager (audit R-5).
 func (bs *BrowserShell) closeTab(tab *Tab) {
 	if tab == nil {
 		return
 	}
-	if wc := bs.tabWindowContexts[tab.ID]; wc != nil {
-		wc.Destroy()
-		delete(bs.tabWindowContexts, tab.ID)
-	}
+	bs.tabManager.Close(tab.ID)
 }
 
 // applyKetchupParsing re-parses the active document's HTML through ketchup to

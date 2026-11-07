@@ -1094,8 +1094,19 @@ func (wc *WindowContext) GetInputState(key string) (interface{}, bool) {
 
 // Destroy cleans up the window context resources.
 func (wc *WindowContext) Destroy() {
+	if wc == nil {
+		return
+	}
 	wc.jsRuntimeMu.lock()
 	defer wc.jsRuntimeMu.unlock()
+
+	// Idempotent: a second Destroy must not re-run the teardown, which would
+	// nil-deref already-cleared fields (e.g. sessionStorage). The shell can
+	// reach Destroy through more than one close path (audit R-5), and tests
+	// pair defer wc.Destroy with explicit calls.
+	if wc.destroyed.Load() {
+		return
+	}
 
 	// Mark destroyed first under animationFrameMu to gate concurrent map writes.
 	wc.animationFrameMu.Lock()

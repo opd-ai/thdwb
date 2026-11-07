@@ -80,6 +80,7 @@ type TabManager struct {
 
 	listeners   []func()
 	onNavigated func(tab *Tab)
+	onClosed    func(tabID int)
 }
 
 // tabNav holds the back/forward history for a single tab. The current URL is
@@ -113,6 +114,18 @@ func (m *TabManager) OnNavigated(fn func(tab *Tab)) {
 		return
 	}
 	m.onNavigated = fn
+}
+
+// OnClosed registers a callback invoked with the tab ID after any close path
+// (UI, session restore, extension tabs.remove) has removed the tab. The shell
+// uses it to destroy the tab's WindowContext exactly once, so engine state
+// (goja VM, DOM, HTTP client, rAF timer) cannot leak through a close route that
+// bypasses the Ctrl+W handler (audit R-5).
+func (m *TabManager) OnClosed(fn func(tabID int)) {
+	if fn == nil {
+		return
+	}
+	m.onClosed = fn
 }
 
 // Add creates a new tab, makes it active, and returns it. The container
@@ -170,6 +183,9 @@ func (m *TabManager) Close(tabID int) *Tab {
 		} else {
 			m.setActive(m.tabs[idx])
 		}
+	}
+	if m.onClosed != nil {
+		m.onClosed(tabID)
 	}
 	m.notify()
 	return t
