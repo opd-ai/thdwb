@@ -803,7 +803,7 @@ func (wc *WindowContext) GetJSRuntime() *goja.Runtime {
 // jsRuntimeMu is held during script execution because Goja is not thread-safe.
 // The mutex is reentrant, so JS callbacks that call SetJSValue from within
 // RunJS do not deadlock.
-func (wc *WindowContext) SetJSValue(name string, value interface{}) error {
+func (wc *WindowContext) SetJSValue(name string, value interface{}) (err error) {
 	wc.jsRuntimeMu.lock()
 	defer wc.jsRuntimeMu.unlock()
 	if !wc.IsActive() {
@@ -812,6 +812,12 @@ func (wc *WindowContext) SetJSValue(name string, value interface{}) error {
 	if wc.jsRuntime == nil {
 		return fmt.Errorf("no JavaScript runtime available")
 	}
+	defer func() {
+		if r := recover(); r != nil {
+			Log("js", fmt.Sprintf("uncaught host panic in SetJSValue(%q): %v", name, r))
+			err = fmt.Errorf("uncaught host panic: %v", r)
+		}
+	}()
 	return wc.jsRuntime.Set(name, value)
 }
 
@@ -819,7 +825,12 @@ func (wc *WindowContext) SetJSValue(name string, value interface{}) error {
 // jsRuntimeMu is held during script execution because Goja is not thread-safe.
 // The mutex is reentrant, so JS callbacks that call RunJS from within RunJS
 // (e.g. postMessage handlers) do not deadlock.
-func (wc *WindowContext) RunJS(script string) (goja.Value, error) {
+//
+// Goja converts *JS* exceptions into errors, but a panic raised by bound Go
+// code (a DOM binding bug) is re-panicked out of the VM and would kill the
+// calling UI/navigation goroutine even past a JS try/catch. We contain it here
+// and surface it as an error so one broken binding cannot crash the browser.
+func (wc *WindowContext) RunJS(script string) (v goja.Value, err error) {
 	wc.jsRuntimeMu.lock()
 	defer wc.jsRuntimeMu.unlock()
 	if !wc.IsActive() {
@@ -828,6 +839,13 @@ func (wc *WindowContext) RunJS(script string) (goja.Value, error) {
 	if wc.jsRuntime == nil {
 		return nil, fmt.Errorf("no JavaScript runtime available")
 	}
+	defer func() {
+		if r := recover(); r != nil {
+			Log("js", fmt.Sprintf("uncaught host panic in RunJS: %v", r))
+			v = nil
+			err = fmt.Errorf("uncaught host panic: %v", r)
+		}
+	}()
 	return wc.jsRuntime.RunString(script)
 }
 
