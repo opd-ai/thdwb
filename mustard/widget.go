@@ -249,7 +249,12 @@ func (widget *baseWidget) IsPointInside(x, y float64) bool {
 	}
 
 	top, left, width, height := widget.GetRect()
-	return x > float64(left) && x < float64(left+width) && y > float64(top) && y < float64(top+height)
+	// Half-open interval [left, left+width): the top/left edge pixel belongs to
+	// the widget (strict > used to exclude it, so a click exactly on the first
+	// column/row of a control missed), while the bottom/right edge belongs to
+	// the neighbor, keeping adjacent widgets from both claiming the seam.
+	return x >= float64(left) && x < float64(left+width) &&
+		y >= float64(top) && y < float64(top+height)
 }
 
 // SetVisible sets the visibility of the widget and its children.
