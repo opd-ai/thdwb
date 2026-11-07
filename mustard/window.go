@@ -173,6 +173,13 @@ func (window *WindowBase) UnregisterButton(button *ButtonWidget) {
 	}
 }
 
+// RegisteredButtonCount reports how many buttons are currently registered for
+// click dispatch. It exists so callers that rebuild UI (and must unregister
+// before re-registering) can assert the registry does not grow across rebuilds.
+func (window *WindowBase) RegisteredButtonCount() int {
+	return len(window.registeredButtons)
+}
+
 func (window *WindowBase) RegisterInput(input *InputWidget) {
 	window.registeredInputs = append(window.registeredInputs, input)
 }

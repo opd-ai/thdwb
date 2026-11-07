@@ -61,6 +61,23 @@ func (p *ExtensionSettingsPage) Rebuild() {
 	for _, w := range p.Frame.Widgets() {
 		p.Frame.DetachWidget(w)
 	}
+	// DetachWidget only clears the frame's child list; the window's
+	// registeredButtons slice still references every row button, so repeated
+	// rebuilds accumulated stale hit targets whose callbacks fired on detached
+	// widgets (audit R-17). Unregister before rebuilding, as the tab bar does.
+	if p.window != nil {
+		for _, row := range p.rows {
+			if row.enabled != nil {
+				p.window.UnregisterButton(row.enabled)
+			}
+			if row.reload != nil {
+				p.window.UnregisterButton(row.reload)
+			}
+			if row.uninstall != nil {
+				p.window.UnregisterButton(row.uninstall)
+			}
+		}
+	}
 	p.rows = make(map[string]*extensionRow)
 
 	// Header.
