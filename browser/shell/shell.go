@@ -472,8 +472,15 @@ func (bs *BrowserShell) renderWebContent(tab *Tab) {
 	ctx.SetRGB(1, 1, 1)
 	ctx.Clear()
 
-	if err := bun.RenderDocument(ctx, wc.ActiveDocument, false); err != nil {
-		bs.errorLogger.Log(errors.SeverityError, "shell", "render", fmt.Sprintf("tab %d", tab.ID), err.Error())
+	// Serialize the DOM walk against page JS: animation-frame and event
+	// callbacks mutate Children/RenderBox/Style from other goroutines while
+	// holding jsRuntimeMu, so the render must take the same lock (audit R-7).
+	renderErr := error(nil)
+	wc.WithJSRLock(func() {
+		renderErr = bun.RenderDocument(ctx, wc.ActiveDocument, false)
+	})
+	if renderErr != nil {
+		bs.errorLogger.Log(errors.SeverityError, "shell", "render", fmt.Sprintf("tab %d", tab.ID), renderErr.Error())
 		return
 	}
 

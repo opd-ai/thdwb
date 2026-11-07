@@ -711,6 +711,26 @@ func (wc *WindowContext) runAnimationFrame() {
 	wc.animationFrameMu.Unlock()
 }
 
+// WithJSRLock runs fn while holding this window's JS runtime lock.
+//
+// The render walk (bun.RenderDocument) reads the DOM tree -- Children,
+// RenderBox, Style -- that page JS mutates from animation-frame and event
+// callbacks on other goroutines. Callers that traverse that tree outside the
+// JS thread must hold this lock for the duration of the walk, or a mutation
+// landing mid-traversal produces torn reads and, for a re-parented node, an
+// inconsistent tree (audit R-7).
+//
+// jsRuntimeMu is reentrant, so calling this from within RunJS or a JS callback
+// does not deadlock.
+func (wc *WindowContext) WithJSRLock(fn func()) {
+	if wc == nil || fn == nil {
+		return
+	}
+	wc.jsRuntimeMu.lock()
+	defer wc.jsRuntimeMu.unlock()
+	fn()
+}
+
 // IsActive reports whether this window is allowed to run scripts and drain layout work.
 func (wc *WindowContext) IsActive() bool {
 	if wc == nil {
