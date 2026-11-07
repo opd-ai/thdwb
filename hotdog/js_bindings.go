@@ -1232,9 +1232,10 @@ func (node *NodeDOM) removeChildNode(child *NodeDOM) {
 			child.NextSibling = nil
 			node.MarkDirty()
 			child.MarkDirty()
-			// Clean up JS wrapper reference to prevent memory leak
-			if node.WindowCtx != nil && node.WindowCtx.nodeWrappers != nil {
-				delete(node.WindowCtx.nodeWrappers, child)
+			// Detach the whole subtree's JS wrapper/event references so a
+			// removed element's descendants are not pinned in the maps.
+			if node.WindowCtx != nil {
+				node.WindowCtx.unbindSubtree(child)
 			}
 			break
 		}

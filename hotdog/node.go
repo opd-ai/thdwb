@@ -759,9 +759,10 @@ func (node *NodeDOM) SetInnerHTML(htmlString string) error {
 		child.Parent = nil
 		child.PrevSibling = nil
 		child.NextSibling = nil
-		// Clean up JS wrapper reference to prevent memory leak
-		if node.WindowCtx != nil && node.WindowCtx.nodeWrappers != nil {
-			delete(node.WindowCtx.nodeWrappers, child)
+		// Detach the whole subtree's JS references so removed descendants are
+		// not pinned in the wrapper/event maps.
+		if node.WindowCtx != nil {
+			node.WindowCtx.unbindSubtree(child)
 		}
 	}
 	node.Children = nil
@@ -859,9 +860,10 @@ func (node *NodeDOM) SetTextContent(text string) {
 		child.Parent = nil
 		child.PrevSibling = nil
 		child.NextSibling = nil
-		// Clean up JS wrapper reference to prevent memory leak
-		if node.WindowCtx != nil && node.WindowCtx.nodeWrappers != nil {
-			delete(node.WindowCtx.nodeWrappers, child)
+		// Detach the whole subtree's JS references so removed descendants are
+		// not pinned in the wrapper/event maps.
+		if node.WindowCtx != nil {
+			node.WindowCtx.unbindSubtree(child)
 		}
 	}
 	node.Children = nil
@@ -1002,9 +1004,9 @@ func (node *NodeDOM) ReplaceChild(newChild, oldChild *NodeDOM) (*NodeDOM, error)
 			node.MarkDirty()
 			node.RequestReflow()
 			node.RequestRepaint()
-			// Clean up JS wrapper reference to prevent memory leak
-			if node.WindowCtx != nil && node.WindowCtx.nodeWrappers != nil {
-				delete(node.WindowCtx.nodeWrappers, oldChild)
+			// Detach the replaced subtree's JS references.
+			if node.WindowCtx != nil {
+				node.WindowCtx.unbindSubtree(oldChild)
 			}
 			return oldChild, nil
 		}

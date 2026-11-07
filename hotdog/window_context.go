@@ -276,7 +276,7 @@ func NewWindowContext(settings *Settings, buildInfo *assets.BuildInfo, profiler 
 	// Initialize per-window cookie jar and HTTP client for cookie isolation
 	wc.cookieJar = sauce.NewContainerCookieJar()
 	wc.httpClient = &http.Client{
-		Jar:  sauce.NewDefaultContainerCookieJar(wc.cookieJar),
+		Jar: sauce.NewDefaultContainerCookieJar(wc.cookieJar),
 		// Timeout prevents stalled requests from leaking goroutines and
 		// keeping the window context alive after the tab is destroyed.
 		Timeout: 60 * time.Second,
@@ -458,6 +458,43 @@ func (wc *WindowContext) registerNodeEvent(node *NodeDOM, eventName string, key 
 		wc.nodeEventRegistry[node] = make(map[string][]eventHandler)
 	}
 	wc.nodeEventRegistry[node][eventName] = append(wc.nodeEventRegistry[node][eventName], eventHandler{key: key, handler: handler})
+}
+
+// unbindSubtree removes wrapper and event-registry entries for a node and all
+// its descendants. Deleting only the removed child (the previous behavior)
+// pinned every wrapped descendant of a detached subtree in nodeWrappers and
+// nodeEventRegistry forever -- the map key kept the whole subtree and its goja
+// objects alive even after JS dropped all references.
+//
+// Lock order is jsRuntimeMu -> eventMu, matching EmitEvent/EmitNodeEvent.
+func (wc *WindowContext) unbindSubtree(n *NodeDOM) {
+	if wc == nil || n == nil {
+		return
+	}
+	wc.jsRuntimeMu.lock()
+	defer wc.jsRuntimeMu.unlock()
+
+	stack := []*NodeDOM{n}
+	visited := make(map[*NodeDOM]struct{}, 8)
+	for len(stack) > 0 {
+		cur := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if _, seen := visited[cur]; seen {
+			continue
+		}
+		visited[cur] = struct{}{}
+
+		wc.eventMu.Lock()
+		delete(wc.nodeWrappers, cur)
+		delete(wc.nodeEventRegistry, cur)
+		wc.eventMu.Unlock()
+
+		for _, c := range cur.Children {
+			if c != nil {
+				stack = append(stack, c)
+			}
+		}
+	}
 }
 
 func (wc *WindowContext) RemoveNodeEventByKey(node *NodeDOM, eventName string, key interface{}) {
