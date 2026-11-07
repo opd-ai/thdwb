@@ -163,6 +163,20 @@ func paintFocusRing(ctx *gg.Context, node *hotdog.NodeDOM) {
 }
 
 func calculateNode(ctx *gg.Context, node *hotdog.NodeDOM, postion int) {
+	// Comments, doctypes and raw HTML are not renderable boxes. Without this
+	// they fall through to the default block stylesheet, get laid out, and
+	// paintBlockElement draws node.Content -- so <!-- note --> rendered "note"
+	// as visible page text (audit R-12).
+	switch node.Type {
+	case hotdog.NodeTypeComment, hotdog.NodeTypeDoctype, hotdog.NodeTypeRaw:
+		if node.RenderBox == nil {
+			node.RenderBox = &hotdog.RenderBox{}
+		} else {
+			*node.RenderBox = hotdog.RenderBox{}
+		}
+		return
+	}
+
 	if node.Style == nil {
 		node.Style = &hotdog.Stylesheet{
 			Display:        "block",
