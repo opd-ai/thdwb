@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/danfragoso/thdwb/assets"
@@ -220,7 +221,7 @@ type WindowContext struct {
 	animationFrames       map[uint64]func()
 	animationFrameTimer   *time.Timer
 	active                bool
-	destroyed             bool
+	destroyed             atomic.Bool // read outside animationFrameMu by LoadHTML/LoadURL (C-17)
 
 	// JS runtime (Goja VM) - per window isolation
 	// reentrant so JS callbacks can call RunJS/SetJSValue without deadlocking.
@@ -312,7 +313,7 @@ func (wc *WindowContext) LoadHTML(html, baseURL string) error {
 	if wc == nil {
 		return fmt.Errorf("window context is nil")
 	}
-	if wc.destroyed {
+	if wc.destroyed.Load() {
 		return fmt.Errorf("window context is destroyed")
 	}
 
@@ -397,7 +398,7 @@ func (wc *WindowContext) LoadURL(rawURL string) error {
 	if wc == nil {
 		return fmt.Errorf("window context is nil")
 	}
-	if wc.destroyed {
+	if wc.destroyed.Load() {
 		return fmt.Errorf("window context is destroyed")
 	}
 
@@ -631,7 +632,7 @@ func (wc *WindowContext) NotifyMutationObservers(target *NodeDOM, mutationType s
 // ScheduleAnimationFrame queues a callback to run on the next animation frame for this window.
 func (wc *WindowContext) ScheduleAnimationFrame(callback func()) uint64 {
 	wc.animationFrameMu.Lock()
-	if wc.destroyed {
+	if wc.destroyed.Load() {
 		wc.animationFrameMu.Unlock()
 		return 0
 	}
@@ -714,7 +715,7 @@ func (wc *WindowContext) SetActive(active bool) {
 	}
 	wc.animationFrameMu.Lock()
 	defer wc.animationFrameMu.Unlock()
-	if wc.destroyed {
+	if wc.destroyed.Load() {
 		return
 	}
 	if wc.active == active {
@@ -1065,7 +1066,7 @@ func (wc *WindowContext) Destroy() {
 
 	// Mark destroyed first under animationFrameMu to gate concurrent map writes.
 	wc.animationFrameMu.Lock()
-	wc.destroyed = true
+	wc.destroyed.Store(true)
 	wc.active = false
 	if wc.animationFrameTimer != nil {
 		wc.animationFrameTimer.Stop()
