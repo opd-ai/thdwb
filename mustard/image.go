@@ -1,6 +1,7 @@
 package mustard
 
 import (
+	"image"
 	"log"
 
 	gg "github.com/danfragoso/thdwb/gg"
@@ -12,7 +13,11 @@ func CreateImageWidget(path []byte) *ImageWidget {
 
 	img, err := gg.LoadAsset(path)
 	if err != nil {
-		log.Fatal(err)
+		// An undecodable image is a content error, not a programming error:
+		// log.Fatal would exit the whole browser. Degrade to a 1x1
+		// transparent placeholder so draw() keeps working (audit C-18).
+		log.Printf("mustard: undecodable image asset: %v", err)
+		img = image.NewRGBA(image.Rect(0, 0, 1, 1))
 	}
 
 	return &ImageWidget{
