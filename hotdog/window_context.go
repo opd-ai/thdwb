@@ -155,6 +155,12 @@ type eventHandler struct {
 	handler func(interface{})
 }
 
+// maxDocumentHistory bounds wc.Documents, the per-tab list of visited
+// documents kept for session-history needs. Each entry retains a full DOM,
+// so the cap prevents an unbounded retention leak across long browsing
+// sessions (audit R-9).
+const maxDocumentHistory = 50
+
 // WindowContext holds all state for a single browser window/tab instance.
 // This enables multiple independent windows to run without memory interference.
 type WindowContext struct {
@@ -347,7 +353,14 @@ func (wc *WindowContext) LoadHTML(html, baseURL string) error {
 	}
 
 	wc.ActiveDocument = doc
+	// Bound the per-tab document history: every navigation retains a full DOM
+	// (plus parsed HTML tree and stylesheets), and nothing outside tests reads
+	// this list, so an unbounded append leaks every visited page until the tab
+	// closes (audit R-9).
 	wc.Documents = append(wc.Documents, doc)
+	if len(wc.Documents) > maxDocumentHistory {
+		wc.Documents = wc.Documents[len(wc.Documents)-maxDocumentHistory:]
+	}
 
 	// Reset per-document JS bindings and event registrations from the previous
 	// document to prevent memory leaks across navigations.
