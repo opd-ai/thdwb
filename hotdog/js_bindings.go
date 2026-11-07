@@ -1457,7 +1457,19 @@ func (w *JSWindowWrapper) postMessage(call goja.FunctionCall) goja.Value {
 	// Find target windows matching the targetOrigin
 	targetWindows := FindWindowsByOrigin(targetOrigin)
 
-	// Create MessageEvent-like object for each target
+	// Deliver to each matching target.
+	//
+	// Goja VMs are not goroutine-safe, so emitting into a target requires the
+	// target's jsRuntimeMu. Blocking on it, however, is unsafe: the sender runs
+	// inside its own window's lock, and window iteration order comes from a Go
+	// map, so two windows posting to each other concurrently would acquire
+	// {A,B} and {B,A} in different orders and deadlock (ABBA).
+	//
+	// Strategy: acquire the target lock only when it is free or already ours
+	// (tryLock). When the target is busy, deliver asynchronously on its own
+	// animation-frame pump instead, so the sender never waits on a foreign
+	// lock. Both paths construct the event object on the target VM while that
+	// VM's lock is held.
 	for _, targetWC := range targetWindows {
 		// Skip if target is the same window and targetOrigin is not "*" (same-origin delivery)
 		// For same window, we still deliver if targetOrigin matches or is "*"
@@ -1469,26 +1481,43 @@ func (w *JSWindowWrapper) postMessage(call goja.FunctionCall) goja.Value {
 		if !targetWC.IsActive() {
 			continue
 		}
-		targetRuntime := targetWC.GetJSRuntime()
-		if targetRuntime == nil {
+
+		targetWC := targetWC
+		msg := message
+		senderOrigin := windowOrigin
+
+		if targetWC.jsRuntimeMu.tryLock() {
+			targetWC.deliverMessage(msg, senderOrigin)
+			targetWC.jsRuntimeMu.unlock()
 			continue
 		}
 
-		eventObj := targetRuntime.NewObject()
-		_ = eventObj.Set("data", message)
-		_ = eventObj.Set("origin", windowOrigin)
-		_ = eventObj.Set("source", w.windowCtx.GetJSRuntime().Get("window")) // reference to sender's window
-
-		// Serialize on the target window's Goja runtime lock. Goja is not
-		// thread-safe, so we must hold targetWC.jsRuntimeMu while emitting
-		// events into the target VM. The lock is reentrant, so same-window
-		// posts (where the sender already holds its own lock) remain safe.
-		targetWC.jsRuntimeMu.lock()
-		defer targetWC.jsRuntimeMu.unlock()
-		targetWC.EmitEvent("message", eventObj)
+		// Contended: hand off to the target's own goroutine. If it has no rAF
+		// pump available (inactive/destroyed), the message is dropped, which
+		// matches the IsActive() skip above.
+		targetWC.ScheduleAnimationFrame(func() {
+			targetWC.deliverMessage(msg, senderOrigin)
+		})
 	}
 
 	return goja.Undefined()
+}
+
+// deliverMessage builds a MessageEvent-like object on the target window's own
+// VM and emits it. The caller must hold the target's jsRuntimeMu (either via
+// tryLock above or because it is running as an animation-frame callback, which
+// the window already executes under that lock).
+func (wc *WindowContext) deliverMessage(message interface{}, origin string) {
+	if wc.jsRuntime == nil || !wc.IsActive() {
+		return
+	}
+	eventObj := wc.jsRuntime.NewObject()
+	_ = eventObj.Set("data", message)
+	_ = eventObj.Set("origin", origin)
+	// "source" intentionally omitted: a sender-VM *goja.Object* cannot be
+	// converted by the target VM (Set throws and the error was previously
+	// discarded, leaving source undefined). See AUDIT.md C-13.
+	wc.EmitEvent("message", eventObj)
 }
 
 // isValidTargetOrigin validates that targetOrigin is either "*" or a valid origin (scheme://host:port)

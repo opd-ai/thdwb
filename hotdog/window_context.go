@@ -65,6 +65,22 @@ func (m *reentrantMutex) lock() {
 	m.mu.Unlock()
 }
 
+// tryLock acquires the mutex only when it is free or already owned by the
+// calling goroutine. It reports whether the lock was taken. Used to serialize
+// cross-window work without ever blocking on a foreign lock while holding our
+// own, which would create a circular wait.
+func (m *reentrantMutex) tryLock() bool {
+	id := goroutineID()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.owner != 0 && m.owner != id {
+		return false
+	}
+	m.owner = id
+	m.depth++
+	return true
+}
+
 func (m *reentrantMutex) unlock() {
 	id := goroutineID()
 	m.mu.Lock()
