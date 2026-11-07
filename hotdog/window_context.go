@@ -363,12 +363,17 @@ func (wc *WindowContext) LoadHTML(html, baseURL string) error {
 	}
 
 	// Reset per-document JS bindings and event registrations from the previous
-	// document to prevent memory leaks across navigations.
-	wc.eventMu.Lock()
+	// document to prevent memory leaks across navigations. nodeWrappers is
+	// owned by jsRuntimeMu (wrapNode mutates it under that lock from JS); the
+	// event registries belong to eventMu. Taking them in the established
+	// jsRuntimeMu -> eventMu order (audit R-15).
+	wc.jsRuntimeMu.lock()
 	wc.nodeWrappers = make(map[*NodeDOM]*goja.Object)
+	wc.eventMu.Lock()
 	wc.nodeEventRegistry = make(map[*NodeDOM]map[string][]eventHandler)
 	wc.eventRegistry = make(map[string][]eventHandler)
 	wc.eventMu.Unlock()
+	wc.jsRuntimeMu.unlock()
 	wc.ClearLayoutCache()
 
 	// Drop pending animation-frame callbacks scheduled by the previous
@@ -502,8 +507,11 @@ func (wc *WindowContext) unbindSubtree(n *NodeDOM) {
 		}
 		visited[cur] = struct{}{}
 
-		wc.eventMu.Lock()
+		// nodeWrappers is owned by jsRuntimeMu (already held here): wrapNode
+		// reads/writes it under that lock from JS, so deleting under eventMu
+		// instead was the R-15 split ownership.
 		delete(wc.nodeWrappers, cur)
+		wc.eventMu.Lock()
 		delete(wc.nodeEventRegistry, cur)
 		wc.eventMu.Unlock()
 
@@ -1127,10 +1135,12 @@ func (wc *WindowContext) Destroy() {
 		wc.cancel()
 	}
 
+	// nodeWrappers is jsRuntimeMu-owned (held for this whole function since
+	// the C-17 idempotency work); the event registries are eventMu-owned.
+	wc.nodeWrappers = nil
 	wc.eventMu.Lock()
 	wc.eventRegistry = nil
 	wc.nodeEventRegistry = nil
-	wc.nodeWrappers = nil
 	wc.eventMu.Unlock()
 
 	wc.ActiveDocument = nil

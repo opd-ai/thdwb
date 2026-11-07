@@ -41,9 +41,13 @@ func TestRemoveChildUnbindsSubtree(t *testing.T) {
 	// Register a listener deep inside the subtree.
 	wc.registerNodeEvent(g1, "click", "k", func(interface{}) {})
 
-	wc.eventMu.Lock()
+	subtree := []*NodeDOM{parent, c1, g1, c2, g2}
+
+	wc.jsRuntimeMu.lock()
 	before := len(wc.nodeWrappers)
 	_, g1Wrapped := wc.nodeWrappers[g1]
+	wc.jsRuntimeMu.unlock()
+	wc.eventMu.Lock()
 	_, g1HasEvents := wc.nodeEventRegistry[g1]
 	wc.eventMu.Unlock()
 	require.True(t, g1Wrapped, "grandchild must be wrapped before removal")
@@ -52,11 +56,16 @@ func TestRemoveChildUnbindsSubtree(t *testing.T) {
 
 	host.removeChildNode(parent)
 
-	wc.eventMu.Lock()
+	// nodeWrappers is jsRuntimeMu-owned; nodeEventRegistry stays eventMu-owned.
+	wc.jsRuntimeMu.lock()
 	after := len(wc.nodeWrappers)
-	for _, n := range []*NodeDOM{parent, c1, g1, c2, g2} {
+	for _, n := range subtree {
 		_, stillWrapped := wc.nodeWrappers[n]
 		assert.False(t, stillWrapped, "wrapper for %q must be removed with the subtree", n.Element)
+	}
+	wc.jsRuntimeMu.unlock()
+	wc.eventMu.Lock()
+	for _, n := range subtree {
 		_, stillEvents := wc.nodeEventRegistry[n]
 		assert.False(t, stillEvents, "event registry for %q must be removed with the subtree", n.Element)
 	}
@@ -91,10 +100,10 @@ func TestUnbindSubtreeTerminates(t *testing.T) {
 	}
 
 	// Both nodes of the cycle must be unbound exactly once without hanging.
-	wc.eventMu.Lock()
+	wc.jsRuntimeMu.lock()
 	_, aBound := wc.nodeWrappers[a]
 	_, bBound := wc.nodeWrappers[b]
-	wc.eventMu.Unlock()
+	wc.jsRuntimeMu.unlock()
 	assert.False(t, aBound, "cyclic node a must be unbound")
 	assert.False(t, bBound, "cyclic node b must be unbound")
 }
