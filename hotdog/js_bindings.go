@@ -110,6 +110,11 @@ func (mo *MutationObserver) Trigger(target *NodeDOM, mutationType string) {
 		return
 	}
 
+	if mo.windowCtx != nil {
+		mo.windowCtx.jsRuntimeMu.lock()
+		defer mo.windowCtx.jsRuntimeMu.unlock()
+	}
+
 	records := mo.runtime.NewArray()
 	record := mo.runtime.NewObject()
 	_ = record.Set("type", mutationType)
@@ -118,7 +123,15 @@ func (mo *MutationObserver) Trigger(target *NodeDOM, mutationType string) {
 		_ = record.Set("target", docWrapper.wrapNode(target))
 	}
 	_ = records.Set("0", record)
-	_, _ = mo.callback(goja.Undefined(), records)
+	// Route through runJSListener so a throwing or panicking observer callback
+	// is logged to the page console instead of being silently discarded with
+	// `_, _ =` (audit C-10). Every other callback site uses this wrapper.
+	runJSListener("MutationObserver callback",
+		&JSConsoleWrapper{windowCtx: mo.windowCtx, runtime: mo.runtime},
+		func() error {
+			_, err := mo.callback(goja.Undefined(), records)
+			return err
+		})
 }
 
 func applyJSEventOptions(event *goja.Object, runtime *goja.Runtime, options goja.Value) {
