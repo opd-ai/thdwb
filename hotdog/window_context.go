@@ -474,6 +474,12 @@ func (wc *WindowContext) EmitNodeEvent(node *NodeDOM, eventName string, data int
 	handlers := make([]eventHandler, len(wc.nodeEventRegistry[node][eventName]))
 	copy(handlers, wc.nodeEventRegistry[node][eventName])
 	wc.eventMu.Unlock()
+	// Handlers invoke page JS on this window's goja VM, which is not
+	// thread-safe: serialize against rAF/timer goroutines that execute JS
+	// under jsRuntimeMu. The mutex is reentrant for emitters already running
+	// inside a JS binding on this window.
+	wc.jsRuntimeMu.lock()
+	defer wc.jsRuntimeMu.unlock()
 	for _, handler := range handlers {
 		handler.handler(data)
 	}
@@ -517,6 +523,12 @@ func (wc *WindowContext) EmitEvent(eventName string, data interface{}) {
 	handlers := make([]eventHandler, len(wc.eventRegistry[eventName]))
 	copy(handlers, wc.eventRegistry[eventName])
 	wc.eventMu.Unlock()
+	// Handlers invoke page JS on this window's goja VM, which is not
+	// thread-safe: serialize against rAF/timer goroutines that execute JS
+	// under jsRuntimeMu. The mutex is reentrant for emitters already running
+	// inside a JS binding on this window.
+	wc.jsRuntimeMu.lock()
+	defer wc.jsRuntimeMu.unlock()
 	for _, handler := range handlers {
 		handler.handler(data)
 	}
