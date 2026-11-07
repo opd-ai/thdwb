@@ -35,11 +35,16 @@ func (m *PageLoadMetrics) FirstContentfulPaintLatency() time.Duration {
 	return m.FirstContentful.Sub(m.NavigationStart)
 }
 
+// maxPageLoads bounds PageLoadTracker retention. Every http(s) navigation
+// appends an entry, and nothing evicted them, so a long session grew the map
+// and order slice without limit (audit R-18). Mirrors ResourceCache's ring.
+const maxPageLoads = 256
+
 // PageLoadTracker records page load metrics for multiple URLs.
 type PageLoadTracker struct {
-	mu      sync.Mutex
-	loads   map[string]*PageLoadMetrics
-	order   []string
+	mu    sync.Mutex
+	loads map[string]*PageLoadMetrics
+	order []string
 }
 
 // NewPageLoadTracker creates a new PageLoadTracker.
@@ -54,12 +59,25 @@ func (plt *PageLoadTracker) StartLoad(url string) *PageLoadMetrics {
 	plt.mu.Lock()
 	defer plt.mu.Unlock()
 
+	// Dedup by URL: a revisit updates the existing entry in place instead of
+	// appending a second order slot for the same key.
+	if existing, ok := plt.loads[url]; ok {
+		existing.NavigationStart = time.Now()
+		existing.LoadComplete = time.Time{}
+		return existing
+	}
+
 	m := &PageLoadMetrics{
 		URL:             url,
 		NavigationStart: time.Now(),
 	}
 	plt.loads[url] = m
 	plt.order = append(plt.order, url)
+	if len(plt.order) > maxPageLoads {
+		oldest := plt.order[0]
+		plt.order = plt.order[1:]
+		delete(plt.loads, oldest)
+	}
 	return m
 }
 
