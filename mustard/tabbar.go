@@ -213,8 +213,10 @@ func (tb *TabBar) draw() {
 		context.SetHexColor("#333333")
 		context.SetFont(tb.font, tb.fontSize)
 		title := tab.Title
-		if len(title) > 18 {
-			title = title[:18] + "..."
+		// Truncate on rune boundaries: a byte slice can split a multi-byte
+		// glyph and emit invalid UTF-8 into the draw string.
+		if runes := []rune(title); len(runes) > 18 {
+			title = string(runes[:18]) + "..."
 		}
 		if strings.TrimSpace(title) == "" {
 			title = "New Tab"

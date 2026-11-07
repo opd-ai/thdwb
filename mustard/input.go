@@ -82,6 +82,15 @@ func (input *InputWidget) SetFontColor(fontColor string) {
 // SetFontColor - Sets the input font color
 func (input *InputWidget) SetValue(value string) {
 	input.value = value
+	// cursorPosition is a negative offset from the end of the value; clamp it
+	// into range so a shorter value cannot push the caret slice index out of
+	// bounds (draw() computes value[len(value)+cursorPosition:]).
+	if input.cursorPosition < -len(value) {
+		input.cursorPosition = -len(value)
+	}
+	if input.cursorPosition > 0 {
+		input.cursorPosition = 0
+	}
 	input.needsRepaint = true
 }
 
@@ -92,6 +101,21 @@ func (input *InputWidget) GetValue() string {
 
 func (input *InputWidget) GetCursorPos() int {
 	return input.cursorPosition
+}
+
+// caretIndex returns the byte offset of the caret, computed as
+// len(value)+cursorPosition (cursorPosition is a negative offset from the end)
+// and clamped into [0, len(value)]. Guards the two value-slice sites in draw()
+// against an out-of-range caret after the value shrinks.
+func (input *InputWidget) caretIndex() int {
+	idx := len(input.value) + input.cursorPosition
+	if idx < 0 {
+		return 0
+	}
+	if idx > len(input.value) {
+		return len(input.value)
+	}
+	return idx
 }
 
 // SetBackgroundColor - Sets the input background color
@@ -158,7 +182,7 @@ func (input *InputWidget) draw() {
 	w, h := context.MeasureString(input.value)
 
 	cursorP := width - totalPadding*2
-	cP, _ := context.MeasureString(input.value[len(input.value)+input.cursorPosition:])
+	cP, _ := context.MeasureString(input.value[input.caretIndex():])
 	cursorP = cursorP - cP
 
 	if cursorP > 0 {
@@ -190,7 +214,7 @@ func (input *InputWidget) draw() {
 				context.DrawRectangle(0, h/4, 1.3, float64(input.fontSize))
 			}
 		} else {
-			cursorDefaultPosition, _ := context.MeasureString(input.value[:len(input.value)+input.cursorPosition])
+			cursorDefaultPosition, _ := context.MeasureString(input.value[:input.caretIndex()])
 			context.DrawRectangle(cursorDefaultPosition, h/4, 1.3, float64(input.fontSize))
 		}
 
