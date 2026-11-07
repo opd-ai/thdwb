@@ -16,15 +16,24 @@ func splitTopLevel(s string, delim rune) []string {
 	var parts []string
 	depth := 0
 	start := 0
+	var quote rune // non-zero while inside a "..." or '...' string
 	for i, c := range s {
-		switch c {
-		case '(', '[', '{':
+		switch {
+		case quote != 0:
+			// Inside a quoted string, brackets/commas are literal.
+			if c == quote {
+				quote = 0
+			}
+		case c == '"' || c == '\'':
+			quote = c
+		case c == '(' || c == '[' || c == '{':
 			depth++
-		case ')', ']', '}':
+		case c == ')' || c == ']' || c == '}':
 			if depth > 0 {
 				depth--
 			}
-		case delim:
+		case c == delim:
+			// delim is always ASCII (','), so i+1 is a valid byte offset.
 			if depth == 0 {
 				parts = append(parts, s[start:i])
 				start = i + 1
@@ -33,6 +42,20 @@ func splitTopLevel(s string, delim rune) []string {
 	}
 	parts = append(parts, s[start:])
 	return parts
+}
+
+// parseDeclarations parses a "prop: val; prop: val" block into dst.
+func parseDeclarations(declarations string, dst *hotdog.Stylesheet) {
+	for _, decl := range strings.Split(declarations, ";") {
+		decl = strings.TrimSpace(decl)
+		if decl == "" {
+			continue
+		}
+		propVal := strings.SplitN(decl, ":", 2)
+		if len(propVal) == 2 {
+			mapPropToStylesheet(dst, []string{strings.TrimSpace(propVal[0]), strings.TrimSpace(propVal[1])})
+		}
+	}
 }
 
 // ParseStylesheet parses a CSS stylesheet string and returns a slice of StyleElement.
@@ -69,46 +92,34 @@ func ParseStylesheetFrom(cssString string, indexBase int) []*hotdog.StyleElement
 		selector := strings.TrimSpace(match[1])
 		declarations := strings.TrimSpace(match[2])
 
-		// Parse selector to get specificity. cascadia.Parse rejects comma
-		// group selectors (e.g. "a, b"), so split on top-level commas and
-		// take the maximum specificity across the group's arms.
-		var specificity cascadia.Specificity
+		// cascadia.Parse rejects comma group selectors (e.g. "a, b"), so split
+		// on top-level commas and emit one StyleElement per arm. Each arm
+		// carries its own specificity: recording the max across the group (the
+		// old behavior) let "#foo, .b" beat a legitimate rule that actually
+		// matched via the low-specificity ".b" arm. Splitting also lets
+		// ApplyStylesheets compile and match each arm independently.
 		for _, arm := range splitTopLevel(selector, ',') {
 			arm = strings.TrimSpace(arm)
 			if arm == "" {
 				continue
 			}
-			if sel, err := cascadia.Parse(arm); err == nil {
-				s := sel.Specificity()
-				if specificity.Less(s) {
-					specificity = s
-				}
-			}
-		}
-
-		styleElement := &hotdog.StyleElement{
-			Selector:    selector,
-			Style:       &hotdog.Stylesheet{},
-			Specificity: specificity,
-			Origin:      "author",
-			Index:       indexBase + emitted,
-		}
-
-		// Parse declarations
-		declPairs := strings.Split(declarations, ";")
-		for _, decl := range declPairs {
-			decl = strings.TrimSpace(decl)
-			if decl == "" {
+			sel, err := cascadia.Parse(arm)
+			if err != nil {
 				continue
 			}
-			propVal := strings.SplitN(decl, ":", 2)
-			if len(propVal) == 2 {
-				mapPropToStylesheet(styleElement.Style, []string{strings.TrimSpace(propVal[0]), strings.TrimSpace(propVal[1])})
-			}
-		}
 
-		styleSheet = append(styleSheet, styleElement)
-		emitted++
+			styleElement := &hotdog.StyleElement{
+				Selector:    arm,
+				Style:       &hotdog.Stylesheet{},
+				Specificity: sel.Specificity(),
+				Origin:      "author",
+				Index:       indexBase + emitted,
+			}
+			parseDeclarations(declarations, styleElement.Style)
+
+			styleSheet = append(styleSheet, styleElement)
+			emitted++
+		}
 	}
 
 	return styleSheet
