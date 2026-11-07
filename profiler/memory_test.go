@@ -1,6 +1,7 @@
 package profiler
 
 import (
+	"sync"
 	"testing"
 	"time"
 
@@ -37,14 +38,28 @@ func TestMemoryProfileDeltaGoroutines(t *testing.T) {
 	mp := NewMemoryProfile("tab-1")
 	mp.Record()
 
-	// Spawn a goroutine to create a delta.
-	done := make(chan struct{})
-	go func() { close(done) }()
-	<-done
+	// The previous version spawned a goroutine that had already exited by the
+	// second Record, so runtime.NumGoroutine could legitimately DROP (any
+	// unrelated runtime churn) and the signed delta went negative -- the
+	// flake. Hold a large batch of goroutines alive across the second
+	// snapshot: newproc counts them synchronously, so the delta is
+	// deterministically positive with ample margin for ordinary churn.
+	release := make(chan struct{})
+	var wg sync.WaitGroup
+	const spawned = 100
+	for i := 0; i < spawned; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-release
+		}()
+	}
 	mp.Record()
+	close(release)
+	wg.Wait()
 
 	delta := mp.DeltaGoroutines()
-	assert.GreaterOrEqual(t, delta, 0)
+	assert.GreaterOrEqual(t, delta, spawned/2)
 }
 
 func TestMemoryProfileDeltaWithOneSnapshot(t *testing.T) {
@@ -109,12 +124,12 @@ func TestMemoryProfilerDetectLeaksBelowThreshold(t *testing.T) {
 
 func TestMemorySnapshotFields(t *testing.T) {
 	s := MemorySnapshot{
-		Timestamp:   time.Now(),
-		AllocBytes:  1024,
-		TotalBytes:  2048,
-		SysBytes:    4096,
-		NumGC:       1,
-		Goroutines:  5,
+		Timestamp:  time.Now(),
+		AllocBytes: 1024,
+		TotalBytes: 2048,
+		SysBytes:   4096,
+		NumGC:      1,
+		Goroutines: 5,
 	}
 	assert.Equal(t, uint64(1024), s.AllocBytes)
 	assert.Equal(t, uint64(2048), s.TotalBytes)
