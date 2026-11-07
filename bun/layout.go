@@ -288,6 +288,14 @@ func applyStylesToFlexNode(flexNode *flex.Node, style *hotdog.Stylesheet) {
 			flexNode.StyleSetPositionType(flex.PositionTypeAbsolute)
 		case "relative":
 			flexNode.StyleSetPositionType(flex.PositionTypeRelative)
+		case "fixed":
+			// The vendored kjk/flex (2017) defines only Relative/Absolute -- no
+			// Fixed. Leaving it unhandled fell through to the default Relative,
+			// so a position:fixed element stayed in flow and its offsets
+			// resolved against the parent instead of taking it out of flow like
+			// absolute does (audit O-16). Absolute is the closest available
+			// degradation.
+			flexNode.StyleSetPositionType(flex.PositionTypeAbsolute)
 		}
 	}
 
