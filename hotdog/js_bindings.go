@@ -1870,17 +1870,23 @@ func (w *JSWindowWrapper) XMLHttpRequest(call goja.ConstructorCall) *goja.Object
 				}
 			})
 		}
+		// Snapshot the window-scoped request inputs on the JS thread, before
+		// spawning the network goroutine. This binding runs under jsRuntimeMu
+		// (invoked via RunJS), and Destroy() holds that same lock for its whole
+		// teardown, so these reads are serialized against the nil-ing of
+		// Origin/httpClient. Reading them from the goroutine instead raced
+		// Destroy with no lock held (AUDIT.md C-6).
+		origin := w.windowCtx.GetOrigin().String()
+		if origin == "" {
+			origin = "null"
+		}
+		snapshotClient := w.windowCtx.GetHTTPClient()
+
 		go func() {
 			parsedURL, err := url.Parse(requestURL)
 			if err != nil {
 				dispatchNetworkEvent("error")
 				return
-			}
-
-			// Get origin for CORS
-			origin := w.windowCtx.GetOrigin().String()
-			if origin == "" {
-				origin = "null"
 			}
 
 			// Determine if this is a cross-origin request
@@ -1892,7 +1898,7 @@ func (w *JSWindowWrapper) XMLHttpRequest(call goja.ConstructorCall) *goja.Object
 
 			// Check if preflight is needed
 			needsPreflight := isCrossOrigin && !isSimpleRequest(requestMethod, requestHeaders)
-			httpClient := w.windowCtx.GetHTTPClient()
+			httpClient := snapshotClient
 			if !withCredentials {
 				httpClient = &http.Client{}
 			}
