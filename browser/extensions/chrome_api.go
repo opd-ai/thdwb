@@ -9,6 +9,21 @@ import (
 	goja "github.com/dop251/goja"
 )
 
+// lastCallback extracts the trailing callback argument of a chrome.* binding.
+// goja's FunctionCall.Argument guards only idx < len, so bindings that
+// computed call.Argument(len(call.Arguments) - 1) indexed Arguments[-1] when
+// the API was invoked with zero arguments: a native-binding panic with no
+// active JS try frame repanics through runWrapped and kills the process
+// (audit C-29 -- probe: "index out of range [-1] [recovered, repanicked]").
+// Returning nil is safe because every call site guards `if callback != nil`.
+func lastCallback(call goja.FunctionCall) goja.Callable {
+	if len(call.Arguments) == 0 {
+		return nil
+	}
+	cb, _ := goja.AssertFunction(call.Arguments[len(call.Arguments)-1])
+	return cb
+}
+
 // TabInfo describes a browser tab as exposed to extension APIs.
 type TabInfo struct {
 	ID             int    `json:"id"`
@@ -1065,7 +1080,7 @@ func (c *ChromeAPI) bindTabs(vm *goja.Runtime, ext *Extension, router *MessageRo
 
 	// chrome.tabs.query
 	_ = tabsObj.Set("query", func(call goja.FunctionCall) goja.Value {
-		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		callback := lastCallback(call)
 		q := TabQuery{}
 		if len(call.Arguments) > 0 {
 			qObj := call.Argument(0).ToObject(vm)
@@ -1175,7 +1190,7 @@ func (c *ChromeAPI) bindTabs(vm *goja.Runtime, ext *Extension, router *MessageRo
 				}
 			}
 		}
-		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		callback := lastCallback(call)
 		t, err := tabOps.UpdateTab(tabID, updates)
 		if err != nil || t == nil {
 			if callback != nil {
@@ -1226,7 +1241,7 @@ func (c *ChromeAPI) bindTabs(vm *goja.Runtime, ext *Extension, router *MessageRo
 				}
 			}
 		}
-		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		callback := lastCallback(call)
 		t, err := tabOps.CreateTab(create)
 		if err != nil || t == nil {
 			if callback != nil {
@@ -1542,7 +1557,7 @@ func (c *ChromeAPI) bindWindows(vm *goja.Runtime, ext *Extension, winOps WindowO
 
 	// chrome.windows.getCurrent
 	_ = windowsObj.Set("getCurrent", func(call goja.FunctionCall) goja.Value {
-		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		callback := lastCallback(call)
 		win, err := winOps.GetCurrent()
 		if err != nil || win == nil {
 			if callback != nil {
@@ -1564,7 +1579,7 @@ func (c *ChromeAPI) bindWindows(vm *goja.Runtime, ext *Extension, winOps WindowO
 
 	// chrome.windows.getAll
 	_ = windowsObj.Set("getAll", func(call goja.FunctionCall) goja.Value {
-		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		callback := lastCallback(call)
 		wins, err := winOps.GetAll()
 		if err != nil {
 			wins = nil
@@ -1605,7 +1620,7 @@ func (c *ChromeAPI) bindWindows(vm *goja.Runtime, ext *Extension, winOps WindowO
 				}
 			}
 		}
-		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		callback := lastCallback(call)
 		win, err := winOps.Create(create)
 		if err != nil || win == nil {
 			if callback != nil {
@@ -1658,7 +1673,7 @@ func (c *ChromeAPI) bindContextualIdentities(vm *goja.Runtime, ext *Extension, c
 
 	// chrome.contextualIdentities.query
 	_ = ciObj.Set("query", func(call goja.FunctionCall) goja.Value {
-		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		callback := lastCallback(call)
 		containers := containerOps.QueryContainers()
 		result := make([]interface{}, 0, len(containers))
 		for _, c := range containers {
@@ -1715,7 +1730,7 @@ func (c *ChromeAPI) bindContextualIdentities(vm *goja.Runtime, ext *Extension, c
 				}
 			}
 		}
-		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		callback := lastCallback(call)
 		c, err := containerOps.CreateContainer(name, color)
 		if err != nil || c == nil {
 			if callback != nil {
@@ -1753,7 +1768,7 @@ func (c *ChromeAPI) bindContextualIdentities(vm *goja.Runtime, ext *Extension, c
 				}
 			}
 		}
-		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		callback := lastCallback(call)
 		c, err := containerOps.UpdateContainer(id, name, color)
 		if err != nil || c == nil {
 			if callback != nil {
@@ -1975,7 +1990,7 @@ func (c *ChromeAPI) bindCookies(vm *goja.Runtime, ext *Extension, cookieOps Cook
 			storeID = storeIDVal.String()
 		}
 
-		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		callback := lastCallback(call)
 		cookies, err := cookieOps.GetCookies(storeID, url)
 		if err != nil {
 			if callback != nil {
@@ -2049,7 +2064,7 @@ func (c *ChromeAPI) bindCookies(vm *goja.Runtime, ext *Extension, cookieOps Cook
 			cookie.StoreID = storeIDVal.String()
 		}
 
-		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		callback := lastCallback(call)
 		if err := cookieOps.SetCookie(cookie.StoreID, cookie); err != nil {
 			if callback != nil {
 				_, _ = callback(goja.Undefined())
@@ -2094,7 +2109,7 @@ func (c *ChromeAPI) bindCookies(vm *goja.Runtime, ext *Extension, cookieOps Cook
 			cookie.StoreID = storeIDVal.String()
 		}
 
-		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		callback := lastCallback(call)
 		if err := cookieOps.RemoveCookie(cookie.StoreID, cookie); err != nil {
 			if callback != nil {
 				_, _ = callback(goja.Undefined())
@@ -2121,7 +2136,7 @@ func (c *ChromeAPI) bindCookies(vm *goja.Runtime, ext *Extension, cookieOps Cook
 				}
 			}
 		}
-		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		callback := lastCallback(call)
 		cookies, err := cookieOps.GetAllCookies(storeID)
 		if err != nil {
 			if callback != nil {
@@ -2161,7 +2176,7 @@ func (c *ChromeAPI) bindCookies(vm *goja.Runtime, ext *Extension, cookieOps Cook
 				}
 			}
 		}
-		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		callback := lastCallback(call)
 		if err := cookieOps.ClearCookies(storeID); err != nil {
 			if callback != nil {
 				_, _ = callback(goja.Undefined())
@@ -2255,7 +2270,7 @@ func (c *ChromeAPI) bindScripting(vm *goja.Runtime, ext *Extension, ops Scriptin
 				world = MAINWorld
 			}
 		}
-		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		callback := lastCallback(call)
 		result, err := ops.ExecuteScript(ext.ID, world, script)
 		if err != nil {
 			if callback != nil {
@@ -2277,7 +2292,7 @@ func (c *ChromeAPI) bindScripting(vm *goja.Runtime, ext *Extension, ops Scriptin
 		extPath := call.Argument(0).String()
 		worldStr := call.Argument(1).String()
 		jsPath := call.Argument(2).String()
-		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		callback := lastCallback(call)
 		result, err := ops.ExecuteScriptFile(ext.ID, extPath, worldStr, jsPath)
 		if err != nil {
 			if callback != nil {
@@ -2297,7 +2312,7 @@ func (c *ChromeAPI) bindScripting(vm *goja.Runtime, ext *Extension, ops Scriptin
 			panic(vm.NewGoError(fmt.Errorf("insertCSS requires a CSS argument")))
 		}
 		css := call.Argument(0).String()
-		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		callback := lastCallback(call)
 		if err := ops.InjectCSS(ext.ID, css); err != nil {
 			if callback != nil {
 				_, _ = callback(goja.Undefined())
@@ -2374,7 +2389,7 @@ func (c *ChromeAPI) bindScripting(vm *goja.Runtime, ext *Extension, ops Scriptin
 				}
 			}
 		}
-		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		callback := lastCallback(call)
 		if err := ops.RegisterContentScripts(ext.ID, scripts); err != nil {
 			if callback != nil {
 				_, _ = callback(goja.Undefined())
@@ -2403,7 +2418,7 @@ func (c *ChromeAPI) bindScripting(vm *goja.Runtime, ext *Extension, ops Scriptin
 				}
 			}
 		}
-		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		callback := lastCallback(call)
 		if err := ops.UnregisterContentScripts(ext.ID, scriptIDs); err != nil {
 			if callback != nil {
 				_, _ = callback(goja.Undefined())
@@ -2469,7 +2484,7 @@ func (c *ChromeAPI) bindContextMenus(vm *goja.Runtime, ext *Extension, ops Conte
 				item.ParentID = parentIdVal.String()
 			}
 		}
-		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		callback := lastCallback(call)
 		id, err := ops.CreateContextMenu(item)
 		if err != nil {
 			if callback != nil {
@@ -2505,7 +2520,7 @@ func (c *ChromeAPI) bindContextMenus(vm *goja.Runtime, ext *Extension, ops Conte
 				item.Visible = visibleVal.ToBoolean()
 			}
 		}
-		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		callback := lastCallback(call)
 		if err := ops.UpdateContextMenu(id, item); err != nil {
 			if callback != nil {
 				_, _ = callback(goja.Undefined())
@@ -2524,7 +2539,7 @@ func (c *ChromeAPI) bindContextMenus(vm *goja.Runtime, ext *Extension, ops Conte
 			panic(vm.NewGoError(fmt.Errorf("remove requires an id argument")))
 		}
 		id := call.Argument(0).String()
-		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		callback := lastCallback(call)
 		if err := ops.RemoveContextMenu(id); err != nil {
 			if callback != nil {
 				_, _ = callback(goja.Undefined())
@@ -2539,7 +2554,7 @@ func (c *ChromeAPI) bindContextMenus(vm *goja.Runtime, ext *Extension, ops Conte
 
 	// chrome.contextMenus.removeAll
 	_ = menusObj.Set("removeAll", func(call goja.FunctionCall) goja.Value {
-		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		callback := lastCallback(call)
 		if err := ops.RemoveAllContextMenus(); err != nil {
 			if callback != nil {
 				_, _ = callback(goja.Undefined())
@@ -2599,7 +2614,7 @@ func (c *ChromeAPI) bindPermissions(vm *goja.Runtime, ext *Extension, ops Permis
 				}
 			}
 		}
-		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		callback := lastCallback(call)
 		granted, err := ops.RequestPermissions(ext.ID, permissions)
 		if err != nil {
 			if callback != nil {
@@ -2629,7 +2644,7 @@ func (c *ChromeAPI) bindPermissions(vm *goja.Runtime, ext *Extension, ops Permis
 				}
 			}
 		}
-		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		callback := lastCallback(call)
 		has, err := ops.ContainsPermissions(ext.ID, permissions)
 		if err != nil {
 			if callback != nil {
@@ -2645,7 +2660,7 @@ func (c *ChromeAPI) bindPermissions(vm *goja.Runtime, ext *Extension, ops Permis
 
 	// chrome.permissions.getAll
 	_ = permsObj.Set("getAll", func(call goja.FunctionCall) goja.Value {
-		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		callback := lastCallback(call)
 		all, err := ops.GetAllPermissions(ext.ID)
 		if err != nil {
 			if callback != nil {
@@ -2725,7 +2740,7 @@ func (c *ChromeAPI) bindAlarms(vm *goja.Runtime, ext *Extension, ops AlarmOperat
 				}
 			}
 		}
-		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		callback := lastCallback(call)
 		if err := ops.CreateAlarm(ext.ID, name, alarm); err != nil {
 			if callback != nil {
 				_, _ = callback(goja.Undefined())
@@ -2744,7 +2759,7 @@ func (c *ChromeAPI) bindAlarms(vm *goja.Runtime, ext *Extension, ops AlarmOperat
 			panic(vm.NewGoError(fmt.Errorf("get requires a name argument")))
 		}
 		name := call.Argument(0).String()
-		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		callback := lastCallback(call)
 		alarm, err := ops.GetAlarm(ext.ID, name)
 		if err != nil || alarm == nil {
 			if callback != nil {
@@ -2765,7 +2780,7 @@ func (c *ChromeAPI) bindAlarms(vm *goja.Runtime, ext *Extension, ops AlarmOperat
 
 	// chrome.alarms.getAll
 	_ = alarmsObj.Set("getAll", func(call goja.FunctionCall) goja.Value {
-		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		callback := lastCallback(call)
 		all, err := ops.GetAllAlarms(ext.ID)
 		if err != nil {
 			if callback != nil {
@@ -2794,7 +2809,7 @@ func (c *ChromeAPI) bindAlarms(vm *goja.Runtime, ext *Extension, ops AlarmOperat
 			panic(vm.NewGoError(fmt.Errorf("clear requires a name argument")))
 		}
 		name := call.Argument(0).String()
-		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		callback := lastCallback(call)
 		_ = ops.ClearAlarm(ext.ID, name)
 		if callback != nil {
 			_, _ = callback(goja.Undefined())
@@ -2804,7 +2819,7 @@ func (c *ChromeAPI) bindAlarms(vm *goja.Runtime, ext *Extension, ops AlarmOperat
 
 	// chrome.alarms.clearAll
 	_ = alarmsObj.Set("clearAll", func(call goja.FunctionCall) goja.Value {
-		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		callback := lastCallback(call)
 		_ = ops.ClearAllAlarms(ext.ID)
 		if callback != nil {
 			_, _ = callback(goja.Undefined())
@@ -2880,7 +2895,7 @@ func (c *ChromeAPI) bindI18n(vm *goja.Runtime, ext *Extension, ops I18nOperation
 				}
 			}
 		}
-		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		callback := lastCallback(call)
 		msg, err := ops.GetMessage(ext.ID, messageName, substitutions...)
 		if err != nil {
 			if callback != nil {
@@ -2896,7 +2911,7 @@ func (c *ChromeAPI) bindI18n(vm *goja.Runtime, ext *Extension, ops I18nOperation
 
 	// chrome.i18n.getAcceptLanguages
 	_ = i18nObj.Set("getAcceptLanguages", func(call goja.FunctionCall) goja.Value {
-		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		callback := lastCallback(call)
 		langs, err := ops.GetAcceptLanguages(ext.ID)
 		if err != nil {
 			if callback != nil {
@@ -3179,7 +3194,7 @@ func (c *ChromeAPI) bindNotifications(vm *goja.Runtime, ext *Extension, ops Noti
 				}
 			}
 		}
-		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		callback := lastCallback(call)
 		newID, err := ops.CreateNotification(ext.ID, id, options)
 		if err != nil {
 			if callback != nil {
@@ -3199,7 +3214,7 @@ func (c *ChromeAPI) bindNotifications(vm *goja.Runtime, ext *Extension, ops Noti
 		if len(call.Arguments) > 0 {
 			id = call.Argument(0).String()
 		}
-		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		callback := lastCallback(call)
 		wasCleared, err := ops.ClearNotification(ext.ID, id)
 		if err != nil {
 			if callback != nil {
@@ -3336,7 +3351,7 @@ func (c *ChromeAPI) bindDownloads(vm *goja.Runtime, ext *Extension, ops Download
 				}
 			}
 		}
-		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		callback := lastCallback(call)
 		id, err := ops.Download(ext.ID, options)
 		if err != nil {
 			if callback != nil {
@@ -3356,7 +3371,7 @@ func (c *ChromeAPI) bindDownloads(vm *goja.Runtime, ext *Extension, ops Download
 		if len(call.Arguments) > 0 {
 			id = int(call.Argument(0).ToInteger())
 		}
-		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		callback := lastCallback(call)
 		if err := ops.Cancel(id); err != nil {
 			if callback != nil {
 				_, _ = callback(goja.Undefined())
@@ -3375,7 +3390,7 @@ func (c *ChromeAPI) bindDownloads(vm *goja.Runtime, ext *Extension, ops Download
 		if len(call.Arguments) > 0 {
 			id = int(call.Argument(0).ToInteger())
 		}
-		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		callback := lastCallback(call)
 		if err := ops.Pause(id); err != nil {
 			if callback != nil {
 				_, _ = callback(goja.Undefined())
@@ -3394,7 +3409,7 @@ func (c *ChromeAPI) bindDownloads(vm *goja.Runtime, ext *Extension, ops Download
 		if len(call.Arguments) > 0 {
 			id = int(call.Argument(0).ToInteger())
 		}
-		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		callback := lastCallback(call)
 		if err := ops.Resume(id); err != nil {
 			if callback != nil {
 				_, _ = callback(goja.Undefined())
@@ -3413,7 +3428,7 @@ func (c *ChromeAPI) bindDownloads(vm *goja.Runtime, ext *Extension, ops Download
 		if len(call.Arguments) > 0 {
 			id = int(call.Argument(0).ToInteger())
 		}
-		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		callback := lastCallback(call)
 		item, err := ops.Get(id)
 		if err != nil || item == nil {
 			if callback != nil {
@@ -3480,7 +3495,7 @@ func (c *ChromeAPI) bindDownloads(vm *goja.Runtime, ext *Extension, ops Download
 		if len(call.Arguments) > 0 {
 			id = int(call.Argument(0).ToInteger())
 		}
-		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		callback := lastCallback(call)
 		if err := ops.Erase(id); err != nil {
 			if callback != nil {
 				_, _ = callback(goja.Undefined())
@@ -3522,7 +3537,7 @@ func (c *ChromeAPI) bindDownloads(vm *goja.Runtime, ext *Extension, ops Download
 				q.Error = v.String()
 			}
 		}
-		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		callback := lastCallback(call)
 		items, err := ops.Search(q)
 		if err != nil {
 			if callback != nil {
@@ -3632,7 +3647,7 @@ func (c *ChromeAPI) bindBookmarks(vm *goja.Runtime, ext *Extension, ops Bookmark
 				bm.Index = int(indexVal.ToInteger())
 			}
 		}
-		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		callback := lastCallback(call)
 		created, err := ops.CreateBookmark(bm)
 		if err != nil || created == nil {
 			if callback != nil {
@@ -3658,7 +3673,7 @@ func (c *ChromeAPI) bindBookmarks(vm *goja.Runtime, ext *Extension, ops Bookmark
 			panic(vm.NewGoError(fmt.Errorf("get requires an id argument")))
 		}
 		id := call.Argument(0).String()
-		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		callback := lastCallback(call)
 		bm, err := ops.GetBookmark(id)
 		if err != nil || bm == nil {
 			if callback != nil {
@@ -3684,7 +3699,7 @@ func (c *ChromeAPI) bindBookmarks(vm *goja.Runtime, ext *Extension, ops Bookmark
 		if len(call.Arguments) > 0 {
 			parentID = call.Argument(0).String()
 		}
-		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		callback := lastCallback(call)
 		children, err := ops.GetChildren(parentID)
 		if err != nil {
 			if callback != nil {
@@ -3725,7 +3740,7 @@ func (c *ChromeAPI) bindBookmarks(vm *goja.Runtime, ext *Extension, ops Bookmark
 				index = int(idx.ToInteger())
 			}
 		}
-		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		callback := lastCallback(call)
 		bm, err := ops.MoveBookmark(id, parentID, index)
 		if err != nil || bm == nil {
 			if callback != nil {
@@ -3751,7 +3766,7 @@ func (c *ChromeAPI) bindBookmarks(vm *goja.Runtime, ext *Extension, ops Bookmark
 			panic(vm.NewGoError(fmt.Errorf("remove requires an id argument")))
 		}
 		id := call.Argument(0).String()
-		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		callback := lastCallback(call)
 		_ = ops.RemoveBookmark(id)
 		if callback != nil {
 			_, _ = callback(goja.Undefined())
@@ -3777,7 +3792,7 @@ func (c *ChromeAPI) bindBookmarks(vm *goja.Runtime, ext *Extension, ops Bookmark
 				}
 			}
 		}
-		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		callback := lastCallback(call)
 		bm, err := ops.UpdateBookmark(id, updates)
 		if err != nil || bm == nil {
 			if callback != nil {
@@ -3829,7 +3844,7 @@ func (c *ChromeAPI) bindHistory(vm *goja.Runtime, ext *Extension, ops HistoryOpe
 				}
 			}
 		}
-		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		callback := lastCallback(call)
 		if err := ops.AddUrl(url, title); err != nil {
 			if callback != nil {
 				_, _ = callback(goja.Undefined())
@@ -3848,7 +3863,7 @@ func (c *ChromeAPI) bindHistory(vm *goja.Runtime, ext *Extension, ops HistoryOpe
 			panic(vm.NewGoError(fmt.Errorf("deleteUrl requires a url argument")))
 		}
 		url := call.Argument(0).String()
-		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		callback := lastCallback(call)
 		if err := ops.DeleteUrl(url); err != nil {
 			if callback != nil {
 				_, _ = callback(goja.Undefined())
@@ -3876,7 +3891,7 @@ func (c *ChromeAPI) bindHistory(vm *goja.Runtime, ext *Extension, ops HistoryOpe
 				}
 			}
 		}
-		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		callback := lastCallback(call)
 		results, err := ops.Search(query, maxResults)
 		if err != nil {
 			if callback != nil {
@@ -4016,7 +4031,7 @@ func (c *ChromeAPI) bindAction(vm *goja.Runtime, ext *Extension, ops ActionOpera
 				}
 			}
 		}
-		callback, _ := goja.AssertFunction(call.Argument(len(call.Arguments) - 1))
+		callback := lastCallback(call)
 		popup, _ := ops.GetPopup(ext.ID, tabID)
 		if callback != nil {
 			_, _ = callback(vm.ToValue(map[string]interface{}{
