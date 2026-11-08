@@ -16,16 +16,15 @@ import (
 // descendant stayed reachable through the map key forever -- a permanent leak
 // of the detached subtree and its goja objects.
 func TestRemoveChildUnbindsSubtree(t *testing.T) {
-	wc := NewWindowContext(&Settings{}, &assets.BuildInfo{}, profiler.CreateProfiler())
-	defer wc.Destroy()
-	require.NoError(t, wc.LoadHTML(`<html><body></body></html>`, "https://dom.example"))
+	wc := newBindingTestContext(t, `<html><head></head><body></body></html>`)
 
 	w := &JSDOMWrapper{runtime: wc.GetJSRuntime(), windowCtx: wc}
 
+	// Build the whole tree first, then wrap each node: wrapNode caches
+	// identity only for nodes in the live document tree (audit C-22), so the
+	// subtree must hang off the real body for the unbind path to see it.
 	elem := func(name string) *NodeDOM {
-		n := &NodeDOM{Type: NodeTypeElement, Element: name, WindowCtx: wc}
-		w.wrapNode(n)
-		return n
+		return &NodeDOM{Type: NodeTypeElement, Element: name, WindowCtx: wc, Document: wc.ActiveDocument}
 	}
 
 	// parent -> [c1 -> g1, c2 -> g2]
@@ -35,8 +34,14 @@ func TestRemoveChildUnbindsSubtree(t *testing.T) {
 	parent.appendChildNode(c1)
 	parent.appendChildNode(c2)
 
-	host := &NodeDOM{Type: NodeTypeElement, Element: "body", WindowCtx: wc, Children: []*NodeDOM{}}
+	host, err := wc.ActiveDocument.DOM.FindChildByName("body")
+	require.NoError(t, err)
+	require.NotNil(t, host)
 	host.appendChildNode(parent)
+
+	for _, n := range []*NodeDOM{parent, c1, g1, c2, g2} {
+		w.wrapNode(n)
+	}
 
 	// Register a listener deep inside the subtree.
 	wc.registerNodeEvent(g1, "click", "k", func(interface{}) {})

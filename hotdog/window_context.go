@@ -492,6 +492,45 @@ func (wc *WindowContext) registerNodeEvent(node *NodeDOM, eventName string, key 
 	wc.nodeEventRegistry[node][eventName] = append(wc.nodeEventRegistry[node][eventName], eventHandler{key: key, handler: handler})
 }
 
+// nodeInLiveTree reports whether node is reachable from the active
+// document root through its parent chain. Nodes attached under a detached
+// subtree are not in the live tree: caching them would re-create the C-22
+// leak (nothing removes them from the map unless they are later removed from
+// a parent inside the live tree).
+func (wc *WindowContext) nodeInLiveTree(node *NodeDOM) bool {
+	if wc == nil || node == nil {
+		return false
+	}
+	root := (*NodeDOM)(nil)
+	if wc.ActiveDocument != nil {
+		root = wc.ActiveDocument.DOM
+	}
+	for cur, depth := node, 0; cur != nil && depth < 100_000; cur, depth = cur.Parent, depth+1 {
+		if cur == root {
+			return true
+		}
+	}
+	return false
+}
+
+// cacheNodeWrapper records an existing JS object as the wrapper for a node
+// that just entered the document tree, preserving object identity for page
+// JS (`el === parent.appendChild(el)`). It mirrors wrapNode's live-tree-only
+// policy (audit C-22): detached nodes are deliberately not cached so they
+// can be collected with their goja objects.
+//
+// nodeWrappers is owned by jsRuntimeMu; callers are JS bindings already
+// running under that (reentrant) lock via RunJS.
+func (wc *WindowContext) cacheNodeWrapper(node *NodeDOM, obj *goja.Object) {
+	if wc == nil || node == nil || obj == nil {
+		return
+	}
+	if !wc.nodeInLiveTree(node) {
+		return
+	}
+	wc.nodeWrappers[node] = obj
+}
+
 // unbindSubtree removes wrapper and event-registry entries for a node and all
 // its descendants. Deleting only the removed child (the previous behavior)
 // pinned every wrapped descendant of a detached subtree in nodeWrappers and

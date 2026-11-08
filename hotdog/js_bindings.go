@@ -810,7 +810,11 @@ func (w *JSDOMWrapper) appendChild(call goja.FunctionCall) goja.Value {
 	w.node.MarkDirty()
 	w.node.RequestReflow()
 	w.node.RequestRepaint()
-	return w.wrapNode(childNode)
+	// Cache the object JS handed us rather than wrapping again: a detached
+	// node is intentionally not in nodeWrappers (audit C-22), and returning a
+	// fresh wrapper would break `el === document.body.appendChild(el)`.
+	w.windowCtx.cacheNodeWrapper(childNode, childObj)
+	return childVal
 }
 
 // removeChild removes a child node from this node.
@@ -996,7 +1000,8 @@ func (w *JSDOMWrapper) insertBefore(call goja.FunctionCall) goja.Value {
 	}
 	w.windowCtx.NotifyMutationObservers(w.node, "childList")
 	w.node.MarkDirty()
-	return w.wrapNode(newNode)
+	w.windowCtx.cacheNodeWrapper(newNode, newNodeObj)
+	return newNodeVal
 }
 
 // replaceChild replaces an existing child node with a new node.
@@ -1043,6 +1048,9 @@ func (w *JSDOMWrapper) replaceChild(call goja.FunctionCall) goja.Value {
 	}
 	w.windowCtx.NotifyMutationObservers(w.node, "childList")
 	w.node.MarkDirty()
+	// The inserted node is now in the tree: cache the object JS passed us so
+	// identity survives the attach (audit C-22).
+	w.windowCtx.cacheNodeWrapper(newNode, newNodeObj)
 	return w.wrapNode(replacedNode)
 }
 
@@ -1162,7 +1170,17 @@ func (w *JSDOMWrapper) wrapNode(node *NodeDOM) goja.Value {
 	_ = obj.Set("previousSibling", wrapper.getPreviousSibling)
 	_ = obj.Set("style", wrapper.getStyle)
 	_ = obj.SetSymbol(nodeWrapperSymbol, wrapper) // Store wrapper reference for retrieval
-	w.windowCtx.nodeWrappers[node] = obj
+	// Only cache identity for nodes in the live tree. A detached node (created
+	// via createElement/cloneNode and never appended, or attached under a
+	// detached subtree) must be collectable together with its goja object:
+	// caching it keyed by *NodeDOM pinned every scratch node for the life of
+	// the tab (audit C-22 -- probe: 5000 detached divs retained 99.3 MB).
+	// Attach paths (appendChild/insertBefore/replaceChild) cache the object JS
+	// handed us after linking, so a node that enters the tree keeps stable
+	// identity for tree traversals.
+	if w.windowCtx.nodeInLiveTree(node) {
+		w.windowCtx.nodeWrappers[node] = obj
+	}
 	return obj
 }
 
