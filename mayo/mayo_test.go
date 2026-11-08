@@ -1272,3 +1272,69 @@ func TestInlineStyleWinsOverAuthorRules(t *testing.T) {
 	assert.Equal(t, 0.0, divNode.Style.BackgroundColor.G)
 	assert.Equal(t, 0.0, divNode.Style.BackgroundColor.B)
 }
+
+// TestMediaBlockDoesNotSwallowFollowingRule (audit O-20) verifies an @media
+// block does not swallow its own inner rule nor the rule that follows it.
+// The brace-naive rule regex previously captured "@media print { .hide" as a
+// selector and turned the next rule's selector into "}\n#t", which cascadia
+// rejects — both rules were silently dropped.
+func TestMediaBlockDoesNotSwallowFollowingRule(t *testing.T) {
+	css := `
+		@media print { .hide { display: none; } }
+		#t { color: red; }
+	`
+
+	doc := &hotdog.Document{
+		StyleSheets: ParseStylesheet(css),
+	}
+
+	root := &hotdog.NodeDOM{
+		Element: "html",
+		Style:   &hotdog.Stylesheet{},
+		Children: []*hotdog.NodeDOM{
+			{
+				Element: "body",
+				Style:   &hotdog.Stylesheet{},
+				Children: []*hotdog.NodeDOM{
+					{
+						Element: "div",
+						Style:   &hotdog.Stylesheet{},
+						Attributes: []*hotdog.Attribute{
+							{Name: "id", Value: "t"},
+						},
+					},
+				},
+			},
+		},
+	}
+	doc.DOM = root
+
+	htmlRoot := &html.Node{
+		Type: html.ElementNode,
+		Data: "html",
+		FirstChild: &html.Node{
+			Type: html.ElementNode,
+			Data: "body",
+			FirstChild: &html.Node{
+				Type: html.ElementNode,
+				Data: "div",
+				Attr: []html.Attribute{
+					{Key: "id", Val: "t"},
+				},
+			},
+		},
+	}
+	doc.HTMLRoot = htmlRoot
+
+	root.HTMLNode = htmlRoot
+	root.Children[0].HTMLNode = htmlRoot.FirstChild
+	root.Children[0].Children[0].HTMLNode = htmlRoot.FirstChild.FirstChild
+
+	ApplyStylesheets(doc)
+
+	divNode := root.Children[0].Children[0]
+	assert.NotNil(t, divNode.Style.Color)
+	assert.Equal(t, 1.0, divNode.Style.Color.R, "#t rule must survive the @media block")
+	assert.Equal(t, 0.0, divNode.Style.Color.G)
+	assert.Equal(t, 0.0, divNode.Style.Color.B)
+}

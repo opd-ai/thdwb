@@ -78,6 +78,15 @@ func ParseStylesheetFrom(cssString string, indexBase int) []*hotdog.StyleElement
 	// silently dropped (audit O-21).
 	cssString = regexp.MustCompile(`(?s)/\*.*?\*/`).ReplaceAllString(cssString, "")
 
+	// Remove balanced @-rule blocks (@media, @supports, ...) before matching.
+	// The rule regex is brace-naive: for "@media print { .hide { display:none } }"
+	// it captures "@media print { .hide" as a selector with body "display:none",
+	// then the *next* rule's selector becomes "}\n#t", which cascadia rejects —
+	// so both the at-rule's inner rule and the following unrelated rule are
+	// silently dropped (audit O-20). Stripping is spec-safer than corrupting
+	// the following rule for a browser that ignores media queries.
+	cssString = regexp.MustCompile(`(?s)@[a-z-]+[^{]*\{(?:[^{}]*|\{[^{}]*\})*\}`).ReplaceAllString(cssString, "")
+
 	// Split by rules (selector { declarations })
 	ruleRegex := regexp.MustCompile(`([^{]+)\{([^}]+)\}`)
 	matches := ruleRegex.FindAllStringSubmatch(cssString, -1)
