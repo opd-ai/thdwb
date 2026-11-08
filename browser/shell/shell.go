@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	assets "github.com/danfragoso/thdwb/assets"
 	bun "github.com/danfragoso/thdwb/bun"
@@ -51,8 +52,12 @@ type BrowserShell struct {
 	webContent *mustard.CanvasWidget
 
 	// tabWindowContexts maps tab IDs to their hotdog WindowContext for
-	// per-tab rendering and JS isolation.
+	// per-tab rendering and JS isolation. Extension VM/alarm/observer
+	// goroutines create and destroy contexts while the game goroutine reads
+	// them (audit C-23), so all production access goes through the guarded
+	// helpers below.
 	tabWindowContexts map[int]*hotdog.WindowContext
+	tabWCsMu          sync.Mutex
 
 	sessionManager   *SessionManager
 	memoryProfiler   *profiler.MemoryProfiler
@@ -124,9 +129,12 @@ func NewBrowserShell(settings *hotdog.Settings, buildInfo *assets.BuildInfo) *Br
 	// process exited (audit R-5). Registered here rather than in the UI
 	// setup so headless shells clean up too.
 	sh.tabManager.OnClosed(func(tabID int) {
-		if wc := sh.tabWindowContexts[tabID]; wc != nil {
+		sh.tabWCsMu.Lock()
+		wc := sh.tabWindowContexts[tabID]
+		delete(sh.tabWindowContexts, tabID)
+		sh.tabWCsMu.Unlock()
+		if wc != nil {
 			wc.Destroy()
-			delete(sh.tabWindowContexts, tabID)
 		}
 	})
 
@@ -508,6 +516,8 @@ func (bs *BrowserShell) tabWindowContext(tab *Tab) *hotdog.WindowContext {
 	if tab == nil {
 		return nil
 	}
+	bs.tabWCsMu.Lock()
+	defer bs.tabWCsMu.Unlock()
 	return bs.tabWindowContexts[tab.ID]
 }
 
@@ -518,11 +528,13 @@ func (bs *BrowserShell) loadTabContent(tab *Tab) error {
 		return fmt.Errorf("tab is nil")
 	}
 
+	bs.tabWCsMu.Lock()
 	wc, ok := bs.tabWindowContexts[tab.ID]
 	if !ok || wc == nil {
 		wc = hotdog.NewWindowContext(bs.settings, bs.buildInfo, nil)
 		bs.tabWindowContexts[tab.ID] = wc
 	}
+	bs.tabWCsMu.Unlock()
 
 	if err := wc.LoadURL(tab.URL); err != nil {
 		return fmt.Errorf("load URL %s: %w", tab.URL, err)
