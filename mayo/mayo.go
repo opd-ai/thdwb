@@ -487,6 +487,29 @@ func ApplyStylesheets(document *hotdog.Document) {
 			}
 		}
 	}
+
+	// Inline styles (the style attribute) have the highest author origin and must
+	// win over any author rule, even a universal selector. GetElementStylesheet
+	// already merged them into the base sheet at parse time, but ApplyStylesheets
+	// then merged author rules over the same struct — so re-apply inline last
+	// (audit O-19).
+	applyInlineStyles(document.DOM)
+}
+
+// applyInlineStyles re-applies the style attribute of every element on top of
+// the computed style, so inline declarations win the author cascade.
+func applyInlineStyles(root *hotdog.NodeDOM) {
+	if root == nil {
+		return
+	}
+	for _, attr := range root.Attributes {
+		if attr.Name == "style" {
+			root.Style = parseInlineStylesheet([]*hotdog.Attribute{attr}, root.Style)
+		}
+	}
+	for _, child := range root.Children {
+		applyInlineStyles(child)
+	}
 }
 
 // findNodeDOMByHTMLNode finds the NodeDOM corresponding to an html.Node by traversing the DOM tree.

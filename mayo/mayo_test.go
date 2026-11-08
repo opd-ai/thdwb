@@ -1202,3 +1202,73 @@ func TestApplyStylesheetsWithNestedElements(t *testing.T) {
 		assert.Equal(t, 1.0, pNode.Style.Color.B)
 	}
 }
+
+// TestInlineStyleWinsOverAuthorRules (audit O-19) verifies inline style
+// attributes win over any author rule, even a universal selector. Inline
+// declarations are re-applied after the author cascade in ApplyStylesheets.
+func TestInlineStyleWinsOverAuthorRules(t *testing.T) {
+	css := `
+		* { color: rgb(255,0,0); background-color: rgb(0,255,0); }
+		#a { color: rgb(0,0,255); }
+	`
+
+	doc := &hotdog.Document{
+		StyleSheets: ParseStylesheet(css),
+	}
+
+	root := &hotdog.NodeDOM{
+		Element: "html",
+		Style:   &hotdog.Stylesheet{},
+		Children: []*hotdog.NodeDOM{
+			{
+				Element: "body",
+				Style:   &hotdog.Stylesheet{},
+				Children: []*hotdog.NodeDOM{
+					{
+						Element: "div",
+						Style:   &hotdog.Stylesheet{},
+						Attributes: []*hotdog.Attribute{
+							{Name: "id", Value: "a"},
+							{Name: "style", Value: "color: rgb(0,0,255); background-color: rgb(255,0,0)"},
+						},
+					},
+				},
+			},
+		},
+	}
+	doc.DOM = root
+
+	htmlRoot := &html.Node{
+		Type: html.ElementNode,
+		Data: "html",
+		FirstChild: &html.Node{
+			Type: html.ElementNode,
+			Data: "body",
+			FirstChild: &html.Node{
+				Type: html.ElementNode,
+				Data: "div",
+				Attr: []html.Attribute{
+					{Key: "id", Val: "a"},
+					{Key: "style", Val: "color: rgb(0,0,255); background-color: rgb(255,0,0)"},
+				},
+			},
+		},
+	}
+	doc.HTMLRoot = htmlRoot
+
+	root.HTMLNode = htmlRoot
+	root.Children[0].HTMLNode = htmlRoot.FirstChild
+	root.Children[0].Children[0].HTMLNode = htmlRoot.FirstChild.FirstChild
+
+	ApplyStylesheets(doc)
+
+	divNode := root.Children[0].Children[0]
+	assert.NotNil(t, divNode.Style.Color)
+	assert.NotNil(t, divNode.Style.BackgroundColor)
+	assert.Equal(t, 0.0, divNode.Style.Color.R, "inline color must win over author rule")
+	assert.Equal(t, 0.0, divNode.Style.Color.G)
+	assert.Equal(t, 1.0, divNode.Style.Color.B)
+	assert.Equal(t, 1.0, divNode.Style.BackgroundColor.R, "inline background must win over author rule")
+	assert.Equal(t, 0.0, divNode.Style.BackgroundColor.G)
+	assert.Equal(t, 0.0, divNode.Style.BackgroundColor.B)
+}
