@@ -1768,6 +1768,10 @@ func (w *JSWindowWrapper) XMLHttpRequest(call goja.ConstructorCall) *goja.Object
 		onreadystatechange goja.Callable
 		eventListeners     = make(map[string][]goja.Callable)
 		withCredentials    = false // Default: false, cookies not sent for cross-origin
+		// sendGeneration increments on every open(), invalidating callbacks
+		// from an in-flight send whose request was re-opened underneath it
+		// (audit C-24). Only touched from the JS thread under jsRuntimeMu.
+		sendGeneration int
 	)
 
 	// Constants for readyState
@@ -1856,6 +1860,10 @@ func (w *JSWindowWrapper) XMLHttpRequest(call goja.ConstructorCall) *goja.Object
 
 		// Reset state. Per the XHR spec, open() resets the object to the OPENED
 		// state regardless of its previous state, so XHR objects can be reused.
+		// Bump the generation so callbacks from any send still in flight are
+		// discarded instead of writing into this fresh request's state
+		// (audit C-24).
+		sendGeneration++
 		requestHeaders = make(map[string]string)
 		requestBody = nil
 		status = 0
@@ -1915,9 +1923,41 @@ func (w *JSWindowWrapper) XMLHttpRequest(call goja.ConstructorCall) *goja.Object
 
 		updateReadyState(LOADING)
 
+		// Snapshot *all* request inputs on the JS thread before spawning the
+		// network goroutine. The C-6 fix snapshotted only the window-scoped
+		// fields, but the goroutine kept reading the live closure vars
+		// (requestURL/requestMethod/requestHeaders/requestBody/
+		// withCredentials) while a re-open() or a second send() rebuilt them
+		// -- six -race reports, incl. concurrent map access that can escalate
+		// to a fatal "concurrent map writes" (audit C-24).
+		snapURL := requestURL
+		snapMethod := requestMethod
+		snapCreds := withCredentials
+		snapHeaders := make(map[string]string, len(requestHeaders))
+		for k, v := range requestHeaders {
+			snapHeaders[k] = v
+		}
+		var snapBody io.Reader
+		if requestBody != nil {
+			if br, ok := requestBody.(*bytes.Reader); ok {
+				raw := make([]byte, br.Len())
+				if _, err := br.Read(raw); err == nil {
+					snapBody = bytes.NewReader(raw)
+				} else {
+					snapBody = br
+				}
+			} else {
+				snapBody = requestBody
+			}
+		}
+		snapGen := sendGeneration
+
 		// Execute network work asynchronously; Goja callbacks run on this window's frame queue.
 		dispatchNetworkEvent := func(eventType string) {
 			w.windowCtx.ScheduleAnimationFrame(func() {
+				if sendGeneration != snapGen {
+					return // superseded by a re-open(): drop stale callbacks
+				}
 				updateReadyState(DONE)
 				if listeners, ok := eventListeners[eventType]; ok {
 					for _, listener := range listeners {
@@ -1945,7 +1985,7 @@ func (w *JSWindowWrapper) XMLHttpRequest(call goja.ConstructorCall) *goja.Object
 		snapshotCtx := w.windowCtx.Context()
 
 		go func() {
-			parsedURL, err := url.Parse(requestURL)
+			parsedURL, err := url.Parse(snapURL)
 			if err != nil {
 				dispatchNetworkEvent("error")
 				return
@@ -1959,23 +1999,23 @@ func (w *JSWindowWrapper) XMLHttpRequest(call goja.ConstructorCall) *goja.Object
 			}
 
 			// Check if preflight is needed
-			needsPreflight := isCrossOrigin && !isSimpleRequest(requestMethod, requestHeaders)
+			needsPreflight := isCrossOrigin && !isSimpleRequest(snapMethod, snapHeaders)
 			httpClient := snapshotClient
-			if !withCredentials {
+			if !snapCreds {
 				httpClient = &http.Client{Timeout: networkClientTimeout}
 			}
 
 			if needsPreflight {
 				// Send OPTIONS preflight request
-				preflightResp := sauce.MakeCORSRequestWithClientCtx(snapshotCtx, httpClient, parsedURL, origin, "OPTIONS", nil, getPreflightHeaders(requestMethod, requestHeaders))
-				if !isCORSPreflightSuccessful(preflightResp, origin, requestMethod, requestHeaders) {
+				preflightResp := sauce.MakeCORSRequestWithClientCtx(snapshotCtx, httpClient, parsedURL, origin, "OPTIONS", nil, getPreflightHeaders(snapMethod, snapHeaders))
+				if !isCORSPreflightSuccessful(preflightResp, origin, snapMethod, snapHeaders) {
 					dispatchNetworkEvent("error")
 					return
 				}
 			}
 
 			// Make actual request
-			resp := sauce.MakeCORSRequestWithClientCtx(snapshotCtx, httpClient, parsedURL, origin, requestMethod, requestBody, requestHeaders)
+			resp := sauce.MakeCORSRequestWithClientCtx(snapshotCtx, httpClient, parsedURL, origin, snapMethod, snapBody, snapHeaders)
 
 			if resp.Code < 0 {
 				dispatchNetworkEvent("error")
@@ -1995,6 +2035,9 @@ func (w *JSWindowWrapper) XMLHttpRequest(call goja.ConstructorCall) *goja.Object
 			}
 
 			w.windowCtx.ScheduleAnimationFrame(func() {
+				if sendGeneration != snapGen {
+					return // superseded by a re-open(): drop stale response
+				}
 				status = resp.Code
 				statusText = httpStatusText(resp.Code)
 				responseText = resp.Body
