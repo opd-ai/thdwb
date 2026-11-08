@@ -372,7 +372,10 @@ func matchPath(pattern, path string) bool {
 	}
 	if strings.HasSuffix(pattern, "/*") {
 		prefix := pattern[:len(pattern)-2] // strip "/*"
-		return strings.HasPrefix(path, prefix)
+		// Chrome semantics: the prefix must match the path exactly or end at
+		// a path-segment boundary. "/foo/*" matches "/foo" and "/foo/bar" but
+		// not "/foobar" (audit O-27).
+		return path == prefix || strings.HasPrefix(path, prefix+"/")
 	}
 	return pattern == path
 }
