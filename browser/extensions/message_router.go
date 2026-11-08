@@ -71,12 +71,18 @@ func (r *MessageRouter) RegisterHandler(extID string, handler MessageHandler) {
 // Route sends a message through the router, validating the sender and
 // delivering to the appropriate recipients. Cross-extension messaging is
 // blocked: messages can only be delivered within the same extension.
+//
+// Handlers run *outside* r.mu. The registered onMessage handler executes
+// background JS, and the canonical "ack a content-script message" pattern
+// calls chrome.runtime.sendMessage from inside it -- that re-enters Route on
+// the same goroutine, and holding a plain mutex across the call self-deadlocked
+// the extension VM permanently (audit C-26, probe: DEADLOCK CONFIRMED).
 func (r *MessageRouter) Route(msg Message) error {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 
 	// Validate sender: must be non-empty.
 	if msg.Sender == "" {
+		r.mu.Unlock()
 		return fmt.Errorf("message sender cannot be empty")
 	}
 
@@ -105,30 +111,19 @@ func (r *MessageRouter) Route(msg Message) error {
 	// sender's extension handlers. When Target is set and differs from Sender,
 	// reject the message as cross-extension.
 	target := msg.Target
-	if target == "" {
-		// Broadcast: deliver only to handlers of the sender's extension.
-		handlers, ok := r.handlers[msg.Sender]
-		if !ok {
-			return nil // no handlers for this extension; nothing to deliver
-		}
-		for _, h := range handlers {
-			if err := h(msg); err != nil {
-				return fmt.Errorf("deliver to %s: %w", msg.Sender, err)
-			}
-		}
-		return nil
-	}
-
-	if target != msg.Sender {
+	if target != "" && target != msg.Sender {
+		r.mu.Unlock()
 		return fmt.Errorf("cross-extension messaging blocked: sender %q cannot target %q", msg.Sender, target)
 	}
-
-	// Deliver to handlers for the specific target (same extension).
-	// If no handlers are registered, silently succeed (nothing to deliver).
-	handlers, ok := r.handlers[target]
-	if !ok {
-		return nil
+	if target == "" {
+		target = msg.Sender
 	}
+
+	// Snapshot the handler list under the lock; invocation happens unlocked.
+	handlers := append([]MessageHandler(nil), r.handlers[target]...)
+	r.mu.Unlock()
+
+	// If no handlers are registered, silently succeed (nothing to deliver).
 	for _, h := range handlers {
 		if err := h(msg); err != nil {
 			return fmt.Errorf("deliver to %s: %w", target, err)
