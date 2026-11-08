@@ -653,9 +653,14 @@ func (eo *extensionOps) RemovePermissions(extID string, permissions []string) ([
 // AlarmOperations implementation.
 
 // CreateAlarm creates an alarm for an extension.
+//
+// The manager scheduling happens AFTER eo.alarmMu is released: a due alarm
+// used to fire synchronously inside ScheduleAlarm, running the onAlarm
+// listener JS while both alarm locks were held, and a listener that re-armed
+// via chrome.alarms.create re-entered CreateAlarm on the same goroutine --
+// a permanent self-deadlock of the extension VM (audit C-28).
 func (eo *extensionOps) CreateAlarm(extID string, name string, alarm extensions.Alarm) error {
 	eo.alarmMu.Lock()
-	defer eo.alarmMu.Unlock()
 
 	extAlarms, ok := eo.alarms[extID]
 	if !ok {
@@ -673,6 +678,8 @@ func (eo *extensionOps) CreateAlarm(extID string, name string, alarm extensions.
 	if when == 0 && alarm.PeriodInMinutes > 0 {
 		when = float64(time.Now().UnixMilli()) + alarm.PeriodInMinutes*60000
 	}
+	eo.alarmMu.Unlock()
+
 	if when > 0 {
 		eo.bs.extManager.ScheduleAlarm(extID, name, when)
 	}

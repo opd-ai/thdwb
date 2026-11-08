@@ -120,13 +120,20 @@ func (m *Manager) checkDueAlarms() {
 }
 
 // ScheduleAlarm schedules an alarm to fire at the given time.
+//
+// The fire ALWAYS happens on a timer goroutine, never inline under alarmMu.
+// Firing a due alarm synchronously meant the listener JS ran while alarmMu
+// was held; the standard chrome.alarms chaining pattern -- an onAlarm
+// listener that calls chrome.alarms.create({when: ...}) -- then re-entered
+// CreateAlarm/ScheduleAlarm on the same goroutine and self-deadlocked the
+// extension VM forever (audit C-28, probe: DEADLOCK CONFIRMED).
 func (m *Manager) ScheduleAlarm(extID, name string, when float64) {
 	m.alarmMu.Lock()
-	defer m.alarmMu.Unlock()
 
 	// A stopped manager must not schedule new timers: alarmTimers is nil after
 	// Stop and writing to a nil map panics.
 	if m.alarmStopped {
+		m.alarmMu.Unlock()
 		return
 	}
 
@@ -137,10 +144,8 @@ func (m *Manager) ScheduleAlarm(extID, name string, when float64) {
 	}
 
 	delay := time.Duration(when - float64(time.Now().UnixMilli()))
-	if delay <= 0 {
-		// Alarm is already due; fire immediately.
-		m.fireAlarm(extID, name)
-		return
+	if delay < 0 {
+		delay = 0 // due now: still fire on a timer goroutine, never inline
 	}
 
 	timer := time.AfterFunc(delay, func() {
@@ -150,6 +155,7 @@ func (m *Manager) ScheduleAlarm(extID, name string, when float64) {
 		m.alarmMu.Unlock()
 	})
 	m.alarmTimers[key] = timer
+	m.alarmMu.Unlock()
 }
 
 // fireAlarm fires the chrome.alarms.onAlarm event for the given extension.
