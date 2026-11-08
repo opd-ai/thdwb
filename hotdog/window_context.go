@@ -800,7 +800,17 @@ func (wc *WindowContext) runAnimationFrame() {
 		wc.animationFrameMu.Unlock()
 
 		if callback != nil {
-			callback()
+			// Host-scheduled callbacks (fetch resolve/reject, XHR completion,
+			// postMessage handoff) are raw closures, unlike page-JS rAF
+			// callbacks which runJSListener wraps. A Go panic in one -- a nil
+			// deref on a torn-down target, an xhrObj.Set after realm
+			// rebinding -- propagated off the time.AfterFunc goroutine and
+			// killed the process, since no recover existed above it
+			// (audit C-27, probe: unrecoverable panic at window_context.go:720).
+			runJSListener("animation frame", nil, func() error {
+				callback()
+				return nil
+			})
 		}
 	}
 	wc.jsRuntimeMu.unlock()
