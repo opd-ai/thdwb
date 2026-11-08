@@ -68,7 +68,23 @@ func RGBAToColor(colorString string) *hotdog.ColorRGBA {
 				blue = float64(value) / 255
 			}
 
+			// Default alpha to 1 (fully opaque) when not specified or
+			// unparseable; only override when a valid 4th param is present
+			// (audit O-25: alpha was force-set to 1 unconditionally, now it's
+			// honored when provided).
 			alpha = 1
+			if paramsLen >= 4 {
+				a, err := strconv.ParseFloat(strings.TrimSpace(params[3]), 64)
+				if err == nil {
+					if a < 0 {
+						a = 0
+					}
+					if a > 1 {
+						a = 1
+					}
+					alpha = a
+				}
+			}
 
 			return &hotdog.ColorRGBA{
 				R: red,
@@ -121,7 +137,11 @@ func HexStringToColor(colorString string) *hotdog.ColorRGBA {
 		}
 
 	default:
-		return &hotdog.ColorRGBA{}
+		// Malformed hex length (#12, #12345, #1234567, #GGGGGG): return nil
+		// so downstream nil-checks treat the declaration as unrecognized
+		// instead of painting invisible transparent-black content
+		// (audit O-26).
+		return nil
 	}
 }
 
@@ -138,5 +158,5 @@ func MapCSSColor(colorString string) *hotdog.ColorRGBA {
 		return RGBAToColor(colorString)
 	}
 
-	return colorTable[colorString]
+	return colorTable[strings.ToLower(colorString)]
 }

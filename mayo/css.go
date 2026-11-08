@@ -72,8 +72,11 @@ func ParseStylesheet(cssString string) []*hotdog.StyleElement {
 func ParseStylesheetFrom(cssString string, indexBase int) []*hotdog.StyleElement {
 	var styleSheet []*hotdog.StyleElement
 
-	// Remove comments
-	cssString = regexp.MustCompile(`/\*.*?\*/`).ReplaceAllString(cssString, "")
+	// Remove comments. The (?s) flag makes "." match newlines so a comment
+	// spanning multiple lines is fully stripped; otherwise the leftover text
+	// corrupts the declaration split and the declaration after the comment is
+	// silently dropped (audit O-21).
+	cssString = regexp.MustCompile(`(?s)/\*.*?\*/`).ReplaceAllString(cssString, "")
 
 	// Split by rules (selector { declarations })
 	ruleRegex := regexp.MustCompile(`([^{]+)\{([^}]+)\}`)

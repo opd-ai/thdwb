@@ -81,8 +81,15 @@ func getDefaultElementFontWeight(element string) int {
 // mapSizeValue converts a CSS size string to a float64 pixel value.
 // Extracts the numeric portion from strings like "16px", "1.5em", "100%", "-5px".
 // Returns the numeric value and the unit suffix ("px", "%", "em", ...).
-// Returns 14 and "px" if no number found.
+// Returns 0 for keyword values ("auto", "none", "inherit", ...) so the layout
+// engine computes the intrinsic size instead of pinning the box to 14px
+// (audit O-22).
 func mapSizeValue(sizeValue string) (float64, string) {
+	switch strings.ToLower(strings.TrimSpace(sizeValue)) {
+	case "auto", "none", "inherit", "initial", "unset", "fit-content",
+		"min-content", "max-content", "content":
+		return 0, ""
+	}
 	re := regexp.MustCompile(`[+-]?[0-9]+(\.[0-9]+)?`)
 	valueString := re.FindString(sizeValue)
 	if valueString == "" {

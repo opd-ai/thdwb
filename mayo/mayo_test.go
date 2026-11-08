@@ -36,8 +36,7 @@ func TestHexStringToColor(t *testing.T) {
 
 	for _, invalidColor := range invalidColors {
 		result := HexStringToColor(invalidColor)
-		expected := &hotdog.ColorRGBA{}
-		assert.Equal(t, expected, result, "Expecting: &hotdog.ColorRGBA{}")
+		assert.Nil(t, result, "malformed hex %q must return nil", invalidColor)
 	}
 }
 
