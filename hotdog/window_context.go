@@ -191,8 +191,16 @@ type WindowContext struct {
 	Settings  *Settings
 	BuildInfo *assets.BuildInfo
 
-	// Origin tracking for cookie partitioning and SOP
-	Origin *url.URL
+	// Origin tracking for cookie partitioning and SOP. Guarded by originMu:
+	// navigation writes it while the previous document's animation-frame
+	// callbacks read it from the timer goroutine, and goja is not
+	// goroutine-safe (audit C-25 -- probe: 11 data races between SetOrigin's
+	// struct write and GetOrigin/url.(*URL).String reads inside RunJS).
+	// originMu is a LEAF lock: nothing is acquired while holding it, so it
+	// cannot participate in a lock-order inversion with jsRuntimeMu or the
+	// global window registry.
+	Origin   *url.URL
+	originMu sync.RWMutex
 
 	// ContainerID identifies the container (origin isolation group) this
 	// window belongs to. An empty value means the default (non-container)
@@ -306,16 +314,37 @@ func NewWindowContext(settings *Settings, buildInfo *assets.BuildInfo, profiler 
 }
 
 // SetOrigin sets the origin for this window context (scheme + host + port).
+// The write is serialized with every origin reader (page JS console/SOP
+// checks, cross-window matching) via the leaf originMu, so a navigation can
+// no longer race a self-arming requestAnimationFrame callback that is reading
+// wc.Origin on the timer goroutine (audit C-25).
 func (wc *WindowContext) SetOrigin(rawURL string) error {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
 		return err
+	}
+	wc.originMu.Lock()
+	defer wc.originMu.Unlock()
+	if wc.destroyed.Load() {
+		return nil
 	}
 	wc.Origin = &url.URL{
 		Scheme: parsed.Scheme,
 		Host:   parsed.Host,
 	}
 	return nil
+}
+
+// OriginSnapshot returns the current origin under originMu. The returned URL
+// is treated as immutable after publication (SetOrigin always assigns a
+// fresh struct), so callers may use it after releasing the lock.
+func (wc *WindowContext) OriginSnapshot() *url.URL {
+	if wc == nil {
+		return nil
+	}
+	wc.originMu.RLock()
+	defer wc.originMu.RUnlock()
+	return wc.Origin
 }
 
 // LoadHTML parses the given HTML string and sets it as the active document
@@ -340,7 +369,6 @@ func (wc *WindowContext) LoadHTML(html, baseURL string) error {
 		u, err := url.Parse(baseURL)
 		if err == nil {
 			doc.URL = u
-			wc.SetOrigin(baseURL)
 		}
 	}
 
@@ -358,6 +386,23 @@ func (wc *WindowContext) LoadHTML(html, baseURL string) error {
 		doc.Title = titleNode.Content
 	}
 
+	// Publish the new document serialized against the previous document's
+	// animation-frame loop. A self-arming rAF runs on the time.AfterFunc
+	// goroutine *under* jsRuntimeMu and reads wc.Origin/ActiveDocument;
+	// writing them before taking the lock (and before stopping the timer)
+	// raced those reads with no lock held (audit C-25 -- probe: 11 data
+	// races SetOrigin vs console.log/eval on the frame goroutine). The
+	// reentrant lock lets InitJSRuntime re-acquire it below while we still
+	// hold it (audit C-1).
+	wc.jsRuntimeMu.lock()
+	defer wc.jsRuntimeMu.unlock()
+
+	if baseURL != "" {
+		if err := wc.SetOrigin(baseURL); err != nil {
+			return fmt.Errorf("set origin: %w", err)
+		}
+	}
+
 	wc.ActiveDocument = doc
 	// Bound the per-tab document history: every navigation retains a full DOM
 	// (plus parsed HTML tree and stylesheets), and nothing outside tests reads
@@ -370,23 +415,21 @@ func (wc *WindowContext) LoadHTML(html, baseURL string) error {
 
 	// Reset per-document JS bindings and event registrations from the previous
 	// document to prevent memory leaks across navigations. nodeWrappers is
-	// owned by jsRuntimeMu (wrapNode mutates it under that lock from JS); the
-	// event registries belong to eventMu. Taking them in the established
-	// jsRuntimeMu -> eventMu order (audit R-15).
-	wc.jsRuntimeMu.lock()
+	// owned by jsRuntimeMu (already held here; wrapNode mutates it under that
+	// lock from JS); the event registries belong to eventMu. Taking them in
+	// the established jsRuntimeMu -> eventMu order (audit R-15).
 	wc.nodeWrappers = make(map[*NodeDOM]*goja.Object)
 	wc.eventMu.Lock()
 	wc.nodeEventRegistry = make(map[*NodeDOM]map[string][]eventHandler)
 	wc.eventRegistry = make(map[string][]eventHandler)
 	wc.eventMu.Unlock()
-	wc.jsRuntimeMu.unlock()
-	wc.ClearLayoutCache()
 
 	// Drop pending animation-frame callbacks scheduled by the previous
 	// document: their closures capture the old realm's goja objects, and
 	// letting them fire after the realm is rebound drives stale values on the
-	// new VM. Stop the armed timer so a queued drain cannot interleave with
-	// the rebinding below.
+	// new VM. Stop the armed timer while jsRuntimeMu is held so no drain can
+	// interleave with the rebinding below (animationFrameMu nests inside
+	// jsRuntimeMu here exactly as in Destroy -- audit C-25).
 	wc.animationFrameMu.Lock()
 	if wc.animationFrameTimer != nil {
 		wc.animationFrameTimer.Stop()
@@ -395,10 +438,11 @@ func (wc *WindowContext) LoadHTML(html, baseURL string) error {
 	clear(wc.animationFrames)
 	wc.animationFrameMu.Unlock()
 
-	// Initialize the JS runtime with the window object
+	// Initialize the JS runtime with the window object.
 	if err := wc.InitJSRuntime(); err != nil {
 		return fmt.Errorf("init JS runtime: %w", err)
 	}
+	wc.ClearLayoutCache()
 
 	// Inject content scripts for this page URL after JS runtime initialization.
 	if wc.contentScriptInjector != nil {
@@ -447,10 +491,10 @@ func (wc *WindowContext) LoadURL(rawURL string) error {
 
 // GetOrigin returns the origin for this window context.
 func (wc *WindowContext) GetOrigin() *url.URL {
-	if wc.Origin == nil {
-		return &url.URL{}
+	if o := wc.OriginSnapshot(); o != nil {
+		return o
 	}
-	return wc.Origin
+	return &url.URL{}
 }
 
 // GetContainerID returns the container ID for this window context.
@@ -956,10 +1000,11 @@ func (wc *WindowContext) InjectContentScript(js string) (goja.Value, error) {
 // IsCrossOrigin reports whether the given URL is cross-origin relative to
 // this window context's origin.
 func (wc *WindowContext) IsCrossOrigin(u *url.URL) bool {
-	if wc.Origin == nil || u == nil {
+	origin := wc.OriginSnapshot()
+	if origin == nil || u == nil {
 		return true
 	}
-	return wc.Origin.Scheme != u.Scheme || wc.Origin.Host != u.Host
+	return origin.Scheme != u.Scheme || origin.Host != u.Host
 }
 
 // CanMutateDOM reports whether this window context is allowed to mutate the
@@ -1198,7 +1243,9 @@ func (wc *WindowContext) Destroy() {
 	wc.History = nil
 	wc.Window = nil
 	wc.Profiler = nil
+	wc.originMu.Lock()
 	wc.Origin = nil
+	wc.originMu.Unlock()
 	wc.ClearLayoutCache()
 	wc.reflowMu.Lock()
 	wc.pendingReflows = nil

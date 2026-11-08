@@ -341,7 +341,7 @@ func (e SecurityError) Error() string {
 // - Document URL vs WindowContext origin (scheme, host, port)
 // - Iframe sandbox restrictions (allow-same-origin)
 func (node *NodeDOM) checkOrigin() error {
-	if node.WindowCtx == nil || node.WindowCtx.Origin == nil {
+	if node.WindowCtx == nil || node.WindowCtx.OriginSnapshot() == nil {
 		// No origin set, allow access (for backward compatibility)
 		return nil
 	}
@@ -356,7 +356,7 @@ func (node *NodeDOM) checkOrigin() error {
 	// The Document should have an origin field that we can check against WindowCtx.Origin.
 	if node.Document != nil && node.Document.URL != nil {
 		nodeOrigin := node.Document.URL
-		windowOrigin := node.WindowCtx.Origin
+		windowOrigin := node.WindowCtx.OriginSnapshot()
 
 		// Compare scheme, host, and port (normalizing default ports)
 		if nodeOrigin.Scheme != windowOrigin.Scheme {

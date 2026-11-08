@@ -592,10 +592,15 @@ func (bs *BrowserShell) applyKetchupParsing(wc *hotdog.WindowContext, baseURL st
 	// Keeping the *Document pointer stable preserves the JS runtime's document
 	// binding and the wc.Documents history, while replacing the x/net fragment
 	// DOM (which lacks RenderBox/Style) with one bun can lay out and paint.
-	wc.ActiveDocument.DOM = ketchupDoc.DOM
-	wc.ActiveDocument.HTMLRoot = ketchupDoc.HTMLRoot
-	wc.ActiveDocument.StyleSheets = ketchupDoc.StyleSheets
-	wc.ActiveDocument.RawDocument = ketchupDoc.RawDocument
+	// The swap runs under jsRuntimeMu: content-script injection during
+	// LoadHTML can already have armed the frame loop, and those callbacks read
+	// the live DOM tree (audit C-25).
+	wc.WithJSRLock(func() {
+		wc.ActiveDocument.DOM = ketchupDoc.DOM
+		wc.ActiveDocument.HTMLRoot = ketchupDoc.HTMLRoot
+		wc.ActiveDocument.StyleSheets = ketchupDoc.StyleSheets
+		wc.ActiveDocument.RawDocument = ketchupDoc.RawDocument
+	})
 
 	return nil
 }
