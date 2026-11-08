@@ -30,19 +30,50 @@ func paintBlockElement(ctx *gg.Context, node *hotdog.NodeDOM) {
 	paintTextWithinBounds(ctx, node, node.Content, 1, 1.5)
 }
 
+// generatesBox reports whether a node participates in normal flow. Nodes the
+// layout walk prunes (display:none, comments, doctypes, raw HTML — audit
+// R-10/R-12) keep a zero RenderBox, so they must not anchor the next sibling's
+// position: doing so collapsed every block after a comment or hidden element
+// onto the parent's top, overprinting the content before it (audit C-20).
+func generatesBox(node *hotdog.NodeDOM) bool {
+	if node == nil || node.RenderBox == nil {
+		return false
+	}
+	switch node.Type {
+	case hotdog.NodeTypeComment, hotdog.NodeTypeDoctype, hotdog.NodeTypeRaw:
+		return false
+	}
+	if node.Style != nil && node.Style.Display == "none" {
+		return false
+	}
+	return true
+}
+
+// lastFlowSibling walks backwards from childIdx to the previous sibling that
+// actually generated a box, or nil when this node is first in flow.
+func lastFlowSibling(node *hotdog.NodeDOM, childIdx int) *hotdog.NodeDOM {
+	if node.Parent == nil {
+		return nil
+	}
+	for i := childIdx - 1; i >= 0 && i < len(node.Parent.Children); i-- {
+		if prev := node.Parent.Children[i]; generatesBox(prev) {
+			return prev
+		}
+	}
+	return nil
+}
+
 // resolveBlockTop computes the vertical origin of a block at index childIdx
-// within its parent: it stacks below the previous sibling when one exists,
-// otherwise it aligns with the parent's top. A nil parent (the layout root on
-// body-less/frameset documents) or a missing sibling box yields 0 rather than
-// dereferencing nil.
+// within its parent: it stacks below the previous sibling *that generated a
+// box* when one exists, otherwise it aligns with the parent's top. A nil
+// parent (the layout root on body-less/frameset documents) or a missing
+// sibling box yields 0 rather than dereferencing nil.
 func resolveBlockTop(node *hotdog.NodeDOM, childIdx int) float64 {
 	if node.Parent == nil || node.Parent.RenderBox == nil {
 		return 0
 	}
-	if childIdx > 0 && childIdx <= len(node.Parent.Children) {
-		if prev := node.Parent.Children[childIdx-1]; prev != nil && prev.RenderBox != nil {
-			return prev.RenderBox.Top + prev.RenderBox.Height
-		}
+	if prev := lastFlowSibling(node, childIdx); prev != nil {
+		return prev.RenderBox.Top + prev.RenderBox.Height
 	}
 	return node.Parent.RenderBox.Top
 }
