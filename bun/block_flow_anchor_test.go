@@ -7,6 +7,7 @@ import (
 	gg "github.com/danfragoso/thdwb/gg"
 	"github.com/danfragoso/thdwb/hotdog"
 	"github.com/danfragoso/thdwb/ketchup"
+	"github.com/danfragoso/thdwb/mayo"
 	profiler "github.com/danfragoso/thdwb/profiler"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -82,4 +83,65 @@ func TestCommentBetweenInlineElementsNoPanic(t *testing.T) {
 	// span lays out and its style is defaulted.
 	assert.GreaterOrEqual(t, s2.RenderBox.Height, 1.0, "span after comment must lay out")
 	require.NotNil(t, s2.Style, "span style must be defaulted, not nil")
+}
+
+// TestCommentNilStyleBetweenInlineSpans reproduces the exact tree shape the
+// audit probe built via JS (createElement/createComment/appendChild): a
+// comment node with Style == nil between two inline spans. Before the fix,
+// R-12's comment early-return ran before the nil-Style default, so the
+// following inline span's layout dereferenced prev.Style.Display -> panic.
+func TestCommentNilStyleBetweenInlineSpans(t *testing.T) {
+	wc := hotdog.NewWindowContext(&hotdog.Settings{}, &assets.BuildInfo{}, profiler.CreateProfiler())
+	defer wc.Destroy()
+
+	doc := &hotdog.Document{
+		DOM: &hotdog.NodeDOM{
+			Type:     hotdog.NodeTypeElement,
+			Element:  "html",
+			Children: make([]*hotdog.NodeDOM, 0),
+			Style:    mayo.GetElementStylesheet("html", nil),
+		},
+	}
+	doc.DOM.Document = doc
+	body := &hotdog.NodeDOM{
+		Type:       hotdog.NodeTypeElement,
+		Element:    "body",
+		Children:   make([]*hotdog.NodeDOM, 0),
+		Attributes: make([]*hotdog.Attribute, 0),
+		Document:   doc,
+		WindowCtx:  wc,
+		Style:      mayo.GetElementStylesheet("body", nil),
+	}
+	doc.DOM.Children = append(doc.DOM.Children, body)
+	body.Parent = doc.DOM
+
+	mkSpan := func(id string) *hotdog.NodeDOM {
+		span := doc.CreateElement("span")
+		span.Attributes = append(span.Attributes, &hotdog.Attribute{Name: "id", Value: id})
+		span.WindowCtx = wc
+		span.Style = mayo.GetElementStylesheet("span", span.Attributes)
+		span.RenderBox = &hotdog.RenderBox{}
+		return span
+	}
+
+	s1 := mkSpan("s1")
+	s2 := mkSpan("s2")
+	// JS document.createComment returns a node with NO Style -- the shape that
+	// panicked. InsertBefore is the public linking path page JS uses.
+	comment := &hotdog.NodeDOM{
+		Type:      hotdog.NodeTypeComment,
+		Content:   "c",
+		Document:  doc,
+		WindowCtx: wc,
+	}
+	body.InsertBefore(s1, nil)
+	body.InsertBefore(comment, nil)
+	body.InsertBefore(s2, nil)
+	require.Nil(t, comment.Style, "the reproducing shape requires a nil-Style comment")
+
+	ctx := gg.NewContext(400, 200)
+	require.NoError(t, RenderDocument(ctx, doc, false))
+
+	require.NotNil(t, s2.RenderBox)
+	require.NotNil(t, comment.Style, "layout must default a nil-Style comment, not leave it nil")
 }

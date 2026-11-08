@@ -108,8 +108,10 @@ func calculateInlineLayout(ctx *gg.Context, node *hotdog.NodeDOM, childIdx int) 
 
 	ctx.SetFont(getFontFace(node.Style.FontWeight), node.Style.FontSize)
 
-	if childIdx > 0 && node.Parent.Children[childIdx-1] != nil {
-		prev := node.Parent.Children[childIdx-1]
+	// Anchor on the previous sibling that actually generated a box: comments
+	// and display:none nodes are zeroed by the prunes and must not position
+	// us (audit C-20/C-21 — the raw prev deref also panicked on nil Style).
+	if prev := lastFlowSibling(node, childIdx); prev != nil && prev.Style != nil && prev.RenderBox != nil {
 		if prev.Style.Display == "inline" {
 			node.RenderBox.Top = prev.RenderBox.Top
 			node.RenderBox.Left = prev.RenderBox.Left + prev.RenderBox.Width

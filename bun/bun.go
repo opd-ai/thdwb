@@ -163,6 +163,21 @@ func paintFocusRing(ctx *gg.Context, node *hotdog.NodeDOM) {
 }
 
 func calculateNode(ctx *gg.Context, node *hotdog.NodeDOM, postion int) {
+	// Default the style BEFORE the skip-node early return: comment/doctype/raw
+	// nodes reach here with Style == nil, and the next sibling's inline layout
+	// dereferences prev.Style — leaving it nil panicked the layout walk on
+	// pages with a comment between inline elements (audit C-21, regression of
+	// R-12). The zeroed box below is identical either way.
+	if node.Style == nil {
+		node.Style = &hotdog.Stylesheet{
+			Display:        "block",
+			BackgroundColor: &hotdog.ColorRGBA{R: 1, G: 1, B: 1, A: 1},
+			Color:          &hotdog.ColorRGBA{R: 0, G: 0, B: 0, A: 1},
+			FontSize:       16,
+			FontWeight:     0,
+		}
+	}
+
 	// Comments, doctypes and raw HTML are not renderable boxes. Without this
 	// they fall through to the default block stylesheet, get laid out, and
 	// paintBlockElement draws node.Content -- so <!-- note --> rendered "note"
@@ -177,15 +192,6 @@ func calculateNode(ctx *gg.Context, node *hotdog.NodeDOM, postion int) {
 		return
 	}
 
-	if node.Style == nil {
-		node.Style = &hotdog.Stylesheet{
-			Display:        "block",
-			BackgroundColor: &hotdog.ColorRGBA{R: 1, G: 1, B: 1, A: 1},
-			Color:          &hotdog.ColorRGBA{R: 0, G: 0, B: 0, A: 1},
-			FontSize:       16,
-			FontWeight:     0,
-		}
-	}
 	switch node.Style.Display {
 	case "block":
 		calculateBlockLayout(ctx, node, postion)
