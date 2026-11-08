@@ -1338,3 +1338,23 @@ func TestMediaBlockDoesNotSwallowFollowingRule(t *testing.T) {
 	assert.Equal(t, 0.0, divNode.Style.Color.G)
 	assert.Equal(t, 0.0, divNode.Style.Color.B)
 }
+
+// TestImportantStripByteOffset (audit O-23) verifies the !important strip
+// searches the original string case-insensitively without lowercasing it.
+// strings.ToLower is not byte-length-preserving for some runes (U+212A KELVIN
+// SIGN shrinks 3->1 byte), so an index found in the lowercased copy sliced the
+// wrong bytes off the original and ate trailing characters.
+func TestImportantStripByteOffset(t *testing.T) {
+	// U+212A KELVIN SIGN lowercases 3 bytes -> 1 byte; the old code computed
+	// the index on the lowercased copy and sliced the original, eating the
+	// last characters of the value. The strip must not panic and must leave
+	// the value intact (MapCSSColor returns nil for an unknown color name,
+	// which is fine -- the point is no corruption/crash).
+	val := "Kelvin\u212AFont !important"
+	prop := mapPropToStylesheet(&hotdog.Stylesheet{}, []string{"color", val})
+	assert.Nil(t, prop.Color, "unknown color must be nil, not corrupted")
+
+	// ASCII case still works.
+	prop = mapPropToStylesheet(&hotdog.Stylesheet{}, []string{"display", "none !important"})
+	assert.Equal(t, "none", prop.Display)
+}

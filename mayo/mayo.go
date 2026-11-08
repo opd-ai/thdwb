@@ -151,7 +151,12 @@ func mapPropToStylesheet(parsedStyleSheet *hotdog.Stylesheet, propSlice []string
 	// which matches no dispatch case, so the display was silently dropped and
 	// the element stayed visible. !important priority ordering across rules is
 	// not yet implemented; stripping at least makes the value itself correct.
-	if i := strings.Index(strings.ToLower(propValue), "!important"); i >= 0 {
+	// Search the original string case-insensitively without lowercasing it:
+	// strings.ToLower is not byte-length-preserving for some runes (U+212A
+	// KELVIN SIGN shrinks 3->1 byte), so an index found in the lowercased copy
+	// can slice the wrong bytes off the original (audit O-23).
+	if i := strings.LastIndexByte(propValue, '!'); i >= 0 &&
+		strings.EqualFold(propValue[i:], "!important") {
 		propValue = strings.TrimSpace(propValue[:i])
 	}
 
